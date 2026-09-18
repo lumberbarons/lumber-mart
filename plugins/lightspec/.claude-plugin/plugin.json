@@ -1,0 +1,8 @@
+{
+  "name": "lightspec",
+  "description": "Skills for the lightspec spec pipeline: draft a feature spec into specs/NNN-slug/spec.md in a script-enforced format, approve it on substance, and convert an accepted spec into a hew epic with one child issue per user story. ADR → spec → approve → tracker.",
+  "version": "1.0.0",
+  "author": {
+    "name": "lumberbarons"
+  }
+}
