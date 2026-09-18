@@ -14,15 +14,11 @@ This skill does **not** grade code quality, test coverage, or style — those be
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+The input may carry the change scope (a ref range, PR, or path) and an ADR filter. You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **Change scope** (optional): a git ref range (`main..HEAD`), a PR URL/number, a path, or empty. Default: working diff against the base branch (`main` or `master`, whichever the repo uses).
 - **ADR filter** (optional): a specific ADR id like `ADR-0007`, or a tag like `storage`. Default: all accepted ADRs.
 
@@ -52,7 +48,7 @@ Be honest about ambiguity. If the ADR is vague on the point the change touches, 
 
 ### Step 1 — Resolve the change scope
 
-Turn `$ARGUMENTS` into a concrete diff and a file list:
+Turn the input into a concrete diff and a file list:
 
 - Empty → `git diff <base>...HEAD` where `<base>` is the default branch
 - Git ref range (`a..b`, `a...b`) → `git diff <range>`

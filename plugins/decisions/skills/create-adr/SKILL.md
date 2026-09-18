@@ -7,13 +7,9 @@ description: Creates an Architectural Decision Record (ADR) in MADR format, rese
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
+The user's request describes the decision being recorded (e.g., "use Postgres for the event store", "adopt trunk-based development", "replace custom retry wrapper with Temporal").
 
-The input describes the decision being recorded (e.g., "use Postgres for the event store", "adopt trunk-based development", "replace custom retry wrapper with Temporal").
-
-If `$ARGUMENTS` is empty, ask the user what decision they want to record — specifically, what was chosen and what alternatives were considered. Do not proceed without at least a decision statement.
+If the request does not state a decision, ask the user what decision they want to record — specifically, what was chosen and what alternatives were considered. Do not proceed without at least a decision statement.
 
 ## Orientation
 
@@ -56,10 +52,11 @@ Prefer verb-first, imperative. Keep the slug concise; the title can be slightly 
 
 ### Step 4: Scaffold the ADR
 
-Run the init script to create the file from the template. The script auto-numbers the ADR by scanning the target directory for the highest existing `NNNN-*.md` and incrementing.
+Run the init script to create the file from the template. The script auto-numbers the ADR by scanning the target directory for the highest existing `NNNN-*.md` and incrementing. It sits in `scripts/` beside this file — resolve it once against this skill's own directory rather than hardcoding a path, which breaks the moment the skill is vendored into another repo or installed elsewhere:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/skills/create-adr/scripts/init-adr.sh <slug> <adr-dir> "<title>"
+INIT_ADR="<this skill's directory>/scripts/init-adr.sh"
+bash "$INIT_ADR" <slug> <adr-dir> "<title>"
 ```
 
 This outputs JSON with `ADR_FILE`, `ADR_DIR`, `ADR_ID`, and `ADR_NUMBER`. Use `ADR_FILE` for all subsequent edits.
@@ -96,7 +93,7 @@ Edit the scaffolded file, replacing every placeholder with project-specific cont
 - **References**: links to discussions, PRs, issues, and prior ADRs
 
 > [!NOTE]
-> If `$ARGUMENTS` or the conversation does not provide enough material for Decision Drivers or Consequences, stop and ask the user. An ADR with hand-wavy drivers and made-up consequences is worse than no ADR.
+> If the request or the conversation does not provide enough material for Decision Drivers or Consequences, stop and ask the user. An ADR with hand-wavy drivers and made-up consequences is worse than no ADR.
 
 ### Step 7: Update supersede links (if applicable)
 
@@ -110,16 +107,16 @@ If the new ADR supersedes an earlier one (captured in its `supersedes:` frontmat
 
 Check if the ADR directory has an index file (e.g., `README.md`, `INDEX.md`). If so, add an entry for the new ADR following the existing format. If the directory has no index and already contains 3+ ADRs, offer to create a `README.md` index listing all ADRs with `id | title | status | date`.
 
-### Step 9: Register the ADR in the project CLAUDE.md
+### Step 9: Register the ADR in the project's agent instructions
 
 > [!IMPORTANT]
-> This step is critical. ADRs only bind future work if agents and developers know they exist. The project's root `CLAUDE.md` is the single source of truth that Claude Code always reads — if an ADR isn't listed there, future agents will re-litigate the decision or quietly drift from it.
+> This step is critical. ADRs only bind future work if agents and developers know they exist. The project's root agent-instructions file — `AGENTS.md`, or `CLAUDE.md` where that is the established convention — is the single source of truth coding agents always read. If an ADR isn't listed there, future agents will re-litigate the decision or quietly drift from it.
 
-Read the project's root `CLAUDE.md`. Look for an existing `## Architectural Decisions` section.
+Read the project's root agent-instructions file (`AGENTS.md`, or `CLAUDE.md` if that is what this repo uses — some agents read only one of the two; if both exist, update both). Look for an existing `## Architectural Decisions` section.
 
 **If the section already exists**, add a new row to the table for the ADR you just created, following the existing format.
 
-**If the section does not exist**, append it to the end of `CLAUDE.md` using this format (substitute the actual ADR directory):
+**If the section does not exist**, append it to the end using this format (substitute the actual ADR directory):
 
 ```markdown
 ## Architectural Decisions
