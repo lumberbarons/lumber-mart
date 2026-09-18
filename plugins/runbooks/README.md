@@ -1,6 +1,6 @@
 # runbooks
 
-Operational runbook creation and maintenance tooling for Claude Code.
+Operational runbook creation and maintenance tooling for coding agents (Claude Code, opencode, codex).
 
 ## Overview
 
@@ -10,14 +10,14 @@ Runbooks are step-by-step operational procedures for tasks like deployments, inc
 
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
-| `/runbooks:create-runbook` | Create a new operational runbook from a standard template | Yes |
+| `create-runbook` | Create a new operational runbook from a standard template | Yes |
 
 ## Usage
 
 ```
-/runbooks:create-runbook deploying the API to production
-/runbooks:create-runbook rotating database credentials
-/runbooks:create-runbook diagnosing high memory usage on worker nodes
+create-runbook deploying the API to production
+create-runbook rotating database credentials
+create-runbook diagnosing high memory usage on worker nodes
 ```
 
 ## Template Structure

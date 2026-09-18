@@ -1,6 +1,7 @@
 # decisions
 
-Architectural Decision Record (ADR) creation, maintenance, and enforcement tooling for Claude Code.
+Architectural Decision Record (ADR) creation, maintenance, and enforcement tooling for coding
+agents (Claude Code, opencode, codex).
 
 ## Overview
 
@@ -12,20 +13,23 @@ The output is MADR-style (Markdown Architecture Decision Records) with rich fron
 
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
-| `/decisions:create-adr` | Create a new ADR from a standard MADR template, researching context from the codebase and registering it in the project's CLAUDE.md | Yes |
-| `/decisions:review-policy` | Review a code change (working diff, PR, or path) against the accepted ADRs and report violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit | Yes |
+| `create-adr` | Create a new ADR from a standard MADR template, researching context from the codebase and registering it in the project's agent instructions (`AGENTS.md`/`CLAUDE.md`) | Yes |
+| `review-policy` | Review a code change (working diff, PR, or path) against the accepted ADRs and report violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit | Yes |
 
 ## Usage
 
-```
-/decisions:create-adr use Postgres for the event store instead of DynamoDB
-/decisions:create-adr adopt trunk-based development with short-lived feature flags
-/decisions:create-adr replace the custom retry wrapper with Temporal workflows
+Skill names are agent-neutral. Agents that resolve skills by name (opencode, codex) call them
+directly; Claude Code prefixes the plugin name (`/decisions:create-adr`).
 
-/decisions:review-policy                   # review the current working diff against all accepted ADRs
-/decisions:review-policy main...HEAD       # review a specific ref range
-/decisions:review-policy PR#42             # review a pull request
-/decisions:review-policy --adr ADR-0007    # review the diff against a single ADR
+```
+create-adr use Postgres for the event store instead of DynamoDB
+create-adr adopt trunk-based development with short-lived feature flags
+create-adr replace the custom retry wrapper with Temporal workflows
+
+review-policy                   # review the current working diff against all accepted ADRs
+review-policy main...HEAD       # review a specific ref range
+review-policy PR#42             # review a pull request
+review-policy --adr ADR-0007    # review the diff against a single ADR
 ```
 
 If `create-adr` is called without an argument, it asks what decision to record. If `review-policy` is called without an argument, it defaults to the working diff against the repo's base branch.
@@ -57,9 +61,9 @@ The skill looks for an existing ADR directory in this order:
 
 ADRs do not track the specs that inherit their constraints. Specs cite ADRs from their own frontmatter; ADRs cite only other ADRs. This keeps ADRs stable (accepted decisions are append-only history) and puts the maintenance burden on the churning side, where it belongs. To find which specs a given ADR constrains, grep spec frontmatter for the ADR id.
 
-## Registration in CLAUDE.md
+## Registration in agent instructions
 
-The skill appends (or updates) an `## Architectural Decisions` section in the project's root `CLAUDE.md`, listing each ADR with a one-line "when this applies" description. This is how future Claude Code sessions discover and honor prior decisions — if an ADR isn't registered, agents won't see it.
+The skill appends (or updates) an `## Architectural Decisions` section in the project's root agent-instructions file — `AGENTS.md`, or `CLAUDE.md` where that is the convention — listing each ADR with a one-line "when this applies" description. This is how future agent sessions discover and honor prior decisions — if an ADR isn't registered, agents won't see it.
 
 ## Bundled Resources
 

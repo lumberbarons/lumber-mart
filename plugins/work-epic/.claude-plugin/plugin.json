@@ -1,0 +1,8 @@
+{
+  "name": "work-epic",
+  "description": "Skill for orchestrating a hew epic across herdr-managed agents. Resolves the epic's ready children deterministically, spawns one worker agent per child running work-issue, runs a review-code reviewer agent over each delivered PR, and stops at the human merge gate.",
+  "version": "1.0.0",
+  "author": {
+    "name": "lumberbarons"
+  }
+}

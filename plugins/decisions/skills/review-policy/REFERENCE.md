@@ -58,7 +58,7 @@ ADR-0007 chose Postgres as the event store and explicitly rejected DynamoDB. Thi
 
 ADR-0012 chose the simple retry-only approach over a circuit-breaker library, citing "team has no expertise with circuit breakers" as a driver. This PR's author shipped a circuit breaker in `services/inventory/` last quarter. The driver as written no longer holds — this doesn't make the current change wrong, but the next time someone proposes a circuit breaker they should not be blocked by a driver that's stale. Candidate for revisit.
 
-**Fix:** no action required on this PR. Consider running `/decisions:create-adr` (supersede flow) on ADR-0012 to update the driver list, or add a note to the ADR's implementation notes.
+**Fix:** no action required on this PR. Consider running the create-adr skill (supersede flow) on ADR-0012 to update the driver list, or add a note to the ADR's implementation notes.
 **Done when:** ADR-0012 is either explicitly revalidated or superseded.
 
 ### On-policy ADRs

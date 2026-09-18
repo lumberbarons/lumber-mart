@@ -31,7 +31,7 @@ skill the pass rate falls 28 points, and reading the failures, the baseline find
 defects. On `py-worker` it caught every substantive assertion. It then failed the discipline
 assertions wholesale: it invented its own scale (`High`/`Medium`/`Low`,
 `Critical`/`Significant`/`Minor`), emitted no `**Location:**` or `**Done when:**` lines, and
-filed 14–16 findings against a cap of 10. Nothing downstream — raise-beads, or a human
+filed 14–16 findings against a cap of 10. Nothing downstream — raise-issues, or a human
 triaging a backlog — can consume that. Read the gap as "the review is shaped and parseable",
 not "the review found more".
 

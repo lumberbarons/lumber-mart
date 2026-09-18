@@ -13,23 +13,9 @@ Learn more about Claude Code marketplaces in the [official documentation](https:
 
 | Plugin | Category | Description |
 |--------|----------|-------------|
-| [specbeads](plugins/specbeads/) | Workflow | Specification-driven development with spec-kit and beads -- task tracking and spec conformance |
 | [runbooks](plugins/runbooks/) | Workflow | Operational runbook creation with consistent structure and built-in maintenance feedback loops |
 | [critique](plugins/critique/) | Workflow | Review skills for code, tests, documentation, and observability -- design, coverage, doc-structure, and logging issues that linters miss |
 | [decisions](plugins/decisions/) | Workflow | Architectural Decision Record (ADR) authoring in MADR format with relationship tracking and CLAUDE.md registration |
-
-### [specbeads](plugins/specbeads/)
-
-Integrates [spec-kit](https://github.com/spec-kit/specify) with [beads](https://github.com/beads-project/beads) for streamlined specification-driven development. Pairs with the [critique](plugins/critique/) plugin -- pipe its review output through `/raise-beads` to file findings as trackable beads.
-
-| Component | Type | Description |
-|-----------|------|-------------|
-| `specbeads:init` | Command | Initialize a repository with spec-kit and beads |
-| `specbeads:beadify` | Command | Convert tasks.md into beads (epics for phases, tasks as children) |
-| `specbeads:implement` | Command | Implement a spec-kit feature phase, one task at a time with per-task commits |
-| `specbeads:fix` | Command | Implement standalone bug/task beads (e.g. from review findings) |
-| `specbeads:raise-beads` | Command | File review findings from conversation context as beads, with deduplication |
-| `specbeads:review-spec` | Command | Validate implementation against spec-kit artifacts |
 
 ### [runbooks](plugins/runbooks/)
 

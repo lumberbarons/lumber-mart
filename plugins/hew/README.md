@@ -1,7 +1,8 @@
 # hew
 
-Claude Code skills for tracking work in GitHub Issues through the
-[hew](https://github.com/lumberbarons/hew) CLI.
+Agent skills for tracking work in GitHub Issues through the
+[hew](https://github.com/lumberbarons/hew) CLI, usable from any coding agent that loads skills
+(Claude Code, opencode, codex).
 
 ## Overview
 
@@ -19,27 +20,42 @@ fixes it.
 - Run from a checkout of the target repository (`--repo owner/name` overrides detection)
 - `hew init` once per repo, to create the convention labels
 
+## Session hooks
+
+`hew` can inject its primer (conventions, ready work, live state) at session start, so every
+agent begins with tracker context without a manual `hew prime`:
+
+```
+hew hooks install opencode    # or claude, codex, cursor
+hew hooks remove opencode     # undo
+```
+
+The installer writes a managed artifact and tags it `@hew-managed` — for opencode that is
+`.opencode/plugins/hew-prime.js` (runs `hew prime` once per session and injects the output as
+system context). Only the artifact's own header comment is documentation; edit the hook through
+`hew hooks`, not by hand.
+
 ## Skills
 
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
-| `/hew:raise-issues` | File review findings as deduplicated GitHub issues | Yes |
-| `/hew:work-issue` | Take a tracked issue from claimed to draft PR, test-first | Yes |
+| `raise-issues` | File review findings as deduplicated GitHub issues | Yes |
+| `work-issue` | Take a tracked issue from claimed to draft PR, test-first | Yes |
+
+Skill names are agent-neutral. Agents that resolve skills by name (opencode, codex) call them
+directly; Claude Code prefixes the plugin name (`/hew:work-issue`).
 
 ### Usage
 
 ```
-/critique:review-o11y internal/http     # produce findings
-/hew:raise-issues                       # file them
-/hew:work-issue                         # work the top of the queue
+raise-issues                       # file them
+raise-issues --findings out/o11y.json --dry-run
+raise-issues only P1 and P2
 
-/hew:raise-issues --findings out/o11y.json --dry-run
-/hew:raise-issues only P1 and P2
-
-/hew:work-issue 42                      # a specific issue, or an epic to descend into
-/hew:work-issue --batch                 # up to 3 issues, then verify them together
-/hew:work-issue --batch 5               # a higher ceiling; sizing may still stop sooner
-/hew:work-issue --dry-run
+work-issue 42                      # a specific issue, or an epic to descend into
+work-issue --batch                 # up to 3 issues, then verify them together
+work-issue --batch 5               # a higher ceiling; sizing may still stop sooner
+work-issue --dry-run
 ```
 
 ## Working an issue
@@ -136,7 +152,7 @@ Both skills are built to survive a scheduled loop.
 The whole pipeline runs unattended end to end:
 
 ```
-/critique:review-tests --json out/tests.json --non-interactive
-/hew:raise-issues --findings out/tests.json --non-interactive
-/hew:work-issue --non-interactive --json out/work.json
+review-tests --json out/tests.json --non-interactive   # critique plugin
+raise-issues --findings out/tests.json --non-interactive
+work-issue --non-interactive --json out/work.json
 ```

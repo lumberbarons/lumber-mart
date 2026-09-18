@@ -183,7 +183,7 @@ holding it, and only one of them should make anyone comfortable.
 
 ### A batch of three
 
-`/hew:work-issue --batch` against a queue of ten. Sizing the first three candidates: #42 names
+`work-issue --batch` against a queue of ten. Sizing the first three candidates: #42 names
 two paths and three Done-when items, #47 one path and two items, #51 two paths and four items.
 None is large, so the ceiling stays at 3.
 
