@@ -1,19 +1,15 @@
 ---
 name: implement
-description: Implement a spec-kit feature phase. Executes tasks one at a time, committing after each, with diff verification before closing. Use --all to continue through subsequent phases. For standalone bug/task beads outside a feature plan, use /fix instead.
+description: Implement a spec-kit feature phase. Executes tasks one at a time, committing after each, with diff verification before closing. Use --all to continue through subsequent phases. For standalone bug/task beads outside a feature plan, use the fix skill instead.
 ---
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **Epic bead ID** (e.g., `sam-cp7l`): Implement that specific phase epic
 - **Feature slug** (e.g., `002-realtime-gateway`): Find and implement the next ready phase for that feature
 - **`--all`**: Implement all currently unblocked phases sequentially, continuing after each completes
@@ -22,7 +18,7 @@ Parse `$ARGUMENTS` for:
 
 If no arguments: find the next ready phase — the first unblocked phase epic with open tasks — and implement it. If multiple feature slugs are present in the project, confirm with the user which feature to work on.
 
-If a standalone bead ID (bug or task not part of a phase epic) is given, stop and tell the user to run `/fix <bead-id>` instead.
+If a standalone bead ID (bug or task not part of a phase epic) is given, stop and tell the user to run the fix skill with that bead id instead.
 
 ## Outline
 
@@ -152,7 +148,7 @@ Each subagent receives:
 - Instruction to: mark in_progress → write failing tests (when TDD applies) → implement to make tests pass → refactor → verify done-when → commit → mark complete
 - TDD guidance: use TDD (Red-Green-Refactor) for testable code; skip TDD for config, migrations, docs, static assets, or pure wiring with no logic
 - Commit message format: `feat({FEATURE_SLUG}): <task title> [{task-id}]`
-- Any user-provided additional instructions from `$ARGUMENTS`
+- Any user-provided additional instructions from the input
 
 Wait for all subagents in the batch to complete. If any subagent reports failure:
 1. Mark that bead back to `open`
@@ -217,7 +213,7 @@ Committed and pushed.
 
 Next:
   Unblocked by this phase: <next phase title> [<id>]
-  Run `/implement` to continue, or `bd show <next-epic-id>` to review.
+  Run the implement skill to continue, or `bd show <next-epic-id>` to review.
 ```
 
 If `--all` was specified and another phase is now ready, proceed automatically.

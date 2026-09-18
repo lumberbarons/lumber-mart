@@ -9,22 +9,18 @@ Convert structured review findings into beads, with deduplication against existi
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **`--dry-run`**: Show the bead list that would be created without running `bd create`
 - **`<additional instructions>`**: Filtering or scope guidance (e.g., "only P1 and P2", "skip the naming findings")
 
 ## Prerequisites
 
 - `bd` CLI available on PATH
-- Recent review findings visible in conversation context (from critique's `/review-code`, `/review-tests`, `/review-docs`, or equivalent)
+- Recent review findings visible in conversation context (from critique's review-code, review-tests, review-docs, or equivalent)
 
 If no review output is visible in the conversation, ask the user to paste the findings or run a review skill first.
 
@@ -58,7 +54,7 @@ If any required field is missing (priority, location, or fix), skip the finding 
 
 ### Step 3 — Apply user filtering
 
-If `$ARGUMENTS` contains filtering guidance ("only P1 and P2", "skip the naming findings", "just the OrderService ones"), narrow the finding list accordingly before deduplication.
+If the input contains filtering guidance ("only P1 and P2", "skip the naming findings", "just the OrderService ones"), narrow the finding list accordingly before deduplication.
 
 ### Step 4 — Deduplicate against existing beads
 
@@ -151,6 +147,6 @@ NOT: "The duplication is removed.">
 
 ## Notes
 
-- The `/fix` skill picks up beads created by `/raise-beads` automatically — there is no coordination needed beyond running them in sequence.
-- `/raise-beads` does not re-run any review itself. If the findings are stale, re-run the review skill first.
+- The fix skill picks up beads created by raise-beads automatically — there is no coordination needed beyond running them in sequence.
+- raise-beads does not re-run any review itself. If the findings are stale, re-run the review skill first.
 - This skill is bead-specific. In environments without `bd`, read the review report directly or ask Claude to act on specific findings without going through beads.

@@ -5,15 +5,11 @@ description: Convert spec-kit tasks (tasks.md) into beads for tracking implement
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **Spec folder name**: If provided (e.g., `001-user-auth`), use that spec instead of deriving from branch
 - **`--dry-run`**: Preview what would be created without actually creating beads
 - **`--force`**: Create beads even if duplicates are detected (skip duplicate check)

@@ -1,30 +1,26 @@
 ---
 name: fix
-description: Implement standalone bug and task beads that are not part of a spec-kit phase epic — for example, beads filed by /raise-beads from critique review findings, or by /review-spec with --create-beads. Executes one bead at a time, committing after each. For feature phase implementation, use /implement instead.
+description: Implement standalone bug and task beads that are not part of a spec-kit phase epic — for example, beads filed by raise-beads from critique review findings, or by review-spec with --create-beads. Executes one bead at a time, committing after each. For feature phase implementation, use the implement skill instead.
 ---
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **Bead ID** (e.g., `sam-b3i`): Fix that specific bead
 - **Type keyword** (`bugs` or `tasks`): Work only beads of that type. `bugs` → `--type bug`, `tasks` → `--type task`. If omitted, work both types.
 - **Filter text** (e.g., `auth`, `code review`): Work all matching standalone beads whose title contains the filter (case-insensitive substring). Show the matched list before proceeding.
 - **`--dry-run`**: Show the list of beads that would be worked without making any changes
 - **Additional instructions**: Any other text is treated as implementation guidance applied throughout
 
-Type keywords and filter text can be combined (e.g., `/fix bugs auth` → only bug beads whose title contains "auth").
+Type keywords and filter text can be combined (e.g., `fix bugs auth` → only bug beads whose title contains "auth").
 
 If no arguments: work all standalone bug and task beads that are open or in-progress.
 
-If an epic bead ID is given, stop and tell the user to run `/implement <epic-id>` instead.
+If an epic bead ID is given, stop and tell the user to run the implement skill with that epic id instead.
 
 ## Resolving the Bead List
 
@@ -32,7 +28,7 @@ If an epic bead ID is given, stop and tell the user to run `/implement <epic-id>
 ```bash
 bd show <bead-id>
 ```
-Confirm it is type `bug` or `task`. If it is an `epic`, stop and redirect to `/implement`.
+Confirm it is type `bug` or `task`. If it is an `epic`, stop and redirect to the implement skill.
 
 **Filter or no argument:**
 

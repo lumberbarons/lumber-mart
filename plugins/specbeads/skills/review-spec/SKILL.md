@@ -12,15 +12,11 @@ Validate that the implementation conforms to its spec-kit artifacts.
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - **Path**: Optional path to focus the review (default: entire repo)
 - **Spec folder name**: If provided (e.g., `001-user-auth`), use that spec instead of deriving from branch
 - **`--create-beads`**: Create beads for findings (default: report only)

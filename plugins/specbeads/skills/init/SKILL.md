@@ -6,19 +6,15 @@ disable-model-invocation: true
 
 # Initialize Repository with Spec-Kit and Beads
 
-Initialize the current repository with spec-kit (specify) and beads configuration for Claude.
+Initialize the current repository with spec-kit (specify) and beads configuration for your coding agent.
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
-You **MUST** consider the user input before proceeding (if not empty).
+You **MUST** consider the user input before proceeding (if any was given).
 
 ## Argument Parsing
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 - `--no-commit` - Initialize without prompting to commit
 
 ## Outline
