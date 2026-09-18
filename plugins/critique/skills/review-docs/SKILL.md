@@ -16,22 +16,26 @@ What follows is only the local policy you could not infer. Prescribing the revie
 
 ## Arguments
 
-`$ARGUMENTS` may carry flags alongside a path. Strip the flags first; whatever remains is the path.
+Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
 
 - **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](../../FINDINGS.md). Off by default; the markdown report is unchanged either way.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
 
 ## Scope
 
-Determine the review scope before discovering files:
+Determine the review scope before discovering files. The discovery script sits at the plugin root, two levels above this skill's directory — resolve it against that location rather than hardcoding an install path, which only holds for one harness's layout:
 
-- If `$ARGUMENTS` is non-empty, treat it as a path (file or directory) and run:
+```bash
+DISCOVER="<this skill's directory>/../../scripts/discover-files.sh"
+```
+
+- If a path was given, treat it as a path (file or directory) and run:
   ```bash
-  ${CLAUDE_PLUGIN_ROOT}/scripts/discover-files.sh "$ARGUMENTS"
+  bash "$DISCOVER" <path>
   ```
-- If `$ARGUMENTS` is empty, scope to files added or modified on the current branch relative to the default branch:
+- If no path was given, scope to files added or modified on the current branch relative to the default branch:
   ```bash
-  ${CLAUDE_PLUGIN_ROOT}/scripts/discover-files.sh
+  bash "$DISCOVER"
   ```
 
 Handle the script's exit codes:
@@ -45,10 +49,10 @@ The script returns paths language-blind; filter to README.md and CLAUDE.md files
 
 ## Run the validator
 
-Always repo-wide, regardless of branch scope — a broken reference outside the diff still breaks:
+Always repo-wide, regardless of branch scope — a broken reference outside the diff still breaks. The validator sits in this skill's own directory:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/skills/review-docs/scripts/validate-claude-md.py . --json
+python3 "<this skill's directory>/scripts/validate-claude-md.py" . --json
 ```
 
 It catches broken references, files over the 200-line target, unresolvable `@path` imports, bad `paths` globs in `.claude/rules/`, and hardcoded local paths. Fold its output into your findings.

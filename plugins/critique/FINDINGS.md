@@ -32,7 +32,7 @@ otherwise have to parse prose.
 
 | Field | Notes |
 |---|---|
-| `skill` | `code`, `tests`, `docs`, or `o11y` |
+| `skill` | `code`, `tests`, `docs`, `o11y`, or `skills` |
 | `status` | `reviewed`, `no_scope`, or `error` — see below |
 | `reason` | Required when `status` is not `reviewed`; the stderr message or why nothing was in scope |
 | `scope` | The path or branch range actually reviewed |
