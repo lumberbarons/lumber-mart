@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validate CLAUDE.md files for structural correctness.
+"""Validate agent-instructions files (CLAUDE.md, AGENTS.md) for structural correctness.
 
-Also validates @path imports, .claude/rules/ directory, and detects
-leaked local preferences in shared CLAUDE.md files.
+Also validates @path imports (Claude Code memory syntax), .claude/rules/
+directory, and detects leaked local preferences in shared files.
 """
 
 import fnmatch
@@ -12,9 +12,12 @@ import re
 import json
 from pathlib import Path
 
-# Target from the Claude Code memory docs: longer files consume more context
+# Target for agent-instructions files: longer files consume more context
 # and reduce adherence to the instructions that matter.
-CLAUDE_MD_LINE_TARGET = 200
+AGENT_MD_LINE_TARGET = 200
+
+# The agent-instructions file names covered across harnesses.
+AGENT_MD_NAMES = ('CLAUDE.md', 'AGENTS.md')
 
 
 def find_git_root(path: Path) -> Path | None:
@@ -222,9 +225,9 @@ def validate_rules_directory(rules_dir: Path, git_root: Path | None) -> list[dic
 
 
 def check_leaked_local_preferences(content: str, file_path: Path) -> list[dict]:
-    """Detect personal/machine-specific values in shared CLAUDE.md files."""
-    # Only check shared CLAUDE.md, not CLAUDE.local.md
-    if file_path.name != 'CLAUDE.md':
+    """Detect personal/machine-specific values in shared agent-instructions files."""
+    # Only check shared instruction files, not personal or local variants
+    if file_path.name not in AGENT_MD_NAMES:
         return []
 
     issues = []
@@ -253,21 +256,21 @@ def check_leaked_local_preferences(content: str, file_path: Path) -> list[dict]:
                 issues.append({
                     'type': 'leaked_local_preference',
                     'severity': 'P3',
-                    'message': f"Hardcoded {desc} in shared CLAUDE.md (line {line_num}) — belongs in CLAUDE.local.md",
+                    'message': f"Hardcoded {desc} in shared {file_path.name} (line {line_num}) — belongs in a personal, untracked file (e.g. CLAUDE.local.md)",
                 })
 
         if re.search(localhost_pattern, stripped):
             issues.append({
                 'type': 'leaked_local_preference',
                 'severity': 'P3',
-                'message': f"localhost URL in shared CLAUDE.md (line {line_num}) (may be developer-specific) — consider CLAUDE.local.md",
+                'message': f"localhost URL in shared {file_path.name} (line {line_num}) (may be developer-specific) — consider a personal, untracked file",
             })
 
     return issues
 
 
-def validate_claude_md(file_path: Path, git_root: Path | None) -> dict:
-    """Validate a single CLAUDE.md file."""
+def validate_agent_md(file_path: Path, git_root: Path | None) -> dict:
+    """Validate a single agent-instructions file."""
     issues = []
 
     if not file_path.exists():
@@ -281,16 +284,17 @@ def validate_claude_md(file_path: Path, git_root: Path | None) -> dict:
     table_pattern = r'\|.*\|.*\|.*\|'
     has_table = bool(re.search(table_pattern, content))
 
-    # Size: CLAUDE.md loads into context every session, and adherence drops as it grows.
+    # Size: agent-instructions files load into context every session, and
+    # adherence drops as they grow.
     line_count = len(content.splitlines())
-    if line_count > CLAUDE_MD_LINE_TARGET:
+    if line_count > AGENT_MD_LINE_TARGET:
         issues.append({
             "type": "oversized",
             "severity": "P3",
             "message": (
-                f"{line_count} lines, over the {CLAUDE_MD_LINE_TARGET}-line target — "
+                f"{line_count} lines, over the {AGENT_MD_LINE_TARGET}-line target — "
                 "move task-specific procedures to a skill, path-specific conventions to "
-                ".claude/rules/, and reference material to a file read on demand"
+                "scoped rule files (e.g. .claude/rules/), and reference material to a file read on demand"
             ),
         })
 
@@ -366,17 +370,18 @@ def main():
 
     results = []
 
-    if path.is_file() and path.name == "CLAUDE.md":
-        results.append(validate_claude_md(path, git_root))
+    if path.is_file() and path.name in AGENT_MD_NAMES:
+        results.append(validate_agent_md(path, git_root))
     elif path.is_dir():
-        for claude_md in path.rglob("CLAUDE.md"):
-            # Skip CLAUDE.md files inside build/artifact directories
-            if is_in_build_directory(claude_md):
-                continue
-            # Skip gitignored CLAUDE.md files
-            if is_gitignored(claude_md, git_root):
-                continue
-            results.append(validate_claude_md(claude_md, git_root))
+        for name in AGENT_MD_NAMES:
+            for agent_md in path.rglob(name):
+                # Skip instruction files inside build/artifact directories
+                if is_in_build_directory(agent_md):
+                    continue
+                # Skip gitignored instruction files
+                if is_gitignored(agent_md, git_root):
+                    continue
+                results.append(validate_agent_md(agent_md, git_root))
 
     # Validate .claude/rules/ directory if it exists
     rules_dir = (git_root or path) / '.claude' / 'rules'

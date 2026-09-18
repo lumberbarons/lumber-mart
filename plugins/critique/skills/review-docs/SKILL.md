@@ -1,11 +1,11 @@
 ---
 name: review-docs
-description: Review documentation (README.md, CLAUDE.md, .claude/rules/) for accuracy, drift against the codebase, and context cost. Use whenever the user asks to review or audit docs, check documentation, validate a README, or check whether CLAUDE.md is still accurate — including when they just say "review the docs" without naming a file.
+description: Review documentation (README.md, agent-instructions files — CLAUDE.md, AGENTS.md, or the harness's equivalent — and .claude/rules/) for accuracy, drift against the codebase, and context cost. Use whenever the user asks to review or audit docs, check documentation, validate a README, or check whether agent instructions (CLAUDE.md, AGENTS.md) are still accurate — including when they just say "review the docs" without naming a file.
 ---
 
 # Documentation Review
 
-Review the documentation (README.md, CLAUDE.md, `.claude/rules/`) in scope.
+Review the documentation (README.md, the agent-instructions files — CLAUDE.md, AGENTS.md, or the harness's equivalent — and `.claude/rules/`) in scope.
 
 > [!IMPORTANT]
 > Consult [REFERENCE.md](REFERENCE.md) for the expected output format and level of detail.
@@ -45,7 +45,7 @@ Handle the script's exit codes:
 
 A review that ran and found nothing, and a review that never ran, both end with zero findings and mean opposite things — so say which happened, in the report and in the findings file's `status`. A caller that cannot tell them apart reports a broken pipeline as a clean codebase.
 
-The script returns paths language-blind; filter to README.md and CLAUDE.md files.
+The script returns paths language-blind; filter to README.md, CLAUDE.md, and AGENTS.md files.
 
 ## Run the validator
 
@@ -55,7 +55,7 @@ Always repo-wide, regardless of branch scope — a broken reference outside the 
 python3 "<this skill's directory>/scripts/validate-claude-md.py" . --json
 ```
 
-It catches broken references, files over the 200-line target, unresolvable `@path` imports, bad `paths` globs in `.claude/rules/`, and hardcoded local paths. Fold its output into your findings.
+It catches broken references, files over the 200-line target, unresolvable `@path` imports (Claude Code's memory-import syntax, validated where present), bad `paths` globs in `.claude/rules/`, and hardcoded local paths, across `CLAUDE.md` and `AGENTS.md`. Fold its output into your findings.
 
 ## Severity, and why it is strict here
 
@@ -63,28 +63,28 @@ These findings feed a work-tracking pipeline, so an inflated severity becomes fa
 
 - **P1** — security only: a missing auth step, a secret exposed in an example, a destructive command presented without warning.
 - **P2** — broken: a command that errors, a path that does not exist, a quick start that fails on copy-paste, a reference or import pointing at a missing file.
-- **P3** — stale, incomplete, or wasting context: drifted enumerations in either direction, missing prerequisites, no expected output, derivable CLAUDE.md content, a CLAUDE.md over 200 lines.
+- **P3** — stale, incomplete, or wasting context: drifted enumerations in either direction, missing prerequisites, no expected output, derivable agent-instructions content, an agent-instructions file over 200 lines.
 - **P4** — polish.
 
-A quick start that fails is P2, not P1. A CLAUDE.md full of filler is P3, not P2. Cap the report at about ten findings; if you cut any, say how many.
+A quick start that fails is P2, not P1. An agent-instructions file full of filler is P3, not P2. Cap the report at about ten findings; if you cut any, say how many.
 
 ## What not to flag
 
 Each of these is a deliberate decision here, so flagging it spends the reader's attention arguing against their own convention:
 
-- A CLAUDE.md with no index table. Commands, invariants, and gotchas with no table is the preferred shape.
-- A file that exists but is absent from a CLAUDE.md index. Indexes are curated pointers, not directory listings.
-- A directory with no CLAUDE.md, or a nested subdirectory with no README.
-- A README that references a component whose CLAUDE.md does not exist.
-- `MEMORY.md` and `CLAUDE.local.md`, and anything under `~/.claude/` — personal or auto-managed. Do not review their content or suggest changes to them.
+- An agent-instructions file (CLAUDE.md, AGENTS.md) with no index table. Commands, invariants, and gotchas with no table is the preferred shape.
+- A file that exists but is absent from an agent-instructions index. Indexes are curated pointers, not directory listings.
+- A directory with no agent-instructions file, or a nested subdirectory with no README.
+- A README that references a component whose agent-instructions file does not exist.
+- Personal or auto-managed files — `MEMORY.md`, `CLAUDE.local.md`, anything under `~/.claude/` or another harness's personal-memory location. Do not review their content or suggest changes to them.
 - A code defect rather than a documentation defect. An unfinished Dockerfile is not a docs finding; a README promising it works is.
 - Anything under a `fixtures/`, `__fixtures__/`, or `testdata/` directory. Those documents are deliberately broken test input; their defects are the point.
 
-## CLAUDE.md content
+## Agent-instructions files
 
-CLAUDE.md loads into context on every session that touches its directory, so ask of each line: **would removing it cause a mistake?** Keep commands that can't be guessed, conventions differing from tool defaults, invariants, and gotchas. A row that restates its own filename (`` `tests/` `` — "Test files") costs context on every load and prevents nothing: that is P3.
+The project's agent-instructions file — `CLAUDE.md`, `AGENTS.md`, or the harness's equivalent — loads into context on every session that touches its directory on the harnesses that read it, so ask of each line: **would removing it cause a mistake?** Keep commands that can't be guessed, conventions differing from tool defaults, invariants, and gotchas. A row that restates its own filename (`` `tests/` `` — "Test files") costs context on every load and prevents nothing: that is P3.
 
-Some CLAUDE.md files here were written under an earlier convention that required an exhaustive index table, and they were correct when written. Report a systemically derivable index as **one** finding for the file — never one per row. Say that the convention changed so a maintainer does not read it as sloppiness, name the rows worth keeping because they disambiguate rather than enumerate, and trim the table rather than deleting the file.
+Some agent-instructions files here were written under an earlier convention that required an exhaustive index table, and they were correct when written. Report a systemically derivable index as **one** finding for the file — never one per row. Say that the convention changed so a maintainer does not read it as sloppiness, name the rows worth keeping because they disambiguate rather than enumerate, and trim the table rather than deleting the file.
 
 ## Output
 

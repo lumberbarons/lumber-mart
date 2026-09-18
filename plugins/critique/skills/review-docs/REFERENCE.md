@@ -10,7 +10,7 @@ This reference shows the expected format and level of detail for a documentation
 ---
 Documentation Review for .
 
-8 files reviewed, 7 issues found (1 P1, 2 P2, 3 P3, 1 P4).
+9 files reviewed, 8 issues found (1 P1, 2 P2, 4 P3, 1 P4).
 
 ### 1. [P1] Quick start seed command is destructive
 **Location:** README.md:45
@@ -46,6 +46,11 @@ The import `@docs/setup-guide.md` points to a file that was renamed to `docs/get
 **Location:** CLAUDE.md:31
 
 The line `API_BASE=http://localhost:3001` appears to be a developer-specific sandbox URL. Other contributors may use a different port or remote endpoint. Move this to `CLAUDE.local.md` or replace with a placeholder like `http://localhost:<port>`.
+
+### 8. [P3] Stale setup command in AGENTS.md
+**Location:** AGENTS.md:22
+
+The setup section instructs contributors to run `make bootstrap`, which was replaced by `make setup` when the Makefile was reorganized for v2. Anyone — human or agent — following it stops at the first step with "no rule to make target 'bootstrap'". Update the command and add the required Go toolchain prerequisite beside it.
 ---
 ```
 

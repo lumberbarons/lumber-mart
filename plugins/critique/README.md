@@ -8,7 +8,7 @@ Five focused review skills, each operating on a path you specify:
 
 - **review-code** — design issues (single responsibility, abstraction levels, testability, meaningful naming, API design, error handling strategy)
 - **review-tests** — whether tests would actually catch a regression: falsifiability, isolation hazards, dead expectations, tautologies, coverage gaps. Deliberately short for the same reason as review-docs (see `skills/review-tests/evals/` for the benchmark that settled this)
-- **review-docs** — README and CLAUDE.md accuracy, drift against the codebase, and context cost. Deliberately short: it states severity discipline and local policy, and leaves the review itself to the model's judgement (see `skills/review-docs/evals/` for the benchmark that settled this)
+- **review-docs** — README and agent-instructions file (CLAUDE.md, AGENTS.md) accuracy, drift against the codebase, and context cost. Deliberately short: it states severity discipline and local policy, and leaves the review itself to the model's judgement (see `skills/review-docs/evals/` for the benchmark that settled this)
 - **review-o11y** — observability: logging consistency, log level appropriateness, log value, missing logs at I/O boundaries, and error-message quality and consistency. Deliberately short for the same reason as the others, and capped at ten findings (see `skills/review-o11y/evals/` for the benchmark that settled this)
 - **review-portability** — skill portability: harness coupling that breaks or degrades a skill when another agent (Claude Code, opencode, codex) runs it — slash-command references, `$ARGUMENTS`, plugin-root paths, single-harness examples and tool names
 
@@ -26,7 +26,7 @@ Install via the lumber-mart marketplace — see the [root README](../../README.m
 |-------|-------------|-----------------|
 | `review-code` | Review code for design issues | Yes |
 | `review-tests` | Review tests for quality and coverage gaps | Yes |
-| `review-docs` | Review README and CLAUDE.md files | Yes |
+| `review-docs` | Review README and agent-instructions files (CLAUDE.md, AGENTS.md) | Yes |
 | `review-o11y` | Review logging, log levels, and error messages | Yes |
 | `review-portability` | Review skill files for agent-harness coupling | Yes |
 
@@ -34,7 +34,7 @@ Install via the lumber-mart marketplace — see the [root README](../../README.m
 
 - **review-code**: "review the code in api/", "check this code for design issues", "audit this module"
 - **review-tests**: "review the tests", "check test quality", "audit test coverage"
-- **review-docs**: "review the docs for this project", "check the documentation", "validate CLAUDE.md files"
+- **review-docs**: "review the docs for this project", "check the documentation", "validate CLAUDE.md or AGENTS.md files"
 - **review-o11y**: "review the logging", "are our logs any good", "check observability", "audit error messages", "do we log the right things"
 - **review-portability**: "review this skill", "is this skill agent-agnostic", "check the skill for Claude-only assumptions", "audit skills/ for portability"
 
