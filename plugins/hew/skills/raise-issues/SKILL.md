@@ -16,7 +16,7 @@ This skill does not run a review. If the findings are stale, re-run the review f
 
 ## Input
 
-Parse `$ARGUMENTS` for:
+Parse the input for:
 
 - **`--findings <path>`** — a JSON findings file. Preferred, and the only form that behaves
   deterministically unattended.

@@ -1,6 +1,7 @@
 ---
 name: work-issue
-description: Take a hew-tracked GitHub issue from claimed to draft PR, test-first — select from `hew ready`, claim it, branch, drive the issue's own "Done when" checklist as tests, verify, push, and open the PR with `hew pr`. Use whenever the user wants a tracked issue worked, fixed, implemented, or delivered: "work the next issue", "fix #42", "implement that bug", "pick up the next ready item", "what's ready — go do it", "fix a few bugs", "drain the backlog". Use it after /hew:raise-issues files findings, and inside any scheduled or looping agent that works a hew backlog unattended. Handles bug, task, and enhancement issues; `--batch` works several in one run and verifies them together; given an epic it descends to the next ready child rather than working the epic directly.
+description: Take a hew-tracked GitHub issue from claimed to draft PR, test-first — select from `hew ready`, claim it, branch, drive the issue's own "Done when" checklist as tests, verify, push, and open the PR with `hew pr`. Use whenever the user wants a tracked issue worked, fixed, implemented, or delivered: "work the next issue", "fix #42", "implement that bug", "pick up the next ready item", "what's ready — go do it", "fix a few bugs", "drain the backlog". Use it after the raise-issues skill files findings, and inside any scheduled or looping agent that works a hew backlog unattended. Handles bug, task, and enhancement issues; `--batch` works several in one run and verifies them together; given an epic it descends to the next ready child rather than working the epic directly.
+argument-hint: "Optional issue number, or flags: --batch [n], --non-interactive, --json <path>, --dry-run"
 ---
 
 # Work Issue
@@ -14,7 +15,7 @@ tests rather than trailing them.
 
 The `hew prime` primer — injected at session start — already carries the workflow, the
 conventions, and the command surface. This skill assumes it and does not restate it. If it is
-not in context, the SessionStart hook is per-repo and optional: run `hew prime` first.
+not in context, the injection is per-repo and optional: run `hew prime` first.
 
 Two of its rules do the most work here, and both are easy to undo by accident:
 
@@ -30,7 +31,7 @@ delete the only coordination the loop has.
 
 ## Arguments
 
-`$ARGUMENTS` may carry flags alongside an issue number. Strip the flags; what remains is the
+Your input may carry flags alongside an issue number. Strip the flags; what remains is the
 target.
 
 - **`<n>`** — work issue `n`. If it is an epic, descend to its next ready child.
@@ -80,8 +81,8 @@ human would want to make it rather than discover it was made for them.
 **An issue number:** `hew show <n> --json`. If `epic` is true, descend (below). If it is closed,
 say so and stop — reopening is a human decision.
 
-**Epic descent — only when an epic was named explicitly.** This path is reachable from
-`/hew:work-issue <n>` where `n` is an epic, never from the no-argument path above. The primer's
+**Epic descent — only when an epic was named explicitly.** This path is reachable when you are
+invoked with an explicit issue number `n` that is an epic, never from the no-argument path above. The primer's
 rule against working an epic directly leaves the question of what to do instead.
 `hew list --epic <n> --json` returns the children with `state`, `inProgress` and
 `openBlockers`. Filter to `state: "open"` — unlike a bare `hew list`, the `--epic` form returns
@@ -124,8 +125,8 @@ body:
 > than five items, is large. Work it alone and stop — it is the batch.
 
 The bound has to be set in advance because the skill cannot measure its own remaining context.
-There is no readout it can consult, and Claude Code compacts rather than failing, so a run that
-takes on too much does not error — it quietly loses detail. What it loses first is the end of
+There is no readout it can consult, and an agent compacts its context rather than failing, so a
+run that takes on too much does not error — it quietly loses detail. What it loses first is the end of
 the run, which is exactly where the integration pass lives. A combined verification performed
 against a compacted context is worse than none, because it reports a check nobody actually made.
 
@@ -196,9 +197,10 @@ issue type. Use `<prefix>/<n>-<slug>` — `bug` → `fix/`, `enhancement` → `f
 
 Where the branch comes from depends on how the session started:
 
-- **Already isolated** — a Claude Code agent worktree puts you on a branch it named itself,
-  shaped like `worktree-feat+some-task`: no issue number, no conventional prefix, so it satisfies
-  neither reader above. Do not rename it; the harness tracks that branch for its own cleanup.
+- **Already isolated** — an agent worktree puts you on a branch the harness named itself
+  (e.g. `worktree-feat+some-task` under Claude Code, `opencode/<slug>` under opencode): no issue
+  number, no conventional prefix, so it satisfies neither reader above. Do not rename it; the
+  harness tracks that branch for its own cleanup.
   Push to a well-named upstream instead, and let the names differ:
 
   ```bash

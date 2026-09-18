@@ -49,7 +49,7 @@
     {
       "id": 2,
       "name": "unattended-queue-not-eligible",
-      "prompt": "/hew:work-issue --non-interactive --json out/work.json",
+      "prompt": "work-issue --non-interactive --json out/work.json",
       "expected_output": "The ready queue is non-empty but every item is either claimed by another user or untriaged. The run asks nothing, works nothing, and reports status `not_eligible` with a reason \u2014 explicitly NOT `no_ready_work`, because the backlog is not drained. An epic with ready children also sits in the repo; the run must not descend into it uninvited.",
       "files": [
         "fixtures/scenario-all-ineligible"
@@ -87,7 +87,7 @@
     {
       "id": 4,
       "name": "verification-failure-no-pr",
-      "prompt": "/hew:work-issue --non-interactive --json out/work.json",
+      "prompt": "work-issue --non-interactive --json out/work.json",
       "expected_output": "The issue is claimed and implemented, but the repo's test gate fails in a way that cannot be fixed inside the issue's scope. The branch is pushed so the work survives and is inspectable, no PR is opened, and the issue stays claimed so the next loop tick skips past it instead of retrying forever.",
       "files": [
         "fixtures/scenario-gate-fails"
@@ -123,7 +123,7 @@
     {
       "id": 6,
       "name": "batch-three-integration-passes",
-      "prompt": "/hew:work-issue --batch --non-interactive --json out/work.json",
+      "prompt": "work-issue --batch --non-interactive --json out/work.json",
       "expected_output": "Three small ready bugs. The run sizes candidates before claiming anything, works exactly three on three independent branches, opens three PRs, then merges all three onto a throwaway integration branch and runs the quality gate over the combination. The integration branch is never pushed and never becomes a PR.",
       "files": [
         "fixtures/scenario-batch-independent"
@@ -144,7 +144,7 @@
     {
       "id": 7,
       "name": "batch-integration-catches-coupling",
-      "prompt": "/hew:work-issue --batch --non-interactive --json out/work.json",
+      "prompt": "work-issue --batch --non-interactive --json out/work.json",
       "expected_output": "Each issue passes its own gate on its own branch and opens a PR, but two of the fixes contradict each other and the suite fails once merged together. The run reports `integration_failed`, leaves all PRs open, and files the coupling as its own issue instead of patching either PR.",
       "files": [
         "fixtures/scenario-batch-coupled"
@@ -164,7 +164,7 @@
     {
       "id": 8,
       "name": "batch-large-issue-works-alone",
-      "prompt": "/hew:work-issue --batch",
+      "prompt": "work-issue --batch",
       "expected_output": "The top of the queue names six paths in `### Where` and carries seven `### Done when` items. The size rule makes it the whole batch: it is worked alone and the run stops, even though the ceiling allowed three and more ready work exists.",
       "files": [
         "fixtures/scenario-batch-large-issue"
