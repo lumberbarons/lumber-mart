@@ -1,7 +1,7 @@
 {
   "name": "runbooks",
   "description": "Skills for creating and maintaining operational runbooks with consistent structure and built-in maintenance feedback loops.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "lumberbarons"
   }

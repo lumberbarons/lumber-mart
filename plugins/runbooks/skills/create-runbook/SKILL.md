@@ -7,13 +7,9 @@ description: Creates an operational runbook from a standard template with sectio
 
 ## User Input
 
-```text
-$ARGUMENTS
-```
-
 The input describes what the runbook covers (e.g., "deploying the API to production", "rotating database credentials", "diagnosing high memory usage").
 
-If `$ARGUMENTS` is empty, ask the user what operational procedure they want to document.
+If no input was given, ask the user what operational procedure they want to document.
 
 ## Workflow
 
@@ -38,10 +34,11 @@ Use imperative verb form. Keep it concise but descriptive.
 
 ### Step 3: Scaffold the runbook
 
-Run the init script to create the file from the template:
+Run the init script to create the file from the template. The script sits in `scripts/` beside this file — resolve it against this skill's own directory rather than hardcoding an install path, which only holds for one harness's layout:
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/skills/create-runbook/scripts/init-runbook.sh <runbook-name> <target-directory>
+INIT_RUNBOOK="<this skill's directory>/scripts/init-runbook.sh"
+bash "$INIT_RUNBOOK" <runbook-name> <target-directory>
 ```
 
 This outputs JSON with `RUNBOOK_FILE` and `RUNBOOK_DIR` paths. Use `RUNBOOK_FILE` for all subsequent edits.
