@@ -10,19 +10,6 @@
   },
   "plugins": [
     {
-      "name": "specbeads",
-      "description": "Skills to make the use of spec-kit and beads streamlined.",
-      "source": "./plugins/specbeads",
-      "category": "workflow",
-      "keywords": [
-        "spec-kit",
-        "beads",
-        "specifications",
-        "task-tracking",
-        "code-review"
-      ]
-    },
-    {
       "name": "runbooks",
       "description": "Skills for creating and maintaining operational runbooks with consistent structure and built-in maintenance feedback loops.",
       "source": "./plugins/runbooks",

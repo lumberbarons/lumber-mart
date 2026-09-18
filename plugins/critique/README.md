@@ -72,17 +72,6 @@ Each skill produces a report with:
 
 No tables, no passing rows — only actionable findings.
 
-## Using with beads
-
-Critique is intentionally bead-agnostic. To file findings as beads, install the companion plugin **specbeads** and run `/raise-beads` after a review. It reads the review output from conversation context, deduplicates against existing open/closed beads, and creates bug/task beads with structured descriptions.
-
-```
-review-code src/auth/
-raise-beads
-```
-
-In environments that don't use beads, the review report is the deliverable — read it directly, or ask your agent to act on specific findings.
-
 ## Prerequisites
 
 - `python3` (for `review-docs` structural validation script)
