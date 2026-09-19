@@ -1,7 +1,7 @@
 {
   "name": "hew",
-  "description": "Skills for tracking work in GitHub Issues via the hew CLI. Files review findings as deduplicated issues using a stable review key, and takes a tracked issue — or a bounded batch of them, verified together — from claimed to draft PR test-first, driven by the issue's own acceptance checklist.",
-  "version": "2.1.0",
+  "description": "Skills for tracking work in GitHub Issues via the hew CLI. Files review findings as deduplicated issues using a stable review key (with a findings-to-plan converter for unattended filing), and takes a tracked issue — or a bounded batch of them, verified together — from claimed to draft PR test-first, driven by the issue's own acceptance checklist.",
+  "version": "2.2.0",
   "author": {
     "name": "lumberbarons"
   }

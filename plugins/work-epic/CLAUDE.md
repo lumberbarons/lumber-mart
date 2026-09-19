@@ -3,25 +3,30 @@ Skills for orchestrating a [hew](https://github.com/lumberbarons/hew) epic acros
 
 | Directory | What | When to read |
 |-----------|------|--------------|
-| `skills/work-epic/` | Fans an epic out to worker agents and reviews their PRs | Changing how the pump resolves, spawns, reaps, or reports |
-| `skills/work-epic/REFERENCE.md` | Resolver schema, prompt templates, naming, timeout budgets, report format | Changing what the pump tells its agents or how it reads them back |
+| `skills/work-epic/` | Pumps an epic: workers, reviewers, findings filing, merge pass | Changing how the pump resolves, spawns, reaps, files, merges, or reports |
+| `skills/work-epic/REFERENCE.md` | Both scripts' schemas, prompt templates, filing flow, naming, budgets, report format | Changing what the pump tells its agents or how it reads them back |
 | `skills/work-epic/scripts/resolve_ready.py` | The deterministic spawn planner | Changing which children get worked or in what order |
-| `README.md` | Plugin overview and pipeline | Understanding what work-epic does |
+| `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, update, hold, or escalate |
+| `README.md` | Plugin overview and the two modes | Understanding what work-epic does |
 
 Requires `hew` on PATH (authenticated), the `herdr` CLI, and the skills this pump drives:
-`work-issue` (hew plugin) for workers and `review-code` (critique plugin) for reviewers.
+`work-issue` (hew plugin) for workers and `review-code` (critique plugin) for reviewers;
+findings are filed through raise-issues' `findings_to_plan.py` converter.
 
-The resolver script is the spawn authority. Anything that sorts, filters, or sizes hew's output
-in the agent's head instead of running `resolve_ready.py` makes the pump un-reasonable-about from
-its logs — two runs on the same epic must produce the same plan, and the script is what makes
-that true. Changes to spawn policy belong in the script, where they are testable, not in the
-skill prose.
+The scripts are the policy layer. Anything that sorts, filters, or sizes hew's output — or
+classifies a PR's mergeability — in the agent's head instead of running `resolve_ready.py` or
+`pr_state.py` makes the pump un-reasonable-about from its logs: two runs on the same epic
+must produce the same plan, and the scripts are what make that true. Changes to spawn or
+merge policy belong in the scripts, where they are testable, not in the skill prose.
 
-The pump keeps the human gates by design: it never merges a PR, never closes an issue or epic,
-never `--force`s a claim, and never clicks through a worker's permission dialog. Removing any of
-those turns an accelerator into an unsupervised committer. The `we-`/`wr-` name prefixes are the
-ownership rule that lets several orchestrators share a repo safely — closing or reassigning an
-agent outside your own prefix breaks that.
+The pump keeps the human gates by design: it never closes an issue or epic, never `--force`s
+a claim, never clicks through a worker's permission dialog, and never resolves a merge
+conflict. Autonomous mode moves the *merge* off the human's list — bounded to this epic's
+PRs, CI green, a current review, and no finding at or above `--block-on` — not the judgement:
+P1 holds, conflicts, and ping-pong escalations all land on the human. Removing any of those
+bounds turns an accelerator into an unsupervised committer. The `we-`/`wr-` name prefixes are
+the ownership rule that lets several orchestrators share a repo safely — closing or
+reassigning an agent outside your own prefix breaks that.
 
 Worker and reviewer outcomes are read from `--json` files, never inferred from terminal output:
 herdr's settled states prove an agent stopped, the file says what happened. Pointing outcome
