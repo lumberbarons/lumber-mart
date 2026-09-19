@@ -54,7 +54,34 @@ key; `done-when` is a list, one checklist item per entry.
 {"title":"Logging: error wraps drop the cause chain","type":"bug","priority":"P2","where":"`internal/http/repo/orders.go:25`, `internal/http/repo/orders.go:34`, `internal/http/stripe/client.go:41`\n\nreview-key: o11y/error-wrap-drops-cause/internal/http","problem":"Every wrap site uses `fmt.Errorf` with `%s` and `err.Error()`, so `Unwrap` returns nil and `errors.Is` stops working.","fix":"Replace each with `fmt.Errorf(\"...: %w\", err)`.","done-when":["No `fmt.Errorf` call in `internal/http` formats an error with `%s` or `.Error()`."]}
 ```
 
-Add `"discovered-from": <n>` when re-filing a regression against a closed issue.
+Add `"discovered-from": <n>` when re-filing a regression against a closed issue. `"parent"`
+attaches the issue as an epic child and `"blocked-by"` defers it behind other issues — both
+are how pump-driven filing wires findings into an epic (a finding's fix waits for the PR it
+was found in to merge).
+
+## Converter script
+
+`scripts/findings_to_plan.py` turns a findings file into a plan deterministically — the pump
+path, where no agent hand-composes plan lines:
+
+```bash
+findings_to_plan.py <findings.json> [--parent <epic>] [--reviewed-issue <n>]
+                    [--reviewed-pr <n>] [--type bug|task] [--out FILE]
+```
+
+Per finding it emits the plan shape above, deriving `review-key: <skill>/<pattern>/<scope>`
+mechanically (scope per the table below) and appending `review-of: #<n> (PR #<pr>)` to
+`where` when `--reviewed-issue` is given. The `review-of:` marker is what the work-epic merge
+pass greps to attribute an open finding child to the PR it holds — treat it like
+`review-key:`: bare, exact, never re-rendered. Priority passes straight through, clamped to
+`P1..P4` (a P0 finding files as P1 — P0 is a human's declaration). Dedup is *not* the
+converter's job: run the Step 3 table against the emitted keys yourself before `hew apply`.
+
+A finding is skipped and counted when it lacks priority, files, fix, or pattern — the pump
+files from critique findings files, which always carry a pattern; hand-written lists go
+through the agent flow instead. The whole file is rejected when `skill` is missing, and a
+file whose `status` is `no_scope` or `error` exits 3 — nothing was reviewed, which is a
+different outcome from "reviewed, nothing found" (exit 0, empty plan).
 
 ## Deriving scope
 

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Resolve a hew epic's ready children into a deterministic fan-out plan.
 
-Read-only: runs `hew show` and `hew list --epic --json --bodies`, never writes.
+Read-only: runs `hew show`, `hew list --epic --json --bodies`, and two local
+git reads (primary worktree, origin HEAD); never writes.
 Prints one JSON object to stdout:
 
   {
     "epic": <n>, "title": "...",
+    "mainCheckout": "/abs/path",         # primary worktree: spawn/branch-update home
+    "defaultBranch": "main",             # remote HEAD of origin, when determinable
     "eligible": [ {"number", "title", "priority", "type", "where", "doneWhen",
                    "large"} ... ],        # priority-sorted, oldest tie-break
     "skipped":  [ {"number", "title", "reason", "detail"} ... ],
@@ -40,6 +43,41 @@ def run(cmd):
     if p.returncode != 0:
         fail(p.stderr.strip() or f"{' '.join(cmd)} exited {p.returncode}")
     return p.stdout
+
+
+def main_checkout():
+    """Absolute path of the repository's primary worktree, or None.
+
+    `git worktree list --porcelain` lists the main worktree first; that is
+    the checkout every other worktree hangs off, so it is where the pump
+    updates the default branch and where herdr sessions inherit cwd from.
+    """
+    p = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True
+    )
+    if p.returncode != 0:
+        return None
+    for line in p.stdout.splitlines():
+        if line.startswith("worktree "):
+            return line[len("worktree ") :] or None
+    return None
+
+
+def default_branch():
+    """Origin's HEAD branch name, or None if determinable."""
+    p = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if p.returncode != 0:
+        return None
+    name = p.stdout.strip()
+    # origin/HEAD may be unset (detached answer "origin/HEAD") or point at
+    # nothing on a fresh clone; only a real branch name is usable.
+    if not name.startswith("origin/"):
+        return None
+    return name[len("origin/") :]
 
 
 def current_user():
@@ -175,6 +213,8 @@ def main():
             {
                 "epic": int(epic_n),
                 "title": show.get("title", ""),
+                "mainCheckout": main_checkout(),
+                "defaultBranch": default_branch(),
                 "eligible": sort_eligible(eligible, raw_by_number),
                 "skipped": sorted(skipped, key=lambda s: s["number"]),
                 "counts": counts,
