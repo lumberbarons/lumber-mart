@@ -9,9 +9,10 @@ The lightspec spec pipeline: draft, approve, and file a feature spec as trackabl
 
 The format lives in `skills/draft-spec/scripts/lightspec.py`, and the format is defined twice —
 the skeleton generator and the checker. The tests in `scripts/test_lightspec.py` pin them
-together; run them when changing either. `approve-spec` and `spec-to-epic` resolve that script
-out of the draft-spec skill directory, so the two skills are coupled by layout — moving
-`lightspec.py` breaks them both.
+together; run them when changing either. That file is the source: `approve-spec` runs its own
+copy in `skills/approve-spec/scripts/`, kept identical by `scripts/sync-skill-files.sh` at the
+repo root, so edit the draft-spec copy and re-run the sync. `spec-to-epic` reads the `**Status**`
+line itself and only uses lightspec when a draft-spec install is there to find.
 
 Statuses are a closed vocabulary (`Draft`, `Accepted`, `Implemented`, `Superseded`) held shut by
 the checker; `approve-spec` is the only thing that moves a spec off `Draft`, and it must never

@@ -42,7 +42,15 @@ fits, and treat a recurring `other-` slug as the signal to extend this vocabular
 - **`plugin-root-variable`** — `${CLAUDE_PLUGIN_ROOT}` or a hardcoded install path
   (`.claude/skills/...`, `~/.config/opencode/skills/...`) reaches a plugin file. Every harness
   lays plugins out differently. Fix: resolve against the skill's own directory
-  (`"<this skill's directory>/..."`), which is true everywhere the skill runs.
+  (`"<this skill's directory>/..."`), which is true everywhere the skill runs — provided the file
+  is inside that directory; if it is not, the finding is `outside-skill-path` as well.
+- **`outside-skill-path`** — a path that climbs out of the skill's own directory to reach a file
+  the plugin keeps beside its skills (`<this skill's directory>/../../scripts/x.sh`, a
+  `[FINDINGS.md](../../FINDINGS.md)` link, "the other skill's directory"). Per-skill installers
+  (APM, anything following the Agent Skills spec) copy the skill directory and nothing around it,
+  so the file is simply not there. Fix: ship a copy inside the skill directory and resolve it from
+  there, keeping one source and syncing the copies rather than editing them by hand. Symlinks are
+  not a fix — installers filter them.
 - **`absolute-user-path`** — a machine-specific absolute path (`/Users/<name>/...`,
   `~/.apm/...`, `/home/<name>/...`). Breaks everywhere but one machine. Fix: resolve against the
   skill directory or the repo.
@@ -94,7 +102,7 @@ command" — not "the skill is portable"). Cap at about ten findings; group one 
 (one template repeated across six skills, say) as one finding listing every location, never one
 finding per copy.
 
-When `--json <path>` was given, write the findings file per [FINDINGS.md](../../FINDINGS.md)
+When `--json <path>` was given, write the findings file per [FINDINGS.md](FINDINGS.md)
 with `skill: "portability"`. `files` lists every file the finding touches — for a template repeated
 across skills, every file carrying it, because consumers derive the finding's identity from that
 list.

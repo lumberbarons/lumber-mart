@@ -18,15 +18,15 @@ What follows is only the local policy you could not infer. Prescribing the revie
 
 Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
 
-- **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](../../FINDINGS.md). Off by default; the markdown report is unchanged either way.
+- **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](FINDINGS.md). Off by default; the markdown report is unchanged either way.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
 
 ## Scope
 
-Determine the review scope before discovering files. The discovery script sits at the plugin root, two levels above this skill's directory — resolve it against that location rather than hardcoding an install path, which only holds for one harness's layout:
+Determine the review scope before discovering files. The discovery script ships in this skill's own `scripts/` directory — resolve it against this skill's directory rather than hardcoding an install path, which only holds for one harness's layout:
 
 ```bash
-DISCOVER="<this skill's directory>/../../scripts/discover-files.sh"
+DISCOVER="<this skill's directory>/scripts/discover-files.sh"
 ```
 
 - If a path was given, treat it as a path (file or directory) and run:
@@ -109,4 +109,4 @@ Produce a report following the structure in [REFERENCE.md](REFERENCE.md). Each f
 - **Fix** — concrete prescription. For an API design issue, give the exact shape: parameter names, types, signatures, not just the general approach.
 - **Done when** — a criterion verifiable by reading the diff, referencing specific functions, files or observable behaviour. "Both parseSkillFrontmatter and parseAgentFrontmatter delegate to a shared parseFrontmatterRaw; no duplicated delimiter-scanning code remains." NOT: "the duplication is removed."
 
-When `--json <path>` was given, write the findings file described in [FINDINGS.md](../../FINDINGS.md) as well. Two fields need care because nothing downstream can recover them if they are wrong: `files` must list every path a finding touches, and `pattern` must be the slug that names its root cause, taken from the vocabulary in [REFERENCE.md](REFERENCE.md). Findings you collapsed together share a root cause, so they share a slug — that pairing is what lets a later run recognise this finding as one it has already reported.
+When `--json <path>` was given, write the findings file described in [FINDINGS.md](FINDINGS.md) as well. Two fields need care because nothing downstream can recover them if they are wrong: `files` must list every path a finding touches, and `pattern` must be the slug that names its root cause, taken from the vocabulary in [REFERENCE.md](REFERENCE.md). Findings you collapsed together share a root cause, so they share a slug — that pairing is what lets a later run recognise this finding as one it has already reported.

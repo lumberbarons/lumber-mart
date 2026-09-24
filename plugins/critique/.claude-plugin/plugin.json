@@ -1,7 +1,7 @@
 {
   "name": "critique",
   "description": "Review skills for code, tests, documentation, observability, and skill portability. Finds design, coverage, doc-structure, logging/error-message, and agent-harness-coupling issues that linters miss.",
-  "version": "5.4.0",
+  "version": "5.5.0",
   "author": {
     "name": "lumberbarons"
   }
