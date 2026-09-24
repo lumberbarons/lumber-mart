@@ -8,11 +8,14 @@ import unittest
 
 from pr_state import (
     BLOCK_ON_NUM,
+    RECONCILE_FAIL_MARKER,
     REVIEW_MARKER,
     check_rollup_state,
     parse_args,
     plan_pr,
     queue_merges,
+    queue_reconciles,
+    schedule,
 )
 
 HEAD = "9f2c" + "0" * 36
@@ -24,6 +27,10 @@ FAILING = [{"status": "COMPLETED", "conclusion": "FAILURE"}]
 
 def round_comment(head=HEAD):
     return {"body": f"{REVIEW_MARKER}:\n\nclean\n\nreviewed-head: {head}"}
+
+
+def fail_comment(reason="conflict in pkg/a.go"):
+    return {"body": f"{RECONCILE_FAIL_MARKER}:\n\n{reason}"}
 
 
 def pr(draft=False, merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN,
@@ -42,9 +49,9 @@ def pr(draft=False, merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN,
 
 
 def action(p, findings=(), block_on="P1", review=True, allow_no_checks=False,
-           issue_state="open"):
+           issue_state="open", reconcile=False):
     return plan_pr(p, 21, issue_state, list(findings), BLOCK_ON_NUM[block_on],
-                   review, allow_no_checks)["action"]
+                   review, allow_no_checks, reconcile)["action"]
 
 
 class BlockOn(unittest.TestCase):
@@ -101,6 +108,111 @@ class HoldOrdering(unittest.TestCase):
     def test_behind_updates_before_re_review(self):
         p = pr(merge_state="BEHIND", comments=[round_comment(OLD)])
         self.assertEqual(action(p), "update_branch")
+
+
+class ReconcileConflicts(unittest.TestCase):
+    def test_flag_turns_a_conflict_into_reconcile(self):
+        self.assertEqual(action(pr(merge_state="DIRTY"), reconcile=True),
+                         "reconcile")
+
+    def test_without_the_flag_a_conflict_is_reported(self):
+        self.assertEqual(action(pr(merge_state="DIRTY")), "conflict")
+
+    def test_open_blocker_suppresses_the_reconciler(self):
+        # the human gate owns a held PR; the conflict is still reported
+        self.assertEqual(
+            action(pr(merge_state="DIRTY"), [{"priority": "P1"}],
+                   reconcile=True),
+            "conflict",
+        )
+
+    def test_one_failed_attempt_still_reconciles(self):
+        p = pr(merge_state="DIRTY", comments=[fail_comment()])
+        self.assertEqual(action(p, reconcile=True), "reconcile")
+
+    def test_two_failed_attempts_park_it(self):
+        p = pr(merge_state="DIRTY", comments=[fail_comment(), fail_comment()])
+        self.assertEqual(action(p, reconcile=True), "conflict")
+
+    def test_failures_are_reported(self):
+        planned = plan_pr(pr(merge_state="DIRTY", comments=[fail_comment()]),
+                          21, "open", [], 1, True, reconcile=True)
+        self.assertEqual(planned["reconcileFailures"], 1)
+
+    def test_unreadable_comments_never_reconcile(self):
+        # the attempt count lives in the comments; unknown is not zero
+        p = pr(merge_state="DIRTY")
+        p["comments"] = None
+        self.assertEqual(action(p, review=False, reconcile=True), "wait")
+
+    def test_no_review_ignores_findings_for_reconciliation(self):
+        # --no-review makes CI the only gate; findings hold nothing
+        self.assertEqual(
+            action(pr(merge_state="DIRTY"), [{"priority": "P1"}],
+                   review=False, reconcile=True),
+            "reconcile",
+        )
+
+
+class ReconcileQueue(unittest.TestCase):
+    def reconciled(self, number, **kw):
+        planned = plan_pr(pr(number=number, merge_state="DIRTY", **kw), 21,
+                          "open", [], 1, True, reconcile=True)
+        self.assertEqual(planned["action"], "reconcile")
+        return planned
+
+    def test_one_reconciler_at_a_time(self):
+        head = queue_reconciles([self.reconciled(35), self.reconciled(34)], None)
+        self.assertEqual(head, 34)
+
+    def test_siblings_queue_behind_the_reconciliation_head(self):
+        prs = [self.reconciled(34), self.reconciled(35)]
+        queue_reconciles(prs, None)
+        self.assertEqual([(p["number"], p["action"]) for p in prs],
+                         [(34, "reconcile"), (35, "queued")])
+
+    def test_no_reconciliation_while_main_is_moving(self):
+        # a merge landing mid-reconciliation would re-conflict it
+        prs = [self.reconciled(34)]
+        self.assertIsNone(queue_reconciles(prs, 99))
+        self.assertEqual(prs[0]["action"], "queued")
+
+    def test_live_reconciler_keeps_the_head(self):
+        # wc-36 is still working and #34 conflicts too: no second reconciler
+        prs = [self.reconciled(36), self.reconciled(34)]
+        self.assertEqual(schedule(prs, {36}), (None, 36))
+        self.assertEqual([(p["number"], p["action"]) for p in prs],
+                         [(36, "wait"), (34, "queued")])
+
+    def test_live_reconciler_holds_the_merge_queue(self):
+        # a merge landing mid-reconciliation would re-conflict it
+        ready = plan_pr(pr(number=35, comments=[round_comment()]), 22, "open",
+                        [], 1, True, reconcile=True)
+        self.assertEqual(ready["action"], "merge")
+        prs = [self.reconciled(36), ready]
+        self.assertEqual(schedule(prs, {36}), (None, 36))
+        self.assertEqual(ready["action"], "queued")
+
+    def test_live_reconciler_waits_whatever_github_says(self):
+        # pushed but not yet reaped: the pump reads the outcome first
+        pushed = plan_pr(pr(number=36, draft=True, head="1d7e" + "0" * 36,
+                            comments=[round_comment()]),
+                         21, "open", [], 1, True, reconcile=True)
+        self.assertEqual(pushed["action"], "re_review")
+        schedule([pushed], {36})
+        self.assertEqual(pushed["action"], "wait")
+
+    def test_schedule_without_live_reconcilers_queues_merges_first(self):
+        ready = plan_pr(pr(number=35, comments=[round_comment()]), 22, "open",
+                        [], 1, True, reconcile=True)
+        prs = [self.reconciled(34), ready]
+        self.assertEqual(schedule(prs, set()), (35, None))
+        self.assertEqual(prs[0]["action"], "queued")
+
+    def test_conflicts_without_the_flag_are_not_touched(self):
+        p = plan_pr(pr(merge_state="DIRTY"), 21, "open", [], 1, True)
+        self.assertIsNone(queue_reconciles([p], None))
+        self.assertEqual(p["action"], "conflict")
 
 
 class Freshness(unittest.TestCase):
@@ -207,11 +319,26 @@ class Args(unittest.TestCase):
     def test_flags_after_epic_number(self):
         # the skill's own invocation order
         self.assertEqual(parse_args(["12", "--block-on", "none", "--no-review"]),
-                         ("12", None, "none", False, False))
+                         ("12", None, "none", False, False, False, frozenset()))
 
     def test_flags_before_epic_number(self):
         self.assertEqual(parse_args(["--allow-no-checks", "--repo", "o/r", "12"]),
-                         ("12", "o/r", "P1", True, True))
+                         ("12", "o/r", "P1", True, True, False, frozenset()))
+
+    def test_resolve_conflicts_flag(self):
+        self.assertEqual(parse_args(["12", "--resolve-conflicts"]),
+                         ("12", None, "P1", True, False, True, frozenset()))
+
+    def test_reconciling_is_repeatable(self):
+        # one per live wc-<pr> agent
+        parsed = parse_args(["12", "--resolve-conflicts", "--reconciling", "36",
+                             "--reconciling", "40"])
+        self.assertEqual(parsed[-1], frozenset({36, 40}))
+
+    def test_reconciling_needs_a_pr_number(self):
+        with self.assertRaises(SystemExit) as e:
+            parse_args(["12", "--reconciling", "wc-36"])
+        self.assertEqual(e.exception.code, 2)
 
 
 class NoReview(unittest.TestCase):
