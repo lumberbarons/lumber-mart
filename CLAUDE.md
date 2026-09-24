@@ -5,6 +5,8 @@ A Claude Code plugin marketplace hosting plugins for hardware and workflow devel
 | `plugins/` | Plugin source directories | Adding or modifying a plugin |
 | `.claude-plugin/` | Marketplace metadata | Changing marketplace config or plugin listings |
 | `README.md` | Project overview and quick start | Understanding what lumber-mart is |
+| `scripts/` | Repo tooling: `sync-skill-files.sh` copies files shared by several skills into each skill directory | Editing a file more than one skill ships, or adding one |
+| `.github/` | CI: checks shared skill files match their sources | Changing what CI enforces |
 | `LICENSE` | MIT license | Checking license terms |
 
 Changing a plugin means bumping its `version` in `plugins/<name>/.claude-plugin/plugin.json`, in

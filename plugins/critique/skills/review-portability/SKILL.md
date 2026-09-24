@@ -22,7 +22,7 @@ Your input may carry flags alongside a path. Strip the flags first; whatever rem
 — a skill directory, a plugin's `skills/` directory, or a single file.
 
 - **`--json <path>`** — additionally write a findings file at that path, per
-  [FINDINGS.md](../../FINDINGS.md) with `skill: "portability"`. Off by default.
+  [FINDINGS.md](FINDINGS.md) with `skill: "portability"`. Off by default.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report
   the outcome and stop.
 
@@ -42,14 +42,16 @@ into six skills is one finding with six locations. For each file:
 
 1. **Scan for the mechanical constructs first** — slash-command forms (`/plugin:skill`),
    `$ARGUMENTS`, `${CLAUDE_PLUGIN_ROOT}`, install paths (`.claude/`, `~/.config/opencode/`),
-   machine-absolute paths (`/Users/...`, `~/.apm/...`). These are cheap to grep and mostly P1.
+   machine-absolute paths (`/Users/...`, `~/.apm/...`), and paths that climb out of the skill's
+   own directory (`../`). These are cheap to grep and mostly P1.
 2. **Then read for the judgement calls** — tool names one harness owns, examples only its users
    can follow, claims about what agents read or do that are true of one harness, registration
    instructions aimed at one instructions file. Consult the [REFERENCE.md](REFERENCE.md)
    vocabulary and, critically, its not-flagging list before writing a finding down.
 3. **Verify the fix is real.** For every finding, confirm the replacement phrasing actually
    works on the harnesses you are fixing for — "resolve against this skill's own directory"
-   only fixes `${CLAUDE_PLUGIN_ROOT}` if the referenced file is reachable relative to the skill.
+   only fixes `${CLAUDE_PLUGIN_ROOT}` if the referenced file is inside the skill's own directory,
+   because a per-skill installer copies that directory and nothing around it.
 
 Severity follows what happens on the other harness (P1 breaks it, P2 degrades it, P3 is flavour)
 — the ladder and boundary cases are in [REFERENCE.md](REFERENCE.md).
@@ -75,6 +77,6 @@ include:
   slash command." NOT: "the skill is portable."
 
 When `--json <path>` was given, write the findings file described in
-[FINDINGS.md](../../FINDINGS.md) as well. `files` must list every file a finding touches — a
+[FINDINGS.md](FINDINGS.md) as well. `files` must list every file a finding touches — a
 template repeated across skills is one finding naming all of them, because that list is what
 downstream consumers derive the finding's identity from.

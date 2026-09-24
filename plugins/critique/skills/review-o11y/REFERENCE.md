@@ -87,7 +87,7 @@ The detected-conventions block uses bullets, not tables. Findings are prose, not
 
 ## Pattern slugs
 
-The `pattern` field of a findings file (see [FINDINGS.md](../../FINDINGS.md)) names a finding's
+The `pattern` field of a findings file (see [FINDINGS.md](FINDINGS.md)) names a finding's
 root cause. Consumers use it as part of a finding's identity across runs, so it has to be stable
 between them — a slug that drifts from one phrasing to another reads as a new finding and gets
 filed twice. Pick from this list; use `other-<slug>` when nothing fits, and treat a recurring

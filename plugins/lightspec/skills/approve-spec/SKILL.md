@@ -19,16 +19,12 @@ author who approves their own work has not been reviewed.
 
 ## The script
 
-The format is owned by `lightspec.py`, which ships with the **draft-spec**
-skill — normally a sibling directory. Resolve it once:
+The format is owned by `lightspec.py` — the same script draft-spec uses, with a
+copy in this skill's own `scripts/` directory. Resolve it once:
 
 ```bash
-LIGHTSPEC="<the draft-spec skill's directory>/scripts/lightspec.py"
+LIGHTSPEC="<this skill's directory>/scripts/lightspec.py"
 ```
-
-If draft-spec is not installed, say so and stop. Without it you cannot verify
-shape or record a verdict, and approving on vibes is the failure this skill
-exists to prevent.
 
 ## 1. Find the spec
 
