@@ -9,8 +9,8 @@ Turn structured review findings into hew issues, deduplicated by a stable key so
 finding does not get filed twice when a review runs again.
 
 > [!IMPORTANT]
-> [REFERENCE.md](REFERENCE.md) carries slug handling, the findings and plan-file shapes, and a
-> worked example. Read it before computing keys.
+> [REFERENCE.md](REFERENCE.md) carries slug handling, the findings and plan-file shapes, the
+> converter script, and a worked example. Read it before computing keys.
 
 This skill does not run a review. If the findings are stale, re-run the review first.
 
@@ -120,7 +120,20 @@ that line.
 
 ## Step 5 — Write a plan, then apply it
 
-Write every surviving finding to a JSONL plan (shape in REFERENCE.md) and apply it:
+When the input is a findings *file* — the unattended case, and the one pump-driven filing
+uses — produce the plan with the converter rather than by hand:
+
+```bash
+uv run --no-project <this skill's directory>/scripts/findings_to_plan.py <findings.json> \
+  [--parent <epic>] [--reviewed-issue <n>] [--reviewed-pr <n>] [--at-or-above Pn] --out plan.jsonl
+```
+
+It derives the review keys and scopes mechanically, emits the plan shape below, stamps
+`review-of: #<n>` (the marker downstream merge-pass tooling greps for), and skips malformed
+findings with a count. Deduplication stays yours — run the Step 3 table against the emitted
+keys and delete suppressed lines before applying.
+
+Otherwise write every surviving finding to a JSONL plan (shape in REFERENCE.md) and apply it:
 
 ```bash
 hew apply findings-plan.jsonl --dry-run    # always first
