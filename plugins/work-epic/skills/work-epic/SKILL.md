@@ -1,7 +1,7 @@
 ---
 name: work-epic
-description: Pump a hew epic end to end with herdr-managed agents — resolve the epic's ready children, spawn one worker agent per child running work-issue, review each delivered PR with a reviewer agent running review-code, file the findings as epic children, and merge PRs once CI is green. Autonomous mode (the default) merges on green; `--human-review` stops at drafts and leaves every merge to a human. Use whenever the user wants an epic worked by orchestrating agents — "work on this epic", "drain epic 12", "orchestrate #42", "fan out this epic to workers", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
-argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --max-open-prs N (default 2 × workers), --kind opencode|codex, --dry-run, --no-review, --allow-no-checks, --resume"
+description: Pump a hew epic end to end with herdr-managed agents — resolve the epic's ready children, spawn one worker agent per child running work-issue, review each delivered PR with a reviewer agent running review-code, file the findings as epic children, and merge PRs once CI is green — delegating conflicts to a reconciler agent under `--resolve-conflicts`. Autonomous mode (the default) merges on green; `--human-review` stops at drafts and leaves every merge to a human. Use whenever the user wants an epic worked by orchestrating agents — "work on this epic", "drain epic 12", "orchestrate #42", "fan out this epic to workers", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
+argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --max-open-prs N (default 2 × workers), --kind opencode|codex, --dry-run, --no-review, --allow-no-checks, --resolve-conflicts, --resume"
 ---
 
 # Work Epic
@@ -17,16 +17,19 @@ work. `--human-review` restores the older contract: every PR stays a draft and e
 is a human's click.
 
 **Hard gates, in every mode.** The pump never closes an issue or an epic, never
-force-claims, never answers a worker's dialog, never resolves a merge conflict, never fixes
-a finding into the PR it came from, and never merges a PR outside the epic it was given.
-Escalations reach the human through `herdr notification show`; the pump stops and reports
-rather than route around a gate. Autonomous mode moved the *merge* off the human's list, not
-the judgement.
+force-claims, never answers a worker's dialog, never edits a conflicted branch itself, never
+fixes a finding into the PR it came from, and never merges a PR outside the epic it was
+given. Without `--resolve-conflicts` a conflict is filed and escalated like any other human
+gate; with it, the edit is delegated to a reconciler agent and its new head earns its own
+review round — the pump itself never reconciles one. Escalations reach the human through
+`herdr notification show`; the pump stops and reports rather than route around a gate.
+Autonomous mode moved the *merge* off the human's list, not the judgement.
 
 > [!IMPORTANT]
-> [REFERENCE.md](REFERENCE.md) carries the scripts' output schemas, the worker and reviewer
-> prompt templates, the review-round comment, the findings-filing flow, naming rules, timeout
-> budgets, the merge-pass command list, and the report format. Read it before the reaping step.
+> [REFERENCE.md](REFERENCE.md) carries the scripts' output schemas, the worker, reviewer, and
+> reconciler prompt templates, the review-round and reconciliation comments, the
+> findings-filing flow, naming rules, timeout budgets, the merge-pass command list, and the
+> report format. Read it before the reaping step.
 
 ## The scripts
 
@@ -88,6 +91,13 @@ Strip flags; what remains is the epic number.
 - **`--allow-no-checks`** — treat a PR with no CI checks at all as green. Without it, "no
   checks" reads as "CI has not reported yet", which is what it usually means straight after a
   push. Only for repositories that genuinely have no CI, and only on explicit instruction.
+- **`--resolve-conflicts`** — delegate a PR's conflict with the default branch to a reconciler
+  agent (`wc-<pr>`) instead of filing and parking it. Off by default: the human gate stands
+  unless a run is told otherwise. One reconciler at a time, only while the merge queue is idle
+  (a merge landing mid-reconciliation would re-conflict it), occupying a `--workers` slot, and
+  refused together with `--merge-method rebase` — the reconciliation is a hand-edited merge
+  commit and a rebase-and-merge would drop its edits. A resolved head is un-readied and
+  re-reviewed; two failed attempts park the PR for the human like any other conflict.
 - **`--resume`** — pass through to the resolver to pick up this user's own claims that have
   neither a PR nor a pushed branch — a crashed earlier run. Explicit instruction only.
 
@@ -124,8 +134,9 @@ requires. Do not close it here.
 herdr agent list
 ```
 
-Live workers are the agents this orchestrator spawned, named `we-<issue>` (reviewers: `wr-<pr>`).
-Open slots are the smaller of `--workers` minus live `we-*` names and the resolver's
+Live writers are the agents this orchestrator spawned, named `we-<issue>` (reconcilers:
+`wc-<pr>`); reviewers (`wr-<pr>`) don't count. Open slots are the smaller of `--workers` minus
+live `we-*` and `wc-*` names and the resolver's
 `spawnBudget` — the room left under `--max-open-prs` once open PRs and workers in flight are
 counted. If reaping hasn't freed a worker slot, wait on the live set (Step 4); if the budget is
 zero, spawn nothing and go to the merge pass (Step 6) — the backlog drains before it grows.
@@ -204,7 +215,8 @@ available) costs only that child — continue with the rest and report it.
 ## Step 4 — Reap settled workers
 
 For each live worker, wait for a settled state per the budget rules in
-[REFERENCE.md](REFERENCE.md):
+[REFERENCE.md](REFERENCE.md). A live reconciler (`wc-<pr>`, spawned by Step 6's `reconcile`
+row) waits the same way; its outcome table lives in Step 6:
 
 ```bash
 herdr agent wait we-<n>   # re-loop on timeout while state is still `working`
@@ -300,7 +312,8 @@ Every open PR of this epic goes through `pr_state.py` — not only this run's de
 delivered by earlier runs or other orchestrators are merged by the same plan or left alone:
 
 ```bash
-uv run --no-project "$PRSTATE" <epic-n> --block-on <block-on> [--no-review] [--allow-no-checks]
+uv run --no-project "$PRSTATE" <epic-n> --block-on <block-on> [--no-review]
+  [--allow-no-checks] [--resolve-conflicts]
 ```
 
 Execute each PR's `action` exactly as classified — the planner is the decision, the pass is
@@ -311,10 +324,11 @@ the hands (commands, CI-wait budgets, and merge-failure handling in
 |---|---|
 | `merge` | `gh pr merge --<merge-method> --delete-branch`; notify; then fast-forward main (below) |
 | `mark_ready` | `gh pr ready` — a draft's merge state reads `DRAFT` until then, hiding `BEHIND` or `BLOCKED`; the next pass sees the real state |
-| `update_branch` | `gh pr update-branch <pr>` — GitHub merges the default branch in server-side; a failure there is a `conflict`, never resolved by hand |
-| `queued` | nothing; it waits its turn behind `queueHead` and spends no CI budget of its own |
+| `update_branch` | `gh pr update-branch <pr>` — GitHub merges the default branch in server-side; a failure re-runs the planner, whose next pass sees `DIRTY` and hands it to `reconcile` under `--resolve-conflicts` (or to `conflict`) |
+| `reconcile` | spawn a reconciler agent (`wc-<pr>`, prompt in [REFERENCE.md](REFERENCE.md)) for the planner's single `reconcileHead`; the planner emits one only while `queueHead` is null |
+| `queued` | nothing; it waits its turn behind `queueHead` or behind the reconciliation head, and spends no CI budget of its own |
 | `re_review` | spawn a fresh reviewer (Step 5) for the new head |
-| `conflict` | file the coupling (`hew search` first, then `hew create --discovered-from <n>`), notify, leave the PR — never resolve a conflict into a PR a human hasn't seen |
+| `conflict` | file the coupling (`hew search` first, then `hew create --discovered-from <n>`), notify, leave the PR — the pump never reconciles one itself, so without `--resolve-conflicts` or after two failed attempts it parks here |
 | `hold` | notify; the human lifts it by closing the finding child — once fixed on the branch, or accepted as is. Fixing the branch alone does not lift it, and the pump never un-holds |
 | `escalate` | notify; two review rounds produced no convergence — a third automated round is spam, not diligence |
 | `protected` | notify; branch protection wants something the pump cannot give (typically an approving review) |
@@ -329,6 +343,30 @@ is the planner's own count of default-branch commits a PR lacks (`behindBy`), no
 rule a stale PR reads `CLEAN`. So every merge is of a PR whose CI ran on current main,
 whatever the repository's protection settings. Drafts and held PRs are never updated: they are
 not next to merge, and moving a draft's head spends a review round.
+
+**Resolving conflicts (`--resolve-conflicts`).** The planner emits at most one `reconcile` —
+its `reconcileHead` — and only while `queueHead` is `null`: a merge landing mid-reconciliation
+would re-conflict it. Spawn `wc-<pr>` for it exactly like a worker of the same kind (Step 3's
+isolation and prompt shapes, outcome file `$OUTDIR/wc-<pr>.json`) and reap it with Step 4's
+loop; a live `wc-<pr>` stops a second spawn, and a reconciler occupies a `--workers` slot
+while it runs. The prompt is the reconciler's whole contract: it merges `origin/$DEFAULT`
+(freshly fetched) into the PR branch, reconciles both sides' intent, runs the gate, and pushes
+— never `$MAIN`, never `--force`, never rebase. Then, from its outcome file:
+
+- **`resolved`** — verify the outcome's `head` is the PR's new head
+  (`gh pr view <pr> --json headRefOid`); a mismatch is an escalation, not a merge. Post the
+  success comment, then `gh pr ready --undo <pr>` unless the PR is already a draft or
+  `--no-review` is on. The next pass sees a stale draft and `re_review` puts the new head
+  through a fresh reviewer — nothing reconciled merges without that round. Notify, close the
+  tab (a codex reconciler's worktree with it, `worktree remove --force`: the agent changes
+  nothing worth keeping beyond the pushed commit).
+- **`irreconcilable` / `failed`** — post the failure comment, which is what `pr_state.py`
+  counts; after two, the PR parks on `conflict`. Do that row's filing and notification, and
+  leave the branch alone.
+- **`error` / missing file** — the worker rules: escalate, spawn nothing new.
+
+An outcome that could not reconcile both sides' intent, or that fails the gate, is
+`irreconcilable`, not a guess: the pump files the coupling and the human decides.
 
 Notify once per PR per action, not on every pass. After any merge, fast-forward the main
 checkout the same way as Step 3 (branch check included), so the next spawn wave and every new
@@ -382,7 +420,8 @@ tracker, merges unblock children between visits, and findings filed as children 
 merge closes it).
 
 The pump stops when all of these hold: nothing can spawn (the resolver's `eligible` is empty,
-or its `spawnBudget` is zero), no `we-*` or `wr-*` agent is in flight, and every open PR is
+or its `spawnBudget` is zero), no `we-*`, `wr-*`, or `wc-*` agent is in flight and no
+`reconcile` is waiting for a free writer slot, and every open PR is
 parked — `hold`, `escalate`, `conflict`, `protected`, a `wait` that has spent its CI budget,
 or `queued` behind a head that is one of those. A `wait` still inside its budget is still
 moving; keep polling it rather than stopping around it. A stop with eligible children and a
@@ -391,8 +430,9 @@ zero budget is a full backlog of parked PRs — say so; it clears only when a hu
 Then report:
 
 - per worker: issue, outcome, PR number, reviewer verdict, findings filed
-- per merge-pass action: PR, what was done (merged / updated / queued / held / conflicted /
-  protected)
+- per reconciler: PR, outcome, gate result, new head, and whether re-review was spawned
+- per merge-pass action: PR, what was done (merged / updated / queued / reconciled / held /
+  conflicted / protected)
 - per skip: number and reason (blocked/untriaged/claimed/in_review/stalled), from the resolver's last pass
 - `hew epic status <epic>` — the progress line the human reads
 - remaining `eligible` count, `spawnBudget`, and open-PR count, so "stopped" is
@@ -415,9 +455,16 @@ Then report:
   that saw current main
 - `gh pr merge --admin`, merging with failing checks, or merging a PR the planner held
 - Checking out a PR branch, or running the integration merges, in `$MAIN` — `update_branch` is
-  `gh pr update-branch`, reviewers and the integration pass get their own worktree
+  `gh pr update-branch`; reviewers, reconcilers, and the integration pass get their own worktree
 - Fast-forwarding `$MAIN` when it is not on the default branch
-- Auto-resolving a `DIRTY` merge, rebasing main, or force-pushing a PR branch
+- Reconciling a `DIRTY` merge by hand — the planner's `reconcile` row owns the edit, and only
+  under `--resolve-conflicts`
+- Rebasing main, or force-pushing a PR branch — a reconciliation is a fast-forward push of a
+  merge commit
+- Spawning a second reconciler, or resolving while the merge queue is moving main — the planner
+  emits at most one, and only for an idle queue
+- Merging a reconciled head before its fresh review round, or running `--resolve-conflicts`
+  with `--merge-method rebase` — a rebase-and-merge drops the reconciliation's edits
 - Fixing reviewer findings into the PR that produced them, or re-reviewing past two rounds
 - Filing findings without the converter (hand-composed bodies lose the `review-of:` marker
   the merge pass keys holds off) — run `findings_to_plan.py`, then dedup, then `hew apply`

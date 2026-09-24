@@ -27,7 +27,13 @@ and a `reviewed-head: <sha>` line; those comments are the round count.
 
 Actions, in decision order (first match wins):
   wait            issue closed, or the PR's comments could not be read
-  conflict        mergeState DIRTY or mergeable CONFLICTING — never auto-resolve
+  reconcile       mergeState DIRTY or mergeable CONFLICTING with
+                  --resolve-conflicts, no review-enforced blocker open, and
+                  fewer than two failed attempts recorded — a reconciler
+                  agent merges the default branch in and reconciles the
+                  conflict
+  conflict        mergeState DIRTY or mergeable CONFLICTING — escalated to the
+                  human, never resolved by hand
   escalate        two review rounds and a blocking finding is still open
   hold            a blocking finding is open — human gate
   update_branch   ready PR behind the default branch (behindBy > 0, or
@@ -62,8 +68,13 @@ current and waiting on its checks (its CI is the one that counts); else the
   queued          waiting its turn behind `queueHead` — no action, and no CI
                   budget: it moves when the head merges or parks
 
+Reconciliations are scheduled the same way: at most one `reconcile` survives,
+only while `queueHead` is null (a merge landing mid-reconciliation would
+re-conflict it), the lowest-numbered candidate; every other candidate becomes
+`queued` too.
+
 Usage: pr_state.py <epic-number> [--repo owner/name] [--block-on P1|P2|none]
-                   [--no-review] [--allow-no-checks]
+                   [--no-review] [--allow-no-checks] [--resolve-conflicts]
 Exit: 0 ok (prs may be empty) · 1 runtime error · 2 usage error / not an epic
 """
 
@@ -83,6 +94,8 @@ from repo_state import (
 
 REVIEWED_HEAD_RE = re.compile(r"reviewed-head:\s*([0-9a-f]{7,40})")
 REVIEW_MARKER = "review-code findings (work-epic reviewer agent)"
+RECONCILE_FAIL_MARKER = "work-epic conflict reconciliation failed (reconciler agent)"
+MAX_RECONCILE_ATTEMPTS = 2
 FINDING_MARKER_RE = re.compile(r"review-of: #(\d+)\b")
 PRIORITY_RE = re.compile(r"^P(\d+)$")
 
@@ -159,13 +172,14 @@ def findings_by_issue(children):
 
 
 def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
-            allow_no_checks=False):
+            allow_no_checks=False, reconcile=False):
     """Decision table for one matched PR. First match wins.
 
     `pr["comments"]` is None when the comments could not be read — the review
     state is then unknown, which is never a reason to act. `pr["behindBy"]`
     is the compare API's count of default-branch commits the head lacks, None
-    when unknown.
+    when unknown. `reconcile` enables the reconciler-agent action; without it
+    a conflict is always reported for the human.
     """
     comments = pr.get("comments")
     rounds = [
@@ -176,6 +190,10 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
     if rounds:
         m = REVIEWED_HEAD_RE.search(rounds[-1].get("body") or "")
         reviewed_head = m.group(1) if m else None
+    reconcile_failures = sum(
+        1 for c in comments or []
+        if RECONCILE_FAIL_MARKER in (c.get("body") or "")
+    )
 
     worst = None
     if findings:
@@ -206,6 +224,7 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
         "behindBy": behind_count,
         "reviewRounds": review_rounds,
         "reviewedHead": reviewed_head,
+        "reconcileFailures": reconcile_failures,
         "worstOpenFinding": worst,
     }
 
@@ -220,6 +239,9 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
     if review and comments is None:
         return act("wait", "PR comments unreadable — review state unknown")
     if merge_state == "DIRTY" or mergeable == "CONFLICTING":
+        if (reconcile and not (review and blocking)
+                and reconcile_failures < MAX_RECONCILE_ATTEMPTS):
+            return act("reconcile", "reconciler agent merges the base branch in")
         return act("conflict")
     if review and review_rounds >= 2 and blocking:
         return act("escalate", "two review rounds, blocking finding still open")
@@ -275,10 +297,36 @@ def queue_merges(prs):
     return head["number"]
 
 
+def queue_reconciles(prs, merge_head):
+    """Let at most one reconciler run, and only while nothing moves toward main.
+
+    A merge landing mid-reconciliation re-conflicts it, and reconciliations
+    done side by side are invalidated by the first merge; so the
+    lowest-numbered `reconcile` survives only when `merge_head` is None, and
+    every other candidate waits its turn. Mutates in place and returns the
+    reconciliation head's number, or None when no reconciler should run.
+    """
+    candidates = [p for p in prs if p["action"] == "reconcile"]
+    if not candidates:
+        return None
+    if merge_head is not None:
+        for p in candidates:
+            p["action"] = "queued"
+            p["note"] = f"queued behind PR #{merge_head}"
+        return None
+    head = min(candidates, key=lambda p: p["number"])
+    for p in candidates:
+        if p is not head:
+            p["action"] = "queued"
+            p["note"] = f"queued behind reconciliation of PR #{head['number']}"
+    return head["number"]
+
+
 def parse_args(args):
     """Flags in any position — the skill passes them after the epic number."""
     args = list(args)
     repo, block_on, review, allow_no_checks = None, BLOCK_ON, True, False
+    reconcile = False
     positional = []
     while args:
         a = args.pop(0)
@@ -292,6 +340,8 @@ def parse_args(args):
             block_on = args.pop(0)
         elif a == "--no-review":
             review = False
+        elif a == "--resolve-conflicts":
+            reconcile = True
         elif a == "--allow-no-checks":
             allow_no_checks = True
         else:
@@ -299,13 +349,14 @@ def parse_args(args):
     if len(positional) != 1 or not positional[0].isdigit():
         fail(
             "usage: pr_state.py <epic-number> [--repo owner/name] "
-            "[--block-on P1|P2|none] [--no-review] [--allow-no-checks]",
+            "[--block-on P1|P2|none] [--no-review] [--allow-no-checks] "
+            "[--resolve-conflicts]",
             2,
         )
-    return positional[0], repo, block_on, review, allow_no_checks
+    return positional[0], repo, block_on, review, allow_no_checks, reconcile
 
 
-def plan(epic_n, repo, block_on, review, allow_no_checks):
+def plan(epic_n, repo, block_on, review, allow_no_checks, reconcile):
     suffix = ["--repo", repo] if repo else []
     gh_suffix = ["-R", repo] if repo else []
 
@@ -356,9 +407,11 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
                 BLOCK_ON_NUM[block_on],
                 review,
                 allow_no_checks,
+                reconcile,
             )
         )
     queue_head = queue_merges(prs_out)
+    reconcile_head = queue_reconciles(prs_out, queue_head)
     counts = {}
     for p in prs_out:
         counts[p["action"]] = counts.get(p["action"], 0) + 1
@@ -371,6 +424,7 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
         "defaultBranch": default,
         "mainCheckout": main_checkout(),
         "queueHead": queue_head,
+        "reconcileHead": reconcile_head,
         "prs": prs_out,
         "unmatched": sorted(unmatched, key=lambda u: u["number"]),
         "counts": counts,
@@ -378,9 +432,11 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
 
 
 def main():
-    epic_n, repo, block_on, review, allow_no_checks = parse_args(sys.argv[1:])
+    epic_n, repo, block_on, review, allow_no_checks, reconcile = parse_args(
+        sys.argv[1:]
+    )
     try:
-        out = plan(epic_n, repo, block_on, review, allow_no_checks)
+        out = plan(epic_n, repo, block_on, review, allow_no_checks, reconcile)
     except CommandError as e:
         fail(str(e))
     print(json.dumps(out, indent=2))
