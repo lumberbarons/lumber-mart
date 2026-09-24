@@ -54,6 +54,10 @@ If the check fails, say so and stop — do not spawn agents into a session you c
 herdr skill should be in context; if not, run `herdr --skill` first and follow its CLI-discovery
 rule (`--help` over probing).
 
+Every agent this run spawns opens as a tab in the orchestrator's own workspace,
+`$HERDR_WORKSPACE_ID`, so a run occupies one sidebar entry however many agents it fans out.
+Closing that workspace ends every agent in it — leave it open until the pump reports.
+
 `hew` on PATH and authenticated — exit code 4 from any `hew` command means run `gh auth login`,
 and here that halts the whole pump as an `error`, not as an empty queue.
 
@@ -126,7 +130,7 @@ Open slots are the smaller of `--workers` minus live `we-*` names and the resolv
 counted. If reaping hasn't freed a worker slot, wait on the live set (Step 4); if the budget is
 zero, spawn nothing and go to the merge pass (Step 6) — the backlog drains before it grows.
 Name-ownership is also the coordination rule:
-**never close or reassign agents/workspaces you did not spawn**. Agent names are unique within
+**never close or reassign agents/tabs you did not spawn**. Agent names are unique within
 a herdr server, so a live `we-<n>` stops a second orchestrator there from spawning the same
 child; across users, `hew start`'s exit-3 lock arbitrates. Two orchestrators sharing one gh
 login in different herdr servers have neither guard — `hew start` answers them exit 5, "the
@@ -155,24 +159,33 @@ git -C "$MAIN" merge --ff-only "origin/$DEFAULT"
 A failed ff-only means the local default branch has diverged — escalate; never rebase or
 reset it.
 
-For each eligible child up to the open slots:
-
-```bash
-# opencode workers: spawn in the main checkout; the opencode-worktree plugin isolates the session
-herdr workspace create --cwd "$MAIN" --label "we-<n>" --no-focus
-# codex workers: explicit isolation, since there is no plugin catching them
-herdr worktree create --cwd "$MAIN" --label "we-<n>" --no-focus
-```
-
-Read the pane id from the creation response (`workspace create` documents
-`.result.root_pane.pane_id`; for the worktree variant, read the new pane from the JSON response
-rather than predicting its shape — same rule the herdr skill applies to all IDs).
-Prepare the outcome path, then start and prompt:
+Prepare the outcome path once per run:
 
 ```bash
 TMP="${TMPDIR:-/tmp}"; TMP="${TMP%/}"
 OUTDIR="$TMP/opencode/work-epic-<epic-n>"
 mkdir -p "$OUTDIR"
+```
+
+For each eligible child up to the open slots, open a tab in the orchestrator's workspace:
+
+```bash
+# opencode workers: spawn in the main checkout; the opencode-worktree plugin isolates the session
+herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$MAIN" --label "we-<n>" --no-focus
+# codex workers: explicit isolation, since there is no plugin catching them
+git -C "$MAIN" worktree add --detach "$OUTDIR/wt/we-<n>" "origin/$DEFAULT"
+herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$OUTDIR/wt/we-<n>" --label "we-<n>" --no-focus
+```
+
+The codex worktree starts detached, so `work-issue` takes its not-isolated path and branches
+off the default branch itself. `herdr worktree create` is not used: it opens every worktree as
+a workspace of its own, which is the sidebar sprawl tabs avoid.
+
+Read the tab id (`.result.tab`) and the pane id (`.result.root_pane.pane_id`) from the creation
+response rather than predicting their shape — same rule the herdr skill applies to all IDs.
+Keep the tab id: it is what Step 4 closes. Then start and prompt:
+
+```bash
 herdr agent start we-<n> --kind <kind> --pane <pane-id>
 herdr agent prompt we-<n> "<prompt from REFERENCE.md, pointing at
   work-issue <n> --non-interactive --json '$OUTDIR/we-<n>.json'>"
@@ -205,12 +218,16 @@ What settled means, per state:
 
   | outcome | action here |
   |---|---|
-  | `delivered` | note the PR for Step 5; close the workspace |
+  | `delivered` | note the PR for Step 5; close the tab |
   | `failed` | report; leave the issue claimed; do **not** respawn it — its pushed branch makes it `stalled` on every later resolver pass |
   | `no_ready_work` / `not_eligible` | report verbatim, with the skipped counts — a queue of issues claimed by a dead agent reads as drained and hides the stall |
   | `error` | **halt the pump**: finish reaping what's live, spawn nothing new, escalate — un-auth or dirty trees are an outage, not an empty queue |
 
-  On any settled read: `herdr workspace close <id>` — but only a workspace this run created.
+  On any settled read: `herdr tab close <tab-id>` — but only a tab this run created. For a
+  codex worker, then `git -C "$MAIN" worktree remove "$OUTDIR/wt/we-<n>"`, without `--force`:
+  a refusal means uncommitted work, so leave the checkout and report its path. Removing it also
+  frees the worker's branch — git will not check a branch out in two worktrees, and the
+  reviewer's `gh pr checkout` needs it.
 
 - **`blocked`** — the agent sits at a permission/question dialog. Notify rather than answer:
 
@@ -222,7 +239,8 @@ What settled means, per state:
   worker and buries the escalation. Never answer the dialog on the user's behalf.
 
 - **Agent process exited outright** (name no longer resolves in `agent list`) — treat like
-  settled-without-file: escalate or report `error`, close the workspace.
+  settled-without-file: escalate or report `error`, close the tab (and remove a codex worktree
+  as above).
 
 ## Step 5 — Review delivered PRs (skip under `--no-review`)
 
@@ -232,16 +250,21 @@ of the same kind, so the reviewer's checkout never lands in `$MAIN`:
 
 ```bash
 HEAD_SHA=$(gh pr view <pr> --json headRefOid --jq .headRefOid)
-herdr workspace create --cwd "$MAIN" --label "wr-<pr>" --no-focus   # opencode
-herdr worktree create --cwd "$MAIN" --label "wr-<pr>" --no-focus    # codex
+# opencode
+herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$MAIN" --label "wr-<pr>" --no-focus
+# codex
+git -C "$MAIN" worktree add --detach "$OUTDIR/wt/wr-<pr>" "origin/$DEFAULT"
+herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$OUTDIR/wt/wr-<pr>" --label "wr-<pr>" --no-focus
 herdr agent start wr-<pr> --kind <kind> --pane <pane-id>
 herdr agent prompt wr-<pr> "<reviewer prompt, --json '$OUTDIR/wr-<pr>.json'>"
 ```
 
-A re-review reuses the name, so close the previous `wr-<pr>` workspace this run created before
-spawning. Reap reviewers exactly like workers — same `herdr agent wait` loop, same `blocked`
-notification, reviewer budget in [REFERENCE.md](REFERENCE.md) — and close the workspace once
-its file is read. Reviewers do not count against `--workers`.
+A re-review reuses the name and path, so close the previous `wr-<pr>` tab this run created
+before spawning. Reap reviewers exactly like workers — same `herdr agent wait` loop, same
+`blocked` notification, reviewer budget in [REFERENCE.md](REFERENCE.md) — and close the tab
+once its file is read. A codex reviewer's worktree goes with it,
+`git -C "$MAIN" worktree remove --force "$OUTDIR/wt/wr-<pr>"` — the reviewer changes no code,
+so nothing there is worth keeping. Reviewers do not count against `--workers`.
 
 The reviewer checks out the PR head itself (the prompt says how), so `review-code`'s default
 branch-vs-default scope *is* the PR diff. Read the findings file before anything else:
@@ -399,7 +422,7 @@ Then report:
 - Filing findings without the converter (hand-composed bodies lose the `review-of:` marker
   the merge pass keys holds off) — run `findings_to_plan.py`, then dedup, then `hew apply`
 - Running the human-review integration branch's merges all-at-once (octopus)
-- Closing workspaces or agents this run did not create
+- Closing tabs or agents this run did not create, or the orchestrator's own workspace
 - Closing the epic because its children are done — report it; a human closes it
 - Putting outcome files directly under `/tmp` instead of `${TMPDIR:-/tmp}/opencode` — every agent
   that touches them prompts for external directory access
