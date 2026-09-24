@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Plan the merge pass for a hew epic's open PRs — read-only, decide nothing.
 
-Runs `hew list --epic --json --bodies`, `gh pr list`, and one `gh pr view` per
-matched PR; never writes. Prints one JSON object to stdout:
+Runs `hew list --epic --json --bodies`, `gh pr list`, and one `gh pr view` and
+one compare call per matched PR; never writes. Prints one JSON object to
+stdout:
 
   {
     "epic": <n>, "blockOn": "P1", "defaultBranch": "main",
     "mainCheckout": "/abs/path",
+    "queueHead": <pr number or null>,
     "prs": [ { "number", "issue", "issueState", "branch", "head", "draft",
-               "mergeState", "mergeable", "checks", "reviewRounds",
-               "reviewedHead", "worstOpenFinding", "action", "note" } ... ],
+               "mergeState", "mergeable", "checks", "behindBy",
+               "reviewRounds", "reviewedHead", "worstOpenFinding", "action",
+               "note" } ... ],
     "unmatched": [ {"number", "scrapedIssue", "reason",
                     "action": "outside_epic"} ... ],
     "counts": { "<action>": n, ... }
@@ -27,13 +30,17 @@ Actions, in decision order (first match wins):
   conflict        mergeState DIRTY or mergeable CONFLICTING — never auto-resolve
   escalate        two review rounds and a blocking finding is still open
   hold            a blocking finding is open — human gate
-  update_branch   mergeState BEHIND — merge the default branch in
+  update_branch   ready PR behind the default branch (behindBy > 0, or
+                  mergeState BEHIND) — merge the default branch in. Drafts
+                  are never updated: they are not next to merge, and moving
+                  a draft's head spends a review round
   re_review       draft PR whose head moved past the last reviewed head
   wait            no review round yet (reviewer in flight or failed)
   wait            checks failing, pending, or absent (absent is green only
                   under --allow-no-checks)
   mark_ready      draft and otherwise green — GitHub reports a draft's merge
                   state as DRAFT, hiding BEHIND/BLOCKED until it is readied
+  wait            behindBy unknown — never merge a PR not known to be current
   merge           checks green, mergeState CLEAN or HAS_HOOKS
   protected       mergeState BLOCKED with green checks — branch protection
                   wants something the pump cannot give (an approval)
@@ -42,6 +49,18 @@ Actions, in decision order (first match wins):
 
 Under --no-review the review rows (escalate, hold, re_review, no-round wait)
 are skipped and CI is the only gate.
+
+Then the merge queue: at most one PR moves toward main per pass. Every merge
+puts every other open PR behind again, so updating them side by side spends a
+CI run each on a result the next merge throws away, and merging two from one
+plan lands the second on CI that never saw the first. The queue head is, in
+order: the lowest-numbered `merge`; else the lowest-numbered ready PR that is
+current and waiting on its checks (its CI is the one that counts); else the
+`update_branch` PR whose checks last passed, lowest number first. Every other
+`merge` and `update_branch` becomes
+
+  queued          waiting its turn behind `queueHead` — no action, and no CI
+                  budget: it moves when the head merges or parks
 
 Usage: pr_state.py <epic-number> [--repo owner/name] [--block-on P1|P2|none]
                    [--no-review] [--allow-no-checks]
@@ -54,6 +73,7 @@ import sys
 
 from repo_state import (
     CommandError,
+    behind_by,
     branch_issue,
     default_branch,
     main_checkout,
@@ -143,7 +163,9 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
     """Decision table for one matched PR. First match wins.
 
     `pr["comments"]` is None when the comments could not be read — the review
-    state is then unknown, which is never a reason to act.
+    state is then unknown, which is never a reason to act. `pr["behindBy"]`
+    is the compare API's count of default-branch commits the head lacks, None
+    when unknown.
     """
     comments = pr.get("comments")
     rounds = [
@@ -168,6 +190,8 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
     # a relayed sha may be abbreviated; a prefix of the head is the same commit
     stale = draft and reviewed_head is not None and not head.startswith(reviewed_head)
     green = checks == "pass" or (checks == "none" and allow_no_checks)
+    behind_count = pr.get("behindBy")
+    behind = merge_state == "BEHIND" or (behind_count or 0) > 0
 
     base = {
         "number": pr["number"],
@@ -179,6 +203,7 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
         "mergeState": merge_state,
         "mergeable": mergeable,
         "checks": checks,
+        "behindBy": behind_count,
         "reviewRounds": review_rounds,
         "reviewedHead": reviewed_head,
         "worstOpenFinding": worst,
@@ -200,23 +225,54 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
         return act("escalate", "two review rounds, blocking finding still open")
     if review and blocking:
         return act("hold", f"open {worst} finding at or above --block-on")
-    if merge_state == "BEHIND":
-        return act("update_branch")
+    if behind and not draft:
+        return act("update_branch", f"{behind_count} commits behind"
+                   if behind_count else "mergeState BEHIND")
     if review and stale:
         return act("re_review", "head moved past the last reviewed head")
     if review and review_rounds == 0:
         return act("wait", "no review round yet — reviewer in flight or failed")
     if not green:
+        # a current, ready PR whose CI is still running is the one the queue
+        # waits on; a failed one is stuck and must not hold the queue
+        if not draft and checks != "fail" and behind_count == 0:
+            base["inFlight"] = True
         return act("wait", {"fail": "checks failing",
                             "pending": "checks pending",
                             "none": "no checks reported yet"}.get(checks))
     if draft:
         return act("mark_ready")
+    if behind_count is None:
+        return act("wait", "behind count unknown — not known to be current")
     if merge_state in MERGEABLE_STATES:
         return act("merge")
     if merge_state == "BLOCKED":
         return act("protected", "branch protection blocks the merge despite green checks")
     return act("wait", f"mergeState {merge_state}")
+
+
+def queue_merges(prs):
+    """Let at most one PR move toward main; queue the rest behind it.
+
+    Mutates the planned PRs in place and returns the head's number, or None
+    when nothing is moving. Order rules are in the module docstring.
+    """
+    merges = [p for p in prs if p["action"] == "merge"]
+    in_flight = [p for p in prs if p.get("inFlight")]
+    updates = [p for p in prs if p["action"] == "update_branch"]
+    if merges:
+        head = min(merges, key=lambda p: p["number"])
+    elif in_flight:
+        head = min(in_flight, key=lambda p: p["number"])
+    elif updates:
+        head = min(updates, key=lambda p: (p["checks"] != "pass", p["number"]))
+    else:
+        return None
+    for p in merges + updates:
+        if p is not head:
+            p["action"] = "queued"
+            p["note"] = f"queued behind PR #{head['number']}"
+    return head["number"]
 
 
 def parse_args(args):
@@ -290,6 +346,7 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
             raw["comments"] = view.get("comments") or []
         except (CommandError, ValueError):
             raw["comments"] = None
+        raw["behindBy"] = behind_by(default, raw.get("headRefOid"), repo)
         prs_out.append(
             plan_pr(
                 raw,
@@ -301,6 +358,7 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
                 allow_no_checks,
             )
         )
+    queue_head = queue_merges(prs_out)
     counts = {}
     for p in prs_out:
         counts[p["action"]] = counts.get(p["action"], 0) + 1
@@ -312,6 +370,7 @@ def plan(epic_n, repo, block_on, review, allow_no_checks):
         "blockOn": block_on,
         "defaultBranch": default,
         "mainCheckout": main_checkout(),
+        "queueHead": queue_head,
         "prs": prs_out,
         "unmatched": sorted(unmatched, key=lambda u: u["number"]),
         "counts": counts,

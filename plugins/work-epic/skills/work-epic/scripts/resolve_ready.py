@@ -11,9 +11,10 @@ branch); never writes. Prints one JSON object to stdout:
     "defaultBranch": "main",             # origin's default branch, when determinable
     "eligible": [ {"number", "title", "priority", "type", "where", "doneWhen",
                    "large", "resume"} ... ],  # priority-sorted, oldest tie-break
-    "skipped":  [ {"number", "title", "reason", "detail"} ... ],
+    "skipped":  [ {"number", "title", "reason", "detail", "own"?} ... ],
     "counts":   {"eligible": n, "blocked": n, "untriaged": n, "claimed": n,
-                 "in_review": n, "stalled": n, "closed": n}
+                 "in_review": n, "stalled": n, "closed": n},
+    "spawnBudget": n | null              # null without --max-open-prs
   }
 
 Skip reasons: in_review (an open PR carries the child's number), blocked
@@ -25,9 +26,18 @@ children are counted, not listed.
 Children in progress by you are the pump's own claims: in flight, delivered,
 or failed. They are never eligible by default — respawning one duplicates or
 repeats work. --resume opts the ones with neither a PR nor a pushed branch
-back in (`resume: true`), for deliberately picking up a crashed run.
+back in (`resume: true`), for deliberately picking up a crashed run. Those
+bare claims of yours are marked `own: true` in `skipped`.
+
+--max-open-prs N caps the epic's PR backlog: `spawnBudget` is N minus the
+epic's open PRs (in_review) minus your own bare claims (workers in flight —
+each is a PR on its way), floored at zero. Worker slots bound how many agents
+run at once; this bounds how many PRs wait to merge, which is what goes stale
+while main moves. Parked PRs (held, conflicted) count: a backlog that cannot
+merge is exactly the one not to grow.
 
 Usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume]
+                        [--max-open-prs N]
 Exit: 0 ok (eligible may be empty) · 1 runtime error · 2 not an epic/usage
 """
 
@@ -102,11 +112,12 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False)
     branch_by_issue = branch_by_issue or {}
     eligible, skipped, closed = [], [], 0
 
-    def skip(c, reason, detail):
-        skipped.append(
-            {"number": c["number"], "title": c.get("title", ""),
-             "reason": reason, "detail": detail}
-        )
+    def skip(c, reason, detail, own=False):
+        entry = {"number": c["number"], "title": c.get("title", ""),
+                 "reason": reason, "detail": detail}
+        if own:
+            entry["own"] = True
+        skipped.append(entry)
 
     for c in children:
         if c.get("state") != "open":
@@ -136,7 +147,8 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False)
                      f"in progress @{me}, branch {branch_by_issue[n]} pushed, no open PR")
                 continue
             if not resume:
-                skip(c, "claimed", f"in progress @{me} — pass --resume to pick it up")
+                skip(c, "claimed", f"in progress @{me} — pass --resume to pick it up",
+                     own=True)
                 continue
             is_resume = True
         body = c.get("body") or ""
@@ -157,6 +169,17 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False)
     return eligible, skipped, closed
 
 
+def spawn_budget(skipped, max_open_prs):
+    """How many more workers the PR backlog cap allows, or None uncapped."""
+    if max_open_prs is None:
+        return None
+    pending = sum(
+        1 for s in skipped
+        if s["reason"] == "in_review" or (s["reason"] == "claimed" and s.get("own"))
+    )
+    return max(0, max_open_prs - pending)
+
+
 def sort_eligible(children_eligible, raw_by_number):
     """Priority first (P0 best, missing last); ties toward the oldest child."""
     return sorted(
@@ -170,7 +193,8 @@ def sort_eligible(children_eligible, raw_by_number):
 
 
 def parse_args(args):
-    repo, resume, positional = None, False, []
+    args = list(args)
+    repo, resume, max_open_prs, positional = None, False, None, []
     while args:
         a = args.pop(0)
         if a == "--repo":
@@ -179,14 +203,19 @@ def parse_args(args):
             repo = args.pop(0)
         elif a == "--resume":
             resume = True
+        elif a == "--max-open-prs":
+            if not args or not args[0].isdigit() or int(args[0]) < 1:
+                fail("--max-open-prs needs a positive integer", 2)
+            max_open_prs = int(args.pop(0))
         else:
             positional.append(a)
     if len(positional) != 1 or not positional[0].isdigit():
-        fail("usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume]", 2)
-    return positional[0], repo, resume
+        fail("usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume] "
+             "[--max-open-prs N]", 2)
+    return positional[0], repo, resume, max_open_prs
 
 
-def resolve(epic_n, repo, resume):
+def resolve(epic_n, repo, resume, max_open_prs=None):
     suffix = ["--repo", repo] if repo else []
 
     show = json.loads(run(["hew", "show", epic_n, "--json", *suffix]))
@@ -222,13 +251,14 @@ def resolve(epic_n, repo, resume):
         "eligible": sort_eligible(eligible, raw_by_number),
         "skipped": sorted(skipped, key=lambda s: s["number"]),
         "counts": counts,
+        "spawnBudget": spawn_budget(skipped, max_open_prs),
     }
 
 
 def main():
-    epic_n, repo, resume = parse_args(sys.argv[1:])
+    epic_n, repo, resume, max_open_prs = parse_args(sys.argv[1:])
     try:
-        out = resolve(epic_n, repo, resume)
+        out = resolve(epic_n, repo, resume, max_open_prs)
     except CommandError as e:
         fail(str(e))
     print(json.dumps(out, indent=2))

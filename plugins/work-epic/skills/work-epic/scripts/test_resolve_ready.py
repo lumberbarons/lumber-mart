@@ -7,7 +7,7 @@ branch indexes.
 
 import unittest
 
-from resolve_ready import classify, delivery_index
+from resolve_ready import classify, delivery_index, parse_args, spawn_budget
 
 ME = "orchestrator"
 
@@ -68,6 +68,35 @@ class Basics(unittest.TestCase):
     def test_unrelated_branches_are_ignored(self):
         got = reasons([child(21)], branches=["main", "worktree-fix+x", "fix/210-other"])
         self.assertEqual(got, {21: "eligible"})
+
+
+def budget(children, prs=(), cap=4, resume=False):
+    pr_by_issue, branch_by_issue = delivery_index(list(prs), [])
+    _, skipped, _ = classify(children, ME, pr_by_issue, branch_by_issue, resume)
+    return spawn_budget(skipped, cap)
+
+
+class SpawnBudget(unittest.TestCase):
+    def test_uncapped_without_flag(self):
+        self.assertIsNone(budget([child(21)], cap=None))
+
+    def test_open_prs_and_own_in_flight_claims_count(self):
+        prs = [{"number": 34, "headRefName": "fix/21-a"}]
+        self.assertEqual(budget([mine(21), mine(22), child(23)], prs=prs), 2)
+
+    def test_foreign_claims_do_not_count(self):
+        c = child(21, inProgress=True, assignees=["someone"])
+        self.assertEqual(budget([c, child(22)]), 4)
+
+    def test_resumed_claims_are_spawns_not_backlog(self):
+        self.assertEqual(budget([mine(21)], resume=True), 4)
+
+    def test_floors_at_zero(self):
+        prs = [{"number": 30 + n, "headRefName": f"fix/{n}-x"} for n in range(21, 27)]
+        self.assertEqual(budget([child(n) for n in range(21, 27)], prs=prs), 0)
+
+    def test_flag_parses(self):
+        self.assertEqual(parse_args(["12", "--max-open-prs", "3"]), ("12", None, False, 3))
 
 
 if __name__ == "__main__":

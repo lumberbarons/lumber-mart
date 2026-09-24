@@ -1,16 +1,25 @@
-"""Decision-table tests for pr_state.plan_pr.
+"""Decision-table tests for pr_state.plan_pr and the merge queue.
 
 Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
-— stdlib only, no network: plan_pr is pure over gh/hew JSON.
+— stdlib only, no network: plan_pr and queue_merges are pure over gh/hew JSON.
 """
 
 import unittest
 
-from pr_state import BLOCK_ON_NUM, REVIEW_MARKER, check_rollup_state, parse_args, plan_pr
+from pr_state import (
+    BLOCK_ON_NUM,
+    REVIEW_MARKER,
+    check_rollup_state,
+    parse_args,
+    plan_pr,
+    queue_merges,
+)
 
 HEAD = "9f2c" + "0" * 36
 OLD = "40ba" + "0" * 36
 GREEN = [{"status": "COMPLETED", "conclusion": "SUCCESS"}]
+PENDING = [{"status": "IN_PROGRESS", "conclusion": ""}]
+FAILING = [{"status": "COMPLETED", "conclusion": "FAILURE"}]
 
 
 def round_comment(head=HEAD):
@@ -18,9 +27,9 @@ def round_comment(head=HEAD):
 
 
 def pr(draft=False, merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN,
-       comments=None, head=HEAD):
+       comments=None, head=HEAD, behind=0, number=34):
     return {
-        "number": 34,
+        "number": number,
         "headRefName": "fix/21-child",
         "headRefOid": head,
         "isDraft": draft,
@@ -28,6 +37,7 @@ def pr(draft=False, merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN,
         "mergeable": mergeable,
         "statusCheckRollup": rollup,
         "comments": [round_comment()] if comments is None else comments,
+        "behindBy": behind,
     }
 
 
@@ -89,8 +99,71 @@ class HoldOrdering(unittest.TestCase):
         self.assertEqual(action(p, [{"priority": "P1"}]), "conflict")
 
     def test_behind_updates_before_re_review(self):
-        p = pr(draft=True, merge_state="BEHIND", comments=[round_comment(OLD)])
+        p = pr(merge_state="BEHIND", comments=[round_comment(OLD)])
         self.assertEqual(action(p), "update_branch")
+
+
+class Freshness(unittest.TestCase):
+    def test_behind_without_strict_protection_is_updated_not_merged(self):
+        # without "require up to date" GitHub reports a stale PR as CLEAN
+        self.assertEqual(action(pr(merge_state="CLEAN", behind=3)), "update_branch")
+
+    def test_behind_draft_is_readied_not_updated(self):
+        # a draft is not next to merge, and moving its head spends a review round
+        p = pr(draft=True, merge_state="DRAFT", behind=3)
+        self.assertEqual(action(p), "mark_ready")
+
+    def test_unknown_behind_count_never_merges(self):
+        self.assertEqual(action(pr(behind=None)), "wait")
+
+    def test_current_pr_with_running_ci_is_in_flight(self):
+        planned = plan_pr(pr(rollup=PENDING), 21, "open", [], 1, True)
+        self.assertEqual((planned["action"], planned.get("inFlight")), ("wait", True))
+
+    def test_failing_pr_is_not_in_flight(self):
+        planned = plan_pr(pr(rollup=FAILING), 21, "open", [], 1, True)
+        self.assertIsNone(planned.get("inFlight"))
+
+
+def planned(number, **kw):
+    return plan_pr(pr(number=number, **kw), 21, "open", [], 1, True)
+
+
+class Queue(unittest.TestCase):
+    def actions(self, prs):
+        head = queue_merges(prs)
+        return head, {p["number"]: p["action"] for p in prs}
+
+    def test_one_merge_per_plan(self):
+        # merging both lands the second on CI that never saw the first
+        got = self.actions([planned(35), planned(34)])
+        self.assertEqual(got, (34, {34: "merge", 35: "queued"}))
+
+    def test_merge_queues_every_update(self):
+        got = self.actions([planned(34, behind=1), planned(35)])
+        self.assertEqual(got, (35, {34: "queued", 35: "merge"}))
+
+    def test_running_ci_holds_the_queue(self):
+        got = self.actions([planned(34, rollup=PENDING), planned(35, behind=2)])
+        self.assertEqual(got, (34, {34: "wait", 35: "queued"}))
+
+    def test_failing_pr_does_not_hold_the_queue(self):
+        got = self.actions([planned(34, rollup=FAILING), planned(35, behind=2)])
+        self.assertEqual(got, (35, {34: "wait", 35: "update_branch"}))
+
+    def test_update_prefers_passing_checks_then_oldest(self):
+        got = self.actions([planned(34, behind=1, rollup=FAILING),
+                            planned(36, behind=1), planned(35, behind=1)])
+        self.assertEqual(got, (35, {34: "queued", 35: "update_branch", 36: "queued"}))
+
+    def test_held_and_draft_prs_are_outside_the_queue(self):
+        held = plan_pr(pr(number=34, behind=1), 21, "open", [{"priority": "P1"}], 1, True)
+        got = self.actions([held, planned(35, draft=True, merge_state="DRAFT"),
+                            planned(36, behind=1)])
+        self.assertEqual(got, (36, {34: "hold", 35: "mark_ready", 36: "update_branch"}))
+
+    def test_nothing_moving(self):
+        self.assertEqual(self.actions([planned(34, rollup=FAILING)]), (None, {34: "wait"}))
 
 
 class Checks(unittest.TestCase):

@@ -24,7 +24,8 @@ merge policy belong in the scripts, where they are testable, not in the skill pr
 The pump keeps the human gates by design: it never closes an issue or epic, never `--force`s
 a claim, never clicks through a worker's permission dialog, and never resolves a merge
 conflict. Autonomous mode moves the *merge* off the human's list — bounded to this epic's
-PRs, CI green, a current review, and no finding at or above `--block-on` — not the judgement:
+PRs, CI green on a head current with main, a current review, and no finding at or above
+`--block-on` — not the judgement:
 P1 holds, conflicts, and ping-pong escalations all land on the human. Removing any of those
 bounds turns an accelerator into an unsupervised committer. The `we-`/`wr-` name prefixes are
 the ownership rule that lets several orchestrators share a herdr server safely — closing or

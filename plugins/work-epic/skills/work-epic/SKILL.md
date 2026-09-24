@@ -1,7 +1,7 @@
 ---
 name: work-epic
 description: Pump a hew epic end to end with herdr-managed agents — resolve the epic's ready children, spawn one worker agent per child running work-issue, review each delivered PR with a reviewer agent running review-code, file the findings as epic children, and merge PRs once CI is green. Autonomous mode (the default) merges on green; `--human-review` stops at drafts and leaves every merge to a human. Use whenever the user wants an epic worked by orchestrating agents — "work on this epic", "drain epic 12", "orchestrate #42", "fan out this epic to workers", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
-argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --kind opencode|codex, --dry-run, --no-review, --allow-no-checks, --resume"
+argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --max-open-prs N (default 2 × workers), --kind opencode|codex, --dry-run, --no-review, --allow-no-checks, --resume"
 ---
 
 # Work Epic
@@ -70,6 +70,11 @@ Strip flags; what remains is the epic number.
   PR refs and fights the pump's own branch updates; prefer squash or merge.
 - **`--workers N`** — cap on live worker agents, default 2. More than 3–4 only moves the
   bottleneck into the review-and-merge pipeline; raise it on explicit instruction.
+- **`--max-open-prs N`** — cap on the epic's PR backlog, default twice `--workers`. Open PRs
+  plus workers in flight never exceed it: once the backlog is full, the pump stops spawning
+  and lets the merge pass drain. Every open PR drifts further behind main with each merge, so
+  this is the bound on how stale the backlog gets. Held and conflicted PRs count — a backlog
+  that cannot merge is the one not to grow.
 - **`--kind opencode|codex`** — worker and reviewer kind, default opencode. opencode is
   preferred because `work-issue` and `review-code` resolve as skills there; codex is driven by
   pointing the prompt at the skill files (see [REFERENCE.md](REFERENCE.md)).
@@ -85,7 +90,8 @@ Strip flags; what remains is the epic number.
 ## Step 1 — Resolve the fan-out plan
 
 ```bash
-uv run --no-project "$RESOLVE" <epic-n>   # add --repo owner/name only if the user said so
+uv run --no-project "$RESOLVE" <epic-n> --max-open-prs <max-open-prs>
+# add --repo owner/name only if the user said so
 ```
 
 - **Exit 2 "not an epic"** — stop and hand it to `work-issue`; orchestration over one issue is
@@ -115,8 +121,11 @@ herdr agent list
 ```
 
 Live workers are the agents this orchestrator spawned, named `we-<issue>` (reviewers: `wr-<pr>`).
-Open slots are `--workers` minus live `we-*` names. If reaping hasn't freed any, wait on the
-live set (Step 4) instead of spawning. Name-ownership is also the coordination rule:
+Open slots are the smaller of `--workers` minus live `we-*` names and the resolver's
+`spawnBudget` — the room left under `--max-open-prs` once open PRs and workers in flight are
+counted. If reaping hasn't freed a worker slot, wait on the live set (Step 4); if the budget is
+zero, spawn nothing and go to the merge pass (Step 6) — the backlog drains before it grows.
+Name-ownership is also the coordination rule:
 **never close or reassign agents/workspaces you did not spawn**. Agent names are unique within
 a herdr server, so a live `we-<n>` stops a second orchestrator there from spawning the same
 child; across users, `hew start`'s exit-3 lock arbitrates. Two orchestrators sharing one gh
@@ -280,6 +289,7 @@ the hands (commands, CI-wait budgets, and merge-failure handling in
 | `merge` | `gh pr merge --<merge-method> --delete-branch`; notify; then fast-forward main (below) |
 | `mark_ready` | `gh pr ready` — a draft's merge state reads `DRAFT` until then, hiding `BEHIND` or `BLOCKED`; the next pass sees the real state |
 | `update_branch` | `gh pr update-branch <pr>` — GitHub merges the default branch in server-side; a failure there is a `conflict`, never resolved by hand |
+| `queued` | nothing; it waits its turn behind `queueHead` and spends no CI budget of its own |
 | `re_review` | spawn a fresh reviewer (Step 5) for the new head |
 | `conflict` | file the coupling (`hew search` first, then `hew create --discovered-from <n>`), notify, leave the PR — never resolve a conflict into a PR a human hasn't seen |
 | `hold` | notify; the human lifts it by closing the finding child — once fixed on the branch, or accepted as is. Fixing the branch alone does not lift it, and the pump never un-holds |
@@ -287,15 +297,26 @@ the hands (commands, CI-wait budgets, and merge-failure handling in
 | `protected` | notify; branch protection wants something the pump cannot give (typically an approving review) |
 | `wait` | nothing; it rolls into the CI-wait loop |
 
+**The merge queue.** At most one PR moves toward main per pass — the planner's `queueHead`,
+the only PR that gets `merge` or `update_branch`. Every merge puts every other open PR behind
+again, so updating them side by side spends a CI run each on a result the next merge throws
+away, and merging two from one plan lands the second on CI that never saw the first. "Behind"
+is the planner's own count of default-branch commits a PR lacks (`behindBy`), not GitHub's
+`BEHIND`, which only appears when branch protection requires up-to-date branches; without that
+rule a stale PR reads `CLEAN`. So every merge is of a PR whose CI ran on current main,
+whatever the repository's protection settings. Drafts and held PRs are never updated: they are
+not next to merge, and moving a draft's head spends a review round.
+
 Notify once per PR per action, not on every pass. After any merge, fast-forward the main
 checkout the same way as Step 3 (branch check included), so the next spawn wave and every new
 worktree carry the merged code. A failed ff-only is an escalation.
 
-Re-run the pass after its own writes — a merge unblocks the next PR, a push changes every
-`BEHIND`, and a fresh `pr_state.py` read is what keeps the sequence deterministic rather
-than remembered. When every PR reads `wait` or a parked action, the waits become the CI-wait
-loop: poll on a ~2-minute cadence with a hard per-PR budget (~60 minutes of no progress), then
-notify and set that PR aside. CI waiting must never block spawning — Step 8's re-pump runs
+Re-run the pass after its own writes — a merge moves the queue to its next PR and puts the
+rest behind, and a fresh `pr_state.py` read is what keeps the sequence deterministic rather
+than remembered. When every PR reads `wait`, `queued`, or a parked action, the waits become the
+CI-wait loop: poll on a ~2-minute cadence with a hard per-PR budget (~60 minutes of no
+progress), then notify and set that PR aside. A queue head set aside on a spent budget parks
+the PRs queued behind it — report them with it. CI waiting must never block spawning — Step 8's re-pump runs
 while PRs settle, and the next pass reaps whatever went green.
 
 The planner never classifies a PR outside the epic, with failing or absent checks, or under a
@@ -325,8 +346,8 @@ report `integration_failed` as in work-issue's taxonomy. On pass, state it plain
 independence the per-issue PRs assume is now evidence. Nothing pushed, no PR off this branch;
 afterwards `git -C "$MAIN" worktree remove --force "$INT"` and delete the local branch.
 
-Autonomous mode has no throwaway branch: main itself is the integration surface,
-`update_branch` brings every PR up to date with the default branch before merge, and CI plus
+Autonomous mode has no throwaway branch: main itself is the integration surface, the merge
+queue brings each PR up to date with the default branch just before it merges, and CI plus
 the merge-time gate re-run is what catches cross-PR coupling — at merge time, on the tree that
 actually ships, instead of on a replica.
 
@@ -337,18 +358,22 @@ tracker, merges unblock children between visits, and findings filed as children 
 `eligible` as their blockers clear (a finding's child is blocked by the PR's issue until the
 merge closes it).
 
-The pump stops when all of these hold: the resolver's `eligible` is empty, no `we-*` or `wr-*`
-agent is in flight, and every open PR is parked — `hold`, `escalate`, `conflict`, `protected`,
-or a `wait` that has spent its CI budget. A `wait` still inside its budget is still moving;
-keep polling it rather than stopping around it.
+The pump stops when all of these hold: nothing can spawn (the resolver's `eligible` is empty,
+or its `spawnBudget` is zero), no `we-*` or `wr-*` agent is in flight, and every open PR is
+parked — `hold`, `escalate`, `conflict`, `protected`, a `wait` that has spent its CI budget,
+or `queued` behind a head that is one of those. A `wait` still inside its budget is still
+moving; keep polling it rather than stopping around it. A stop with eligible children and a
+zero budget is a full backlog of parked PRs — say so; it clears only when a human unparks them.
 
 Then report:
 
 - per worker: issue, outcome, PR number, reviewer verdict, findings filed
-- per merge-pass action: PR, what was done (merged / updated / held / conflicted / protected)
+- per merge-pass action: PR, what was done (merged / updated / queued / held / conflicted /
+  protected)
 - per skip: number and reason (blocked/untriaged/claimed/in_review/stalled), from the resolver's last pass
 - `hew epic status <epic>` — the progress line the human reads
-- remaining `eligible` count and open-PR count, so "stopped" is distinguishable from "drained"
+- remaining `eligible` count, `spawnBudget`, and open-PR count, so "stopped" is
+  distinguishable from "drained" and a full backlog from an empty queue
 - every escalation raised, with its notification
 
 ## Anti-patterns
@@ -361,6 +386,10 @@ Then report:
 - Reading a findings file whose `status` is not `reviewed` as a clean review
 - Reviewing without posting the round comment, or posting it without `reviewed-head:`
 - Spawning past a `blocked` worker instead of accounting it as used capacity
+- Spawning past a zero `spawnBudget` because worker slots are free — slots bound agents, the
+  budget bounds the backlog that goes stale
+- Updating or merging a PR the planner `queued` — the queue is what keeps every merge on CI
+  that saw current main
 - `gh pr merge --admin`, merging with failing checks, or merging a PR the planner held
 - Checking out a PR branch, or running the integration merges, in `$MAIN` — `update_branch` is
   `gh pr update-branch`, reviewers and the integration pass get their own worktree

@@ -9,6 +9,7 @@ copies that drift.
 import json
 import re
 import subprocess
+from urllib.parse import quote
 
 # work-issue's naming rule: <prefix>/<n>-<slug>
 BRANCH_ISSUE_RE = re.compile(r"^(?:fix|feat|chore)/(\d+)(?:-|$)")
@@ -94,3 +95,28 @@ def remote_branches(repo=None):
          "--jq", ".[].name"]
     )
     return [line for line in out.splitlines() if line.strip()]
+
+
+def behind_by(base, head, repo=None):
+    """How many commits on `base` the commit `head` lacks, or None if unknown.
+
+    GitHub's mergeStateStatus says BEHIND only when branch protection requires
+    branches to be up to date; without that rule a stale PR reads CLEAN and
+    would merge on CI that never saw what landed since. The compare API
+    answers regardless of protection.
+    """
+    if not base or not head:
+        return None
+    p = subprocess.run(
+        ["gh", "api",
+         f"repos/{repo or '{owner}/{repo}'}/compare/{quote(base)}...{head}",
+         "--jq", ".behind_by"],
+        capture_output=True,
+        text=True,
+    )
+    if p.returncode != 0:
+        return None
+    try:
+        return int(p.stdout.strip())
+    except ValueError:
+        return None

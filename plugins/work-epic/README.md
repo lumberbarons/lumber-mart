@@ -46,6 +46,7 @@ is a human's click.
 /work-epic:work-epic 12 --human-review             # stop at drafts; every merge is human
 /work-epic:work-epic 12 --block-on P2              # P1 and P2 findings hold PRs
 /work-epic:work-epic 12 --workers 3                # more live workers (cap ~4)
+/work-epic:work-epic 12 --max-open-prs 3           # smaller PR backlog (default 2 × workers)
 /work-epic:work-epic 12 --kind codex               # drive workers via skill files, not skills
 /work-epic:work-epic 12 --dry-run                  # resolver + merge-pass plans only
 /work-epic:work-epic 12 --no-review                # autonomous: merge on CI green alone
@@ -79,11 +80,18 @@ round comment on the PR recording the head it reviewed; a finding at or above `-
 holds the PR as a draft, and a review that could not run is escalated, never read as clean.
 
 **The merge pass is classified, not judged.** `pr_state.py` decides per PR: merge (green,
-current review, no holds), mark a draft ready, update the branch when it falls behind default
-(server-side, via `gh pr update-branch`), re-review a moved head, file-and-escalate a
-conflict, hold on a blocking finding, flag branch protection it cannot satisfy, or wait for
-CI — where "no checks yet" is waiting, not green. The pump executes the
-classification and re-runs the planner after every write. It never merges outside the epic,
+current review, no holds, up to date with default), mark a draft ready, update the branch when
+it falls behind default (server-side, via `gh pr update-branch`), re-review a moved head,
+file-and-escalate a conflict, hold on a blocking finding, flag branch protection it cannot
+satisfy, or wait for CI — where "no checks yet" is waiting, not green. The pump executes the
+classification and re-runs the planner after every write.
+
+**PRs don't pile up behind main.** Two bounds keep the backlog short and fresh. The resolver's
+spawn budget (`--max-open-prs`) stops new work once open PRs plus workers in flight reach the
+cap, so the pump drains before it grows. The merge pass is a queue: one PR at a time is
+brought up to date and merged, so every merge ran CI on current main, and no CI is spent
+updating PRs that the next merge would put behind again. "Behind" is measured with the
+compare API, so this holds whether or not branch protection requires up-to-date branches. It never merges outside the epic,
 never `--admin`, never force-pushes, and never resolves a conflict.
 
 **The merge gate is CI + severity; the judgement gates stay human.** Closing issues and the
@@ -93,4 +101,4 @@ are decisions the pump escalates, never makes.
 **Multi-PR runs still re-check coupling in human-review mode.** Delivered PRs are merged one
 at a time onto a throwaway integration branch and gated over the union. Autonomous mode
 dropped the replica: main is the integration surface, every PR is brought up to date with
-the default branch before merge, and CI is the gate that runs where it ships.
+the default branch just before it merges, and CI is the gate that runs where it ships.
