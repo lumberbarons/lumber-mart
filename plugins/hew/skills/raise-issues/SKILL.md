@@ -125,7 +125,7 @@ uses — produce the plan with the converter rather than by hand:
 
 ```bash
 uv run --no-project <this skill's directory>/scripts/findings_to_plan.py <findings.json> \
-  [--parent <epic>] [--reviewed-issue <n>] [--reviewed-pr <n>] --out plan.jsonl
+  [--parent <epic>] [--reviewed-issue <n>] [--reviewed-pr <n>] [--at-or-above Pn] --out plan.jsonl
 ```
 
 It derives the review keys and scopes mechanically, emits the plan shape below, stamps

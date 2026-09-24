@@ -1,11 +1,11 @@
 # Reference
 
-Resolver and merge-pass schemas, prompt templates, findings filing, naming, timeout budgets,
-and the report format for `work-epic`.
+Resolver and merge-pass schemas, prompt templates, the review-round comment, findings filing,
+naming, timeout budgets, and the report format for `work-epic`.
 
 ## Resolver output
 
-One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name]`:
+One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--resume]`:
 
 ```json
 {
@@ -15,34 +15,49 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name]`:
   "defaultBranch": "main",
   "eligible": [
     { "number": 21, "title": "child b", "priority": "P1", "type": "task",
-      "where": 2, "doneWhen": 3, "large": false }
+      "where": 2, "doneWhen": 3, "large": false, "resume": false }
   ],
   "skipped": [
-    { "number": 22, "title": "child c", "reason": "blocked", "detail": "blocked by #35" }
+    { "number": 22, "title": "child c", "reason": "blocked", "detail": "blocked by #35" },
+    { "number": 23, "title": "child d", "reason": "in_review", "detail": "PR #40 open" }
   ],
-  "counts": { "eligible": 1, "blocked": 1, "untriaged": 0, "claimed": 0, "closed": 4 }
+  "counts": { "eligible": 1, "blocked": 1, "untriaged": 0, "claimed": 0,
+              "in_review": 1, "stalled": 0, "closed": 4 }
 }
 ```
 
 - `mainCheckout` — the primary worktree (`git worktree list --porcelain`'s first entry). Every
-  spawn (`--cwd`), every branch update, and every post-merge fast-forward happens here; an
-  orchestrator inside a worktree must not nest worktrees under itself. `null` when
-  undeterminable — fall back to `$PWD` and say so in the report.
-- `defaultBranch` — origin's HEAD branch, or `null`; the branch-update and ff targets.
+  spawn (`--cwd`) and every post-merge fast-forward happens here; an orchestrator inside a
+  worktree must not nest worktrees under itself. `null` when undeterminable — fall back to
+  `$PWD` and say so in the report.
+- `defaultBranch` — origin's HEAD branch, falling back to GitHub's default branch; `null` when
+  neither answers. The ff target and the base every PR must target.
 - `eligible` — spawn order: priority first (`P0` best, missing last), ties toward the oldest
   `createdAt`. `where`/`doneWhen` are bullet counts under the body's `### Where` /
   `### Done when` sections; `large` is work-issue's sizing rule (>3 paths, >5 done-when) —
   surfaced so the report can say why a large child might be worth a `--workers 1` moment.
-- `skipped` — open children left behind, `reason` in `blocked | untriaged | claimed`. `claimed`
-  is decided against the current `gh api user` login; when it cannot be determined the script
-  treats every in-progress child as claimed by someone else (fail-safe).
+  `resume` is true only for a child `--resume` brought back.
+- `skipped` — open children left behind, `reason` one of:
+  - `in_review` — an open PR's head branch carries the child's number. Delivered; the merge
+    pass owns it now, whoever holds the claim.
+  - `blocked` — open blockers.
+  - `untriaged` — missing priority or type.
+  - `claimed` — in progress by someone else, or by you with neither PR nor pushed branch
+    (in flight, or a crashed run — `--resume` makes those eligible).
+  - `stalled` — in progress by you, a conventional branch pushed, no open PR: a worker failed
+    verification or its PR was closed. Never eligible, even with `--resume`; a human decides.
+
+  "You" is the current `gh api user` login; when it cannot be determined every in-progress
+  child is treated as claimed by someone else (fail-safe).
+- The PR and branch reads fail the whole run rather than degrade: without them a delivered or
+  failed child would read as eligible.
 - Exit codes: `0` success (eligible may be empty), `1` runtime error, `2` usage error or
   "not an epic".
 
 ## Merge-pass output
 
 One JSON object from `scripts/pr_state.py <epic> [--repo owner/name]
-[--block-on P1|P2|none] [--no-review]`:
+[--block-on P1|P2|none] [--no-review] [--allow-no-checks]` (flags in any position):
 
 ```json
 {
@@ -52,41 +67,47 @@ One JSON object from `scripts/pr_state.py <epic> [--repo owner/name]
   "mainCheckout": "/abs/path/to/repo",
   "prs": [
     { "number": 34, "issue": 21, "issueState": "open", "branch": "fix/21-child-b",
-      "head": "9f2c…", "draft": true, "mergeState": "BEHIND", "checks": "pass",
-      "reviewRounds": 1, "reviewedHead": "40ba…", "worstOpenFinding": "P2",
-      "action": "update_branch" }
+      "head": "9f2c…", "draft": false, "mergeState": "BEHIND", "mergeable": "MERGEABLE",
+      "checks": "pass", "reviewRounds": 1, "reviewedHead": "40ba…",
+      "worstOpenFinding": "P2", "action": "update_branch" }
   ],
-  "unmatched": [ { "number": 99, "scrapedIssue": null, "action": "outside_epic" } ],
-  "counts": { "ready_and_merge": 0, "update_branch": 1, "re_review": 0, "hold_p1": 0,
-              "escalate": 0, "conflict": 0, "wait": 0, "outside_epic": 1 }
+  "unmatched": [ { "number": 99, "scrapedIssue": null,
+                   "reason": "no issue number in the head branch", "action": "outside_epic" } ],
+  "counts": { "update_branch": 1, "outside_epic": 1 }
 }
 ```
 
 - PRs are matched to children by scraping the conventional issue number off the head branch
-  (`fix|feat|chore/<n>-…`, work-issue's naming rule). A PR that scrapes to nothing, or to an
-  issue that is not this epic's child, lands in `unmatched` — listed for visibility, never
-  touched.
-- `checks` collapses `statusCheckRollup`: `pass`, `fail`, `pending`, or `none` (no checks
-  configured — vacuously green; branch protection remains the enforcement layer).
-- `reviewRounds` counts this pump's findings comments on the PR (bodies containing the
-  reviewer-agent marker); `reviewedHead` is the head SHA recorded in the latest one. A draft
-  PR whose head no longer matches is stale — `re_review`.
+  (`fix|feat|chore/<n>-…`, work-issue's naming rule). A PR that scrapes to nothing, to an issue
+  that is not this epic's child, or that targets a base other than the default branch lands in
+  `unmatched` with its `reason` — listed for visibility, never touched.
+- `checks` collapses `statusCheckRollup`: `pass`, `fail`, `pending`, or `none`. `none` is green
+  only under `--allow-no-checks`; otherwise it is CI that has not reported yet.
+- `mergeable` is GitHub's conflict verdict, which — unlike `mergeState` — a draft does not mask.
+- `reviewRounds` counts the review-round comments on the PR (bodies containing the
+  reviewer-agent marker); `reviewedHead` is the head SHA recorded in the latest one, matched by
+  prefix so an abbreviated SHA still counts. A draft whose head moved past it is stale.
 - `worstOpenFinding` is the worst severity among open findings children carrying
   `review-of: #<issue>` in their body (see the filing flow below). At or above `--block-on`
-  it blocks; below, it just becomes tracked work.
-- Decision order: issue closed → `wait` · `DIRTY` → `conflict` · `BEHIND` → `update_branch` ·
-  two rounds with an open blocker → `escalate` · stale review → `re_review` · open blocker →
-  `hold_p1` · draft with no review comment yet → `wait` · checks green and
-  `mergeState` in `CLEAN | HAS_HOOKS | DRAFT` → `ready_and_merge` · otherwise `wait`.
-  Under `--no-review` the review steps collapse and CI is the only gate.
+  it blocks; below, it just becomes tracked work. `--block-on none` blocks on nothing.
+- `note` says why, on `wait` and the gated actions.
+- Decision order, first match wins: issue closed → `wait` · comments unreadable → `wait` ·
+  `DIRTY` or `CONFLICTING` → `conflict` · two rounds with an open blocker → `escalate` · open
+  blocker → `hold` · `BEHIND` → `update_branch` · stale draft → `re_review` · no review round →
+  `wait` · checks not green → `wait` · draft → `mark_ready` · `CLEAN | HAS_HOOKS` → `merge` ·
+  `BLOCKED` → `protected` · otherwise `wait`. A hold comes before `update_branch` on purpose:
+  updating a held PR moves its head and spends a review round on nothing but a merge from main.
+  Under `--no-review` the review rows are skipped and CI is the only gate.
 - Exit codes: `0` success (prs may be empty), `1` runtime error, `2` usage error or "not an
   epic".
 
 ## Prompt templates
 
-Substitute `<n>` (issue), `<path>` (outcome/findings file), `<branch>` (PR head), `<pr>`
-(PR number). Send the literal text; the skills load by name inside opencode, by file path inside
-codex.
+Substitute `<n>` (issue), `<pr>` (PR number), `<path>` (outcome/findings file), and — for
+codex, which has no skill loader — `<work-issue dir>` / `<review-code dir>`: the installed
+skill directories, resolved the same way as this skill's own (the directory holding that
+skill's `SKILL.md`; work-issue ships in the hew plugin, review-code in critique). Send the
+literal text; the skills load by name inside opencode, by file path inside codex.
 
 ### Worker — opencode
 
@@ -99,31 +120,59 @@ Do not interact with the user.
 ### Worker — codex
 
 ```text
-Read ~/.config/opencode/skills/work-issue/SKILL.md and its REFERENCE.md. Follow them
-exactly for issue #<n> with flags --non-interactive --json '<path>'. Ask nothing; write
-the outcome file.
+Read <work-issue dir>/SKILL.md and its REFERENCE.md. Follow them exactly for issue #<n>
+with flags --non-interactive --json '<path>'. Ask nothing; write the outcome file.
 ```
 
 ### Reviewer — opencode
 
 ```text
-Check out PR #<pr>'s head branch <branch> (use worktree_checkout if you have it, else
-git fetch + git checkout <branch>). Then use the review-code skill with flags
---non-interactive --json '<path>' — its default branch-vs-default scope is exactly this
-PR's diff. Report findings; do not modify code.
+Check out PR #<pr>'s head (use worktree_checkout if you have it, else gh pr checkout <pr>).
+Then use the review-code skill with flags --non-interactive --json '<path>' — its default
+branch-vs-default scope is exactly this PR's diff. Report findings; do not modify code.
 ```
 
 ### Reviewer — codex
 
 ```text
-git fetch && git checkout <branch> first. Then read
-~/.config/opencode/skills/review-code/SKILL.md and its REFERENCE.md and run it with
---non-interactive --json '<path>'. Report findings; do not modify code.
+gh pr checkout <pr> first. Then read <review-code dir>/SKILL.md and its REFERENCE.md and
+run it with --non-interactive --json '<path>'. Report findings; do not modify code.
 ```
 
 Both worker prompts deliberately route output through `--json`: herdr's settled states prove the
 agent stopped; the file says what happened. Both reviewer prompts deliberately checkout-first:
-`review-code`'s default scope is branch vs default, which on the PR head is the PR's diff.
+`review-code`'s default scope is branch vs default, which on the PR head is the PR's diff. The
+reviewer runs in its own isolated session (Step 5), so the checkout never touches `$MAIN`.
+
+## Review-round comment
+
+Every `reviewed` findings file — clean or not, in either mode — becomes exactly one comment:
+
+```bash
+gh pr comment <pr> --body "$(cat <<'EOF'
+review-code findings (work-epic reviewer agent):
+
+### P1 — <finding title>
+<location> — <consequence>. Fix: <prescription>. Filed as #<child>.
+
+### P3 — <finding title>
+<location> — <consequence>. Fix: <prescription>. Not filed.
+
+reviewed-head: <HEAD_SHA recorded when the reviewer was spawned>
+EOF
+)"
+```
+
+A clean review says so in one line in place of the finding blocks. Keep each finding's own
+title/location/fix text; the comment is a relay, not a rewrite. The first line and the
+`reviewed-head:` line are identity, like `review-key:` — `pr_state.py` counts rounds by the
+first and detects a stale review by the second, so both must survive verbatim. A missing round
+comment reads as "never reviewed" and the PR is never merged. At two rounds with a still-open
+blocker the planner says `escalate` and the pump stops automating.
+
+`reviewed-head` is the head recorded *before* the reviewer spawned, not the head when the
+comment is posted: if the branch moved mid-review, the recorded SHA is older and the next pass
+re-reviews — the safe direction.
 
 ## Findings filing (autonomous mode)
 
@@ -132,41 +181,25 @@ The reviewer's findings file (critique's FINDINGS.md shape) becomes epic childre
 ```bash
 uv run --no-project <raise-issues skill dir>/scripts/findings_to_plan.py \
   "$OUTDIR/wr-<pr>.json" --parent <epic> --reviewed-issue <n> --reviewed-pr <pr> \
-  --out "$OUTDIR/wr-<pr>.plan.jsonl"
+  --at-or-above P2 --out "$OUTDIR/wr-<pr>.plan.jsonl"
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl" --dry-run
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 ```
 
-The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically and
-stamps `review-of: #<n> (PR #<pr>)` into `where`. Before applying, apply raise-issues' Step 3
-dedup table against those keys — `hew search "review-key: <key>"` spans open and closed, so a
-finding whose fix merged before is re-filed as a regression (`--discovered-from`), and one a
-human declined stays suppressed. Drop suppressed lines from the plan before `hew apply`.
+The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically,
+stamps `review-of: #<n> (PR #<pr>)` into `where`, and — with `--at-or-above P2` — leaves P3s
+to the round comment. Exit 3 means the file's status is not `reviewed`; Step 5 has already
+escalated that case, so it should never reach here. Before applying, apply raise-issues' Step 3
+dedup table against the emitted keys — `hew search "review-key: <key>"` spans open and closed,
+so a finding whose fix merged before is re-filed as a regression (`--discovered-from`), and one
+a human declined stays suppressed. Drop suppressed lines from the plan before `hew apply`.
 
 Each findings child is filed `blocked-by` the reviewed issue, so a below-`--block-on` finding's
 fix unblocks exactly when the PR merges and the defect exists on main. An at-or-above
-`--block-on` finding additionally holds its PR: the pump never un-holds — the human closes the
-finding child (finding accepted) or fixes the branch, and the next pass re-reviews the new head.
-
-P1 findings are also relayed to the PR itself — the hold's public reason and the marker the
-merge pass reads back:
-
-```bash
-gh pr comment <pr> --body "$(cat <<'EOF'
-review-code findings (work-epic reviewer agent):
-
-### P1 — <finding title>
-<location> — <consequence>. Fix: <prescription>.
-
-reviewed-head: <head sha>
-EOF
-)"
-```
-
-Keep the finding's own title/location/fix text; the comment is a relay, not a rewrite. The
-`reviewed-head:` line is identity, like `review-key:` — `pr_state.py` parses it to detect a
-stale review, so it must survive verbatim. `reviewRounds` counts these comments; at two rounds
-with a still-open blocker the planner says `escalate` and the pump stops automating.
+`--block-on` finding additionally holds its PR until the human closes the finding child —
+after fixing the branch, or accepting the finding as is. Fixing the branch alone does not lift
+the hold; the open child is what holds. Once it closes, the next pass re-reviews the draft's
+new head (or, if the head never moved, readies and merges it).
 
 ## Naming
 
@@ -184,7 +217,9 @@ reaping loop like this:
 - **Hard per-worker budget:** ~2 hours of continuous `working`. Beyond it, `agent read` the
   worker, escalate via `herdr notification show ... --sound request`, and keep it un-closed
   rather than killing a run that may be legitimately long.
-- **`blocked`:** notify once per worker, not on every pass — re-notifying on each poll turns
+- **Hard per-reviewer budget:** ~1 hour of continuous `working`, handled the same way. A
+  review is read-only and bounded by one PR's diff; one running this long is stuck.
+- **`blocked`:** notify once per agent, not on every pass — re-notifying on each poll turns
   the escalation channel into spam.
 - **`unknown`:** never counts as settled. `herdr agent explain <name>` and `agent read` before
   believing anything about it.
@@ -194,35 +229,44 @@ reaping loop like this:
 
 ## Merge-pass commands
 
-Per `pr_state.py` action, executed on `$MAIN` (the resolver's `mainCheckout`) unless the
-action says otherwise:
+Per `pr_state.py` action. None of them checks out a PR branch locally:
 
 ```bash
-# ready_and_merge — the planner already verified checks, mergeState, and holds
-gh pr ready <pr>                     # only when still draft
+# mark_ready — flips the draft so the next pass sees the real mergeState
+gh pr ready <pr>
+
+# merge — the planner already verified checks, mergeState, and holds
 gh pr merge <pr> --<method> --delete-branch
 
-# update_branch — on the PR branch (its own checkout/worktree)
-git fetch origin
-git merge --no-edit "origin/$DEFAULT"
-git push
+# update_branch — GitHub merges the base into the PR branch server-side
+gh pr update-branch <pr>
 
-# post-merge main fast-forward
-git -C "$MAIN" merge --ff-only "origin/$DEFAULT"
+# post-merge main fast-forward, only while $MAIN is on the default branch
+test "$(git -C "$MAIN" symbolic-ref --short HEAD)" = "$DEFAULT" &&
+  git -C "$MAIN" fetch origin &&
+  git -C "$MAIN" merge --ff-only "origin/$DEFAULT"
 ```
 
-`--method` is `--merge-method`'s value (default `squash`). Merge-time conflicts surface as
-`conflict` on the next pass — never resolved into the PR by hand. `gh pr merge --auto` would
-delegate the final trigger to GitHub, but it requires repo-level auto-merge and forfeits the
-`update_branch` step and the escalation budgets; keep the explicit loop.
+`--method` is `--merge-method`'s value (default `squash`). A failed `update-branch` is a
+conflict: file and notify it as the `conflict` row says. A failed `gh pr merge` (a required
+check appeared, the base moved between read and merge) is not retried blind — re-run the
+planner, which classifies the PR's new state; a second merge failure on the same head is an
+escalation. `gh pr merge --auto` would delegate the final trigger to GitHub, but it requires
+repo-level auto-merge and forfeits the `update_branch` step and the escalation budgets; keep
+the explicit loop.
 
 ## gh commands used
 
 - `gh api user --jq .login` — resolver's claim-ownership check (read-only)
-- `gh pr list --state open --json …` / `gh pr view <pr> --json comments` — the planner's reads
-- `gh pr ready <pr>` — draft→ready before an automated merge
+- `gh api repos/<owner>/<repo>/branches` — resolver's pushed-branch read (stalled workers)
+- `gh repo view --json defaultBranchRef` — default-branch fallback when origin/HEAD is unset
+- `gh pr list --state open --limit 1000 --json …` / `gh pr view <pr> --json comments,headRefOid`
+  — the planners' reads, and the head recorded before each review
+- `gh pr checkout <pr>` — the reviewer's checkout, inside its own isolated session
+- `gh pr comment <pr> --body ...` — the review-round comment
+- `gh pr ready <pr>` — draft→ready, after a passing review or on `mark_ready`
+- `gh pr update-branch <pr>` — bring a `BEHIND` PR up to date, server-side
 - `gh pr merge <pr> --<method> --delete-branch` — the bounded merge
-- `gh pr comment <pr> --body ...` — P1 relay with the `reviewed-head:` marker
 
 ## Report format
 
@@ -235,8 +279,9 @@ Epic #12 pumped (2 workers, opencode, block-on P1, squash):
   #22 we-22: delivered → PR #35; P2 finding filed as #41 (blocked by #22), merged
   #23 skipped: blocked (blocked by #35)
   #24 we-24: delivered → PR #36; P1 finding #44 filed — PR held, human notified
+  #26 skipped: stalled (branch fix/26-retry-budget pushed, no open PR)
   merge pass: 2 merged, 1 update_branch, 1 conflict (PR #37, filed #45), 1 held
-  skipped totals: blocked 1, untriaged 0, claimed 0
+  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1
   epic progress: 5/8 children closed — 0 eligible remain; pump stopped, not drained
   escalations: we-25 blocked on a permission dialog (notification raised)
                PR #37 conflicts with #23's branch — filed #45, never auto-resolved
@@ -244,11 +289,17 @@ Epic #12 pumped (2 workers, opencode, block-on P1, squash):
 
 "0 eligible remain" without "stopped, not drained" reads as a finished epic; the resolver's
 `counts` is what keeps the two apart, which is the same distinction work-issue's
-`no_ready_work` vs `not_eligible` protects. PRs parked on `wait` when the pump stops are
-listed with their counts so the next run — or the human — knows what is still in flight.
+`no_ready_work` vs `not_eligible` protects. PRs set aside on a spent CI budget when the pump
+stops are listed so the next run — or the human — knows what is still in flight.
 
 ## Script tests
 
-Both scripts' decision logic is importable and side-effect free; a change to the decision
-table or the parsers is verified with `uv run --no-project python -` importing the module and
-asserting on its functions before the pump that depends on it is trusted.
+The decision logic of the scripts — `pr_state.plan_pr`, `resolve_ready.classify` — is pure over
+hew and gh JSON and covered by stdlib `unittest` files beside them:
+
+```bash
+python3 -m unittest discover <this skill's directory>/scripts
+```
+
+A change to a decision table, a skip reason, or a parser lands with the test case that pins it,
+before the pump that depends on it is trusted.

@@ -8,48 +8,72 @@ matched PR; never writes. Prints one JSON object to stdout:
     "epic": <n>, "blockOn": "P1", "defaultBranch": "main",
     "mainCheckout": "/abs/path",
     "prs": [ { "number", "issue", "issueState", "branch", "head", "draft",
-               "mergeState", "checks", "reviewRounds", "reviewedHead",
-               "worstOpenFinding", "action", "note" } ... ],
-    "unmatched": [ {"number", "scrapedIssue", "action": "outside_epic"} ... ],
-    "counts": { "ready_and_merge": n, "re_review": n, "hold_p1": n,
-                "escalate": n, "update_branch": n, "conflict": n,
-                "wait": n, "outside_epic": n }
+               "mergeState", "mergeable", "checks", "reviewRounds",
+               "reviewedHead", "worstOpenFinding", "action", "note" } ... ],
+    "unmatched": [ {"number", "scrapedIssue", "reason",
+                    "action": "outside_epic"} ... ],
+    "counts": { "<action>": n, ... }
   }
 
 A PR is matched to an epic child by scraping the conventional issue number
 from its head branch (`fix|feat|chore/<n>-<slug>`, work-issue's naming rule).
 Findings children filed by the pump carry a `review-of: #<issue>` marker in
 their body; the worst-severity open one at or above `--block-on` holds the PR.
+Every review round leaves one PR comment carrying the reviewer-agent marker
+and a `reviewed-head: <sha>` line; those comments are the round count.
 
 Actions, in decision order (first match wins):
-  wait            issue closed, or the PR is not mergeable yet
-  conflict        mergeState DIRTY — a real conflict; file it, never auto-resolve
-  update_branch   mergeState BEHIND — merge origin/<default> in, push
-  re_review       draft PR whose head moved past the last reviewed head
+  wait            issue closed, or the PR's comments could not be read
+  conflict        mergeState DIRTY or mergeable CONFLICTING — never auto-resolve
   escalate        two review rounds and a blocking finding is still open
-  hold_p1         a blocking finding is open — human gate
-  ready_and_merge checks green, mergeable, review current — flip draft and merge
+  hold            a blocking finding is open — human gate
+  update_branch   mergeState BEHIND — merge the default branch in
+  re_review       draft PR whose head moved past the last reviewed head
+  wait            no review round yet (reviewer in flight or failed)
+  wait            checks failing, pending, or absent (absent is green only
+                  under --allow-no-checks)
+  mark_ready      draft and otherwise green — GitHub reports a draft's merge
+                  state as DRAFT, hiding BEHIND/BLOCKED until it is readied
+  merge           checks green, mergeState CLEAN or HAS_HOOKS
+  protected       mergeState BLOCKED with green checks — branch protection
+                  wants something the pump cannot give (an approval)
+  wait            anything else (UNKNOWN while GitHub computes, UNSTABLE)
   outside_epic    unmatched PR — listed for visibility, never touched
 
+Under --no-review the review rows (escalate, hold, re_review, no-round wait)
+are skipped and CI is the only gate.
+
 Usage: pr_state.py <epic-number> [--repo owner/name] [--block-on P1|P2|none]
-                   [--no-review]
+                   [--no-review] [--allow-no-checks]
 Exit: 0 ok (prs may be empty) · 1 runtime error · 2 usage error / not an epic
 """
 
 import json
 import re
-import subprocess
 import sys
 
-BRANCH_ISSUE_RE = re.compile(r"^(?:fix|feat|chore)/(\d+)(?:-|$)")
+from repo_state import (
+    CommandError,
+    branch_issue,
+    default_branch,
+    main_checkout,
+    open_prs,
+    run,
+)
+
 REVIEWED_HEAD_RE = re.compile(r"reviewed-head:\s*([0-9a-f]{7,40})")
 REVIEW_MARKER = "review-code findings (work-epic reviewer agent)"
 FINDING_MARKER_RE = re.compile(r"review-of: #(\d+)\b")
 PRIORITY_RE = re.compile(r"^P(\d+)$")
 
 BLOCK_ON = "P1"  # the default; overridable per run
-# mergeStateStatus values the pump treats as mergeable
-MERGEABLE_STATES = {"CLEAN", "HAS_HOOKS", "DRAFT"}
+BLOCK_ON_NUM = {"P1": 1, "P2": 2, "none": -1}  # none: no severity blocks
+# mergeStateStatus values a ready (non-draft) PR merges from
+MERGEABLE_STATES = {"CLEAN", "HAS_HOOKS"}
+PR_FIELDS = (
+    "number,headRefName,headRefOid,baseRefName,isDraft,mergeStateStatus,"
+    "mergeable,statusCheckRollup"
+)
 
 CHECK_OK_CONCLUSIONS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 CHECK_BAD_CONCLUSIONS = {
@@ -65,47 +89,6 @@ CONTEXT_BAD_STATES = {"FAILURE", "ERROR"}
 def fail(msg, code=1):
     print(f"pr_state: {msg}", file=sys.stderr)
     sys.exit(code)
-
-
-def run(cmd):
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        fail(p.stderr.strip() or f"{' '.join(cmd)} exited {p.returncode}")
-    return p.stdout
-
-
-def try_run(cmd):
-    """Run a command, returning (stdout, stderr, returncode) — for probes."""
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    return p.stdout, p.stderr, p.returncode
-
-
-def main_checkout():
-    """Absolute path of the repository's primary worktree, or None."""
-    p = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True
-    )
-    if p.returncode != 0:
-        return None
-    for line in p.stdout.splitlines():
-        if line.startswith("worktree "):
-            return line[len("worktree ") :] or None
-    return None
-
-
-def default_branch():
-    """Origin's HEAD branch name, or None if undeterminable."""
-    p = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    if p.returncode != 0:
-        return None
-    name = p.stdout.strip()
-    if not name.startswith("origin/"):
-        return None
-    return name[len("origin/") :]
 
 
 def check_rollup_state(rollup):
@@ -155,14 +138,16 @@ def findings_by_issue(children):
     return by_issue
 
 
-def plan_pr(pr, issue, issue_state, findings, block_on_num, review):
-    """Decision table for one matched PR. First match wins."""
-    pr_number = pr["number"]
-    comments = pr.get("comments") or []
+def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
+            allow_no_checks=False):
+    """Decision table for one matched PR. First match wins.
+
+    `pr["comments"]` is None when the comments could not be read — the review
+    state is then unknown, which is never a reason to act.
+    """
+    comments = pr.get("comments")
     rounds = [
-        c
-        for c in comments
-        if REVIEW_MARKER in (c.get("body") or "")
+        c for c in comments or [] if REVIEW_MARKER in (c.get("body") or "")
     ]
     review_rounds = len(rounds)
     reviewed_head = None
@@ -173,81 +158,98 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review):
     worst = None
     if findings:
         worst = min(findings, key=severity).get("priority")
-    worst_num = severity({"priority": worst}) if worst else 99
-    blocking = worst is not None and worst_num <= block_on_num
+    blocking = worst is not None and severity({"priority": worst}) <= block_on_num
 
     merge_state = pr.get("mergeStateStatus") or "UNKNOWN"
+    mergeable = pr.get("mergeable") or "UNKNOWN"
     checks = check_rollup_state(pr.get("statusCheckRollup") or [])
     draft = bool(pr.get("isDraft"))
     head = (pr.get("headRefOid") or "")[:40]
+    # a relayed sha may be abbreviated; a prefix of the head is the same commit
+    stale = draft and reviewed_head is not None and not head.startswith(reviewed_head)
+    green = checks == "pass" or (checks == "none" and allow_no_checks)
 
     base = {
-        "number": pr_number,
+        "number": pr["number"],
         "issue": issue,
         "issueState": issue_state,
         "branch": pr.get("headRefName"),
         "head": head,
         "draft": draft,
         "mergeState": merge_state,
+        "mergeable": mergeable,
         "checks": checks,
         "reviewRounds": review_rounds,
         "reviewedHead": reviewed_head,
         "worstOpenFinding": worst,
     }
+
+    def act(action, note=None):
+        base["action"] = action
+        if note:
+            base["note"] = note
+        return base
+
     if issue_state != "open":
-        base["action"], base["note"] = "wait", "issue closed while PR open"
-    elif merge_state == "DIRTY":
-        base["action"] = "conflict"
-    elif merge_state == "BEHIND":
-        base["action"] = "update_branch"
-    elif review:
-        stale = draft and reviewed_head is not None and head != reviewed_head
-        if review_rounds >= 2 and blocking:
-            base["action"] = "escalate"
-        elif stale:
-            base["action"] = "re_review"
-        elif blocking:
-            base["action"] = "hold_p1"
-        elif draft and review_rounds == 0:
-            base["action"] = "wait"  # reviewer in flight or failed
-        elif checks in ("pass", "none") and merge_state in MERGEABLE_STATES:
-            base["action"] = "ready_and_merge"
-        else:
-            base["action"] = "wait"
-    else:  # --no-review: CI is the only gate
-        if checks in ("pass", "none") and merge_state in MERGEABLE_STATES:
-            base["action"] = "ready_and_merge"
-        else:
-            base["action"] = "wait"
-    return base
+        return act("wait", "issue closed while PR open")
+    if review and comments is None:
+        return act("wait", "PR comments unreadable — review state unknown")
+    if merge_state == "DIRTY" or mergeable == "CONFLICTING":
+        return act("conflict")
+    if review and review_rounds >= 2 and blocking:
+        return act("escalate", "two review rounds, blocking finding still open")
+    if review and blocking:
+        return act("hold", f"open {worst} finding at or above --block-on")
+    if merge_state == "BEHIND":
+        return act("update_branch")
+    if review and stale:
+        return act("re_review", "head moved past the last reviewed head")
+    if review and review_rounds == 0:
+        return act("wait", "no review round yet — reviewer in flight or failed")
+    if not green:
+        return act("wait", {"fail": "checks failing",
+                            "pending": "checks pending",
+                            "none": "no checks reported yet"}.get(checks))
+    if draft:
+        return act("mark_ready")
+    if merge_state in MERGEABLE_STATES:
+        return act("merge")
+    if merge_state == "BLOCKED":
+        return act("protected", "branch protection blocks the merge despite green checks")
+    return act("wait", f"mergeState {merge_state}")
 
 
-def main():
-    args = sys.argv[1:]
-    repo = None
-    block_on = BLOCK_ON
-    review = True
+def parse_args(args):
+    """Flags in any position — the skill passes them after the epic number."""
+    args = list(args)
+    repo, block_on, review, allow_no_checks = None, BLOCK_ON, True, False
+    positional = []
     while args:
-        if args[0] == "--repo":
-            if len(args) < 2:
+        a = args.pop(0)
+        if a == "--repo":
+            if not args:
                 fail("--repo needs owner/name", 2)
-            repo, args = args[1], args[2:]
-        elif args[0] == "--block-on":
-            if len(args) < 2 or args[1] not in ("P1", "P2", "none"):
+            repo = args.pop(0)
+        elif a == "--block-on":
+            if not args or args[0] not in BLOCK_ON_NUM:
                 fail("--block-on needs P1, P2, or none", 2)
-            block_on, args = args[1], args[2:]
-        elif args[0] == "--no-review":
-            review, args = False, args[1:]
+            block_on = args.pop(0)
+        elif a == "--no-review":
+            review = False
+        elif a == "--allow-no-checks":
+            allow_no_checks = True
         else:
-            break
-    if len(args) != 1 or not args[0].isdigit():
+            positional.append(a)
+    if len(positional) != 1 or not positional[0].isdigit():
         fail(
             "usage: pr_state.py <epic-number> [--repo owner/name] "
-            "[--block-on P1|P2|none] [--no-review]",
+            "[--block-on P1|P2|none] [--no-review] [--allow-no-checks]",
             2,
         )
-    epic_n = args[0]
-    block_on_num = 99 if block_on == "none" else int(block_on[1])
+    return positional[0], repo, block_on, review, allow_no_checks
+
+
+def plan(epic_n, repo, block_on, review, allow_no_checks):
     suffix = ["--repo", repo] if repo else []
     gh_suffix = ["-R", repo] if repo else []
 
@@ -262,45 +264,41 @@ def main():
         ).splitlines()
         if line.strip()
     ]
-    child_numbers = {c["number"] for c in children}
     child_by_number = {c["number"]: c for c in children}
     findings = findings_by_issue(children)
+    default = default_branch(repo)
 
     prs_out, unmatched = [], []
-    listed, list_err, list_code = try_run(
-        [
-            "gh",
-            "pr",
-            "list",
-            "--state",
-            "open",
-            "--json",
-            "number,headRefName,headRefOid,isDraft,mergeStateStatus,statusCheckRollup",
-            *gh_suffix,
-        ]
-    )
-    if list_code != 0:
-        fail(list_err.strip() or f"gh pr list exited {list_code}")
-    for raw in json.loads(listed):
-        m = BRANCH_ISSUE_RE.match(raw.get("headRefName") or "")
-        issue = int(m.group(1)) if m else None
-        if issue is None or issue not in child_numbers:
-            unmatched.append(
-                {"number": raw["number"], "scrapedIssue": issue, "action": "outside_epic"}
-            )
+    for raw in open_prs(PR_FIELDS, repo):
+        issue = branch_issue(raw.get("headRefName"))
+        reason = None
+        if issue is None:
+            reason = "no issue number in the head branch"
+        elif issue not in child_by_number:
+            reason = f"#{issue} is not a child of this epic"
+        elif default and raw.get("baseRefName") != default:
+            reason = f"targets {raw.get('baseRefName')}, not {default}"
+        if reason:
+            unmatched.append({"number": raw["number"], "scrapedIssue": issue,
+                              "reason": reason, "action": "outside_epic"})
             continue
-        comments_raw, _, ccode = try_run(
-            ["gh", "pr", "view", str(raw["number"]), "--json", "comments", *gh_suffix]
-        )
-        comments = json.loads(comments_raw).get("comments", []) if ccode == 0 else []
+        try:
+            view = json.loads(
+                run(["gh", "pr", "view", str(raw["number"]), "--json", "comments",
+                     *gh_suffix])
+            )
+            raw["comments"] = view.get("comments") or []
+        except (CommandError, ValueError):
+            raw["comments"] = None
         prs_out.append(
             plan_pr(
                 raw,
                 issue,
                 child_by_number[issue].get("state", "open"),
                 findings.get(issue) or [],
-                block_on_num,
+                BLOCK_ON_NUM[block_on],
                 review,
+                allow_no_checks,
             )
         )
     counts = {}
@@ -309,20 +307,24 @@ def main():
     counts["outside_epic"] = len(unmatched)
     prs_out.sort(key=lambda p: (p["issue"], p["number"]))
 
-    print(
-        json.dumps(
-            {
-                "epic": int(epic_n),
-                "blockOn": block_on,
-                "defaultBranch": default_branch(),
-                "mainCheckout": main_checkout(),
-                "prs": prs_out,
-                "unmatched": sorted(unmatched, key=lambda u: u["number"]),
-                "counts": counts,
-            },
-            indent=2,
-        )
-    )
+    return {
+        "epic": int(epic_n),
+        "blockOn": block_on,
+        "defaultBranch": default,
+        "mainCheckout": main_checkout(),
+        "prs": prs_out,
+        "unmatched": sorted(unmatched, key=lambda u: u["number"]),
+        "counts": counts,
+    }
+
+
+def main():
+    epic_n, repo, block_on, review, allow_no_checks = parse_args(sys.argv[1:])
+    try:
+        out = plan(epic_n, repo, block_on, review, allow_no_checks)
+    except CommandError as e:
+        fail(str(e))
+    print(json.dumps(out, indent=2))
 
 
 if __name__ == "__main__":

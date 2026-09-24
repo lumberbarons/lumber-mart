@@ -1,25 +1,33 @@
 #!/usr/bin/env python3
 """Resolve a hew epic's ready children into a deterministic fan-out plan.
 
-Read-only: runs `hew show`, `hew list --epic --json --bodies`, and two local
-git reads (primary worktree, origin HEAD); never writes.
-Prints one JSON object to stdout:
+Read-only: runs `hew show`, `hew list --epic --json --bodies`, `gh pr list`,
+the remote branch list, and two local git reads (primary worktree, default
+branch); never writes. Prints one JSON object to stdout:
 
   {
     "epic": <n>, "title": "...",
     "mainCheckout": "/abs/path",         # primary worktree: spawn/branch-update home
-    "defaultBranch": "main",             # remote HEAD of origin, when determinable
+    "defaultBranch": "main",             # origin's default branch, when determinable
     "eligible": [ {"number", "title", "priority", "type", "where", "doneWhen",
-                   "large"} ... ],        # priority-sorted, oldest tie-break
+                   "large", "resume"} ... ],  # priority-sorted, oldest tie-break
     "skipped":  [ {"number", "title", "reason", "detail"} ... ],
     "counts":   {"eligible": n, "blocked": n, "untriaged": n, "claimed": n,
-                 "closed": n}
+                 "in_review": n, "stalled": n, "closed": n}
   }
 
-Skip reasons: blocked (open blockers), untriaged (no priority/type),
-claimed (in progress by someone else). Closed children are counted, not listed.
+Skip reasons: in_review (an open PR carries the child's number), blocked
+(open blockers), untriaged (no priority/type), claimed (in progress — by
+someone else, or by you without --resume), stalled (in progress by you, a
+branch pushed, no open PR: a worker failed or its PR was closed). Closed
+children are counted, not listed.
 
-Usage: resolve_ready.py <epic-number> [--repo owner/name]
+Children in progress by you are the pump's own claims: in flight, delivered,
+or failed. They are never eligible by default — respawning one duplicates or
+repeats work. --resume opts the ones with neither a PR nor a pushed branch
+back in (`resume: true`), for deliberately picking up a crashed run.
+
+Usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume]
 Exit: 0 ok (eligible may be empty) · 1 runtime error · 2 not an epic/usage
 """
 
@@ -28,56 +36,25 @@ import re
 import subprocess
 import sys
 
+from repo_state import (
+    CommandError,
+    branch_issue,
+    default_branch,
+    main_checkout,
+    open_prs,
+    remote_branches,
+    run,
+)
+
 PRIORITY_RE = re.compile(r"^P(\d+)$")
 WHERE_MAX = 3  # more than three paths -> large (work-issue's sizing rule)
 DONE_WHEN_MAX = 5  # more than five done-when items -> large
+SKIP_REASONS = ("blocked", "untriaged", "claimed", "in_review", "stalled")
 
 
 def fail(msg, code=1):
     print(f"resolve_ready: {msg}", file=sys.stderr)
     sys.exit(code)
-
-
-def run(cmd):
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        fail(p.stderr.strip() or f"{' '.join(cmd)} exited {p.returncode}")
-    return p.stdout
-
-
-def main_checkout():
-    """Absolute path of the repository's primary worktree, or None.
-
-    `git worktree list --porcelain` lists the main worktree first; that is
-    the checkout every other worktree hangs off, so it is where the pump
-    updates the default branch and where herdr sessions inherit cwd from.
-    """
-    p = subprocess.run(
-        ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True
-    )
-    if p.returncode != 0:
-        return None
-    for line in p.stdout.splitlines():
-        if line.startswith("worktree "):
-            return line[len("worktree ") :] or None
-    return None
-
-
-def default_branch():
-    """Origin's HEAD branch name, or None if determinable."""
-    p = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    if p.returncode != 0:
-        return None
-    name = p.stdout.strip()
-    # origin/HEAD may be unset (detached answer "origin/HEAD") or point at
-    # nothing on a fresh clone; only a real branch name is usable.
-    if not name.startswith("origin/"):
-        return None
-    return name[len("origin/") :]
 
 
 def current_user():
@@ -106,58 +83,75 @@ def section_items(body, heading):
     return items
 
 
-def classify(children, me):
+def delivery_index(prs, branches):
+    """Map issue -> open PR number, and issue -> pushed branch name."""
+    pr_by_issue, branch_by_issue = {}, {}
+    for pr in prs:
+        n = branch_issue(pr.get("headRefName"))
+        if n is not None:
+            pr_by_issue.setdefault(n, pr["number"])
+    for name in branches:
+        n = branch_issue(name)
+        if n is not None:
+            branch_by_issue.setdefault(n, name)
+    return pr_by_issue, branch_by_issue
+
+
+def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False):
+    pr_by_issue = pr_by_issue or {}
+    branch_by_issue = branch_by_issue or {}
     eligible, skipped, closed = [], [], 0
+
+    def skip(c, reason, detail):
+        skipped.append(
+            {"number": c["number"], "title": c.get("title", ""),
+             "reason": reason, "detail": detail}
+        )
+
     for c in children:
         if c.get("state") != "open":
             closed += 1
             continue
-        body = c.get("body") or ""
+        n = c["number"]
+        # an open PR means delivered and in review, whoever holds the claim
+        if n in pr_by_issue:
+            skip(c, "in_review", f"PR #{pr_by_issue[n]} open")
+            continue
         blockers = c.get("openBlockers") or []
         if blockers:
-            skipped.append(
-                {
-                    "number": c["number"],
-                    "title": c.get("title", ""),
-                    "reason": "blocked",
-                    "detail": "blocked by " + ", ".join(f"#{b}" for b in blockers),
-                }
-            )
+            skip(c, "blocked", "blocked by " + ", ".join(f"#{b}" for b in blockers))
             continue
         if c.get("untriaged"):
-            skipped.append(
-                {
-                    "number": c["number"],
-                    "title": c.get("title", ""),
-                    "reason": "untriaged",
-                    "detail": "missing priority or type",
-                }
-            )
+            skip(c, "untriaged", "missing priority or type")
             continue
+        is_resume = False
         if c.get("inProgress"):
             assignees = c.get("assignees") or []
             if me is None or me not in assignees:
-                skipped.append(
-                    {
-                        "number": c["number"],
-                        "title": c.get("title", ""),
-                        "reason": "claimed",
-                        "detail": "in progress "
-                        + (", ".join("@" + a for a in assignees) or "unassigned"),
-                    }
-                )
+                skip(c, "claimed",
+                     "in progress " + (", ".join("@" + a for a in assignees) or "unassigned"))
                 continue
+            if n in branch_by_issue:
+                skip(c, "stalled",
+                     f"in progress @{me}, branch {branch_by_issue[n]} pushed, no open PR")
+                continue
+            if not resume:
+                skip(c, "claimed", f"in progress @{me} — pass --resume to pick it up")
+                continue
+            is_resume = True
+        body = c.get("body") or ""
         where = section_items(body, "where")
         done_when = section_items(body, "done when")
         eligible.append(
             {
-                "number": c["number"],
+                "number": n,
                 "title": c.get("title", ""),
                 "priority": c.get("priority"),
                 "type": c.get("type"),
                 "where": where,
                 "doneWhen": done_when,
                 "large": where > WHERE_MAX or done_when > DONE_WHEN_MAX,
+                "resume": is_resume,
             }
         )
     return eligible, skipped, closed
@@ -175,18 +169,24 @@ def sort_eligible(children_eligible, raw_by_number):
     )
 
 
-def main():
-    args = sys.argv[1:]
-    repo = None
-    if "--repo" in args:
-        i = args.index("--repo")
-        if i + 1 >= len(args):
-            fail("--repo needs owner/name", 2)
-        repo = args[i + 1]
-        del args[i : i + 2]
-    if len(args) != 1 or not args[0].isdigit():
-        fail("usage: resolve_ready.py <epic-number> [--repo owner/name]", 2)
-    epic_n = args[0]
+def parse_args(args):
+    repo, resume, positional = None, False, []
+    while args:
+        a = args.pop(0)
+        if a == "--repo":
+            if not args:
+                fail("--repo needs owner/name", 2)
+            repo = args.pop(0)
+        elif a == "--resume":
+            resume = True
+        else:
+            positional.append(a)
+    if len(positional) != 1 or not positional[0].isdigit():
+        fail("usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume]", 2)
+    return positional[0], repo, resume
+
+
+def resolve(epic_n, repo, resume):
     suffix = ["--repo", repo] if repo else []
 
     show = json.loads(run(["hew", "show", epic_n, "--json", *suffix]))
@@ -201,27 +201,37 @@ def main():
         if line.strip()
     ]
     raw_by_number = {c["number"]: c for c in children}
+    # fail closed: without these reads a delivered or failed child looks eligible
+    pr_by_issue, branch_by_issue = delivery_index(
+        open_prs("number,headRefName", repo), remote_branches(repo)
+    )
     me = current_user()
-    eligible, skipped, closed = classify(children, me)
+    eligible, skipped, closed = classify(
+        children, me, pr_by_issue, branch_by_issue, resume
+    )
     counts = {"closed": closed}
-    for r in ("blocked", "untriaged", "claimed"):
+    for r in SKIP_REASONS:
         counts[r] = sum(1 for s in skipped if s["reason"] == r)
     counts["eligible"] = len(eligible)
 
-    print(
-        json.dumps(
-            {
-                "epic": int(epic_n),
-                "title": show.get("title", ""),
-                "mainCheckout": main_checkout(),
-                "defaultBranch": default_branch(),
-                "eligible": sort_eligible(eligible, raw_by_number),
-                "skipped": sorted(skipped, key=lambda s: s["number"]),
-                "counts": counts,
-            },
-            indent=2,
-        )
-    )
+    return {
+        "epic": int(epic_n),
+        "title": show.get("title", ""),
+        "mainCheckout": main_checkout(),
+        "defaultBranch": default_branch(repo),
+        "eligible": sort_eligible(eligible, raw_by_number),
+        "skipped": sorted(skipped, key=lambda s: s["number"]),
+        "counts": counts,
+    }
+
+
+def main():
+    epic_n, repo, resume = parse_args(sys.argv[1:])
+    try:
+        out = resolve(epic_n, repo, resume)
+    except CommandError as e:
+        fail(str(e))
+    print(json.dumps(out, indent=2))
 
 
 if __name__ == "__main__":

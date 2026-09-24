@@ -6,7 +6,8 @@ one plan line per fileable finding. Deduplication against the tracker stays
 with the raise-issues agent (Step 3); this script never queries hew.
 
   findings_to_plan.py <findings.json> [--parent <epic>] [--reviewed-issue <n>]
-                      [--reviewed-pr <n>] [--type bug|task] [--out FILE]
+                      [--reviewed-pr <n>] [--at-or-above P1..P4]
+                      [--type bug|task] [--out FILE]
 
 Per finding, the emitted plan line carries:
 
@@ -30,6 +31,8 @@ containing every file in `files`, or the single file itself.
 A finding is skipped (and counted on stderr) when it lacks priority, files,
 fix, or pattern — the pump files from critique findings files, which always
 carry a pattern; hand-written lists go through the raise-issues agent instead.
+`--at-or-above P2` also skips findings less severe than P2 (P3, P4), for
+callers that relay those elsewhere rather than track them.
 `skill` is required for every finding — the file is rejected without it.
 
 Exit: 0 plan written (may be empty — reviewed, nothing found) · 3 findings
@@ -40,6 +43,12 @@ file status is not `reviewed` (no_scope/error — nothing was reviewed) ·
 import json
 import os
 import sys
+
+USAGE = (
+    "usage: findings_to_plan.py <findings.json> [--parent <epic>] "
+    "[--reviewed-issue <n>] [--reviewed-pr <n>] [--at-or-above P1..P4] "
+    "[--type bug|task] [--out FILE]"
+)
 
 
 def fail(msg, code=1):
@@ -61,7 +70,13 @@ def backtick(paths):
     return ", ".join(f"`{p}`" for p in paths)
 
 
-def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type):
+def priority_number(priority):
+    digits = "".join(c for c in priority or "" if c.isdigit())
+    return int(digits) if digits else None
+
+
+def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
+            at_or_above=None):
     """One finding -> one plan line, or (None, reason) when not fileable."""
     priority = finding.get("priority")
     files = finding.get("files")
@@ -71,10 +86,12 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type):
         return None, "missing priority, files, or fix"
     if not pattern:
         return None, "missing pattern"
-    pnum = "".join(c for c in priority if c.isdigit())
-    if not pnum:
+    pnum = priority_number(priority)
+    if pnum is None:
         return None, f"unreadable priority {priority!r}"
-    priority = f"P{max(1, min(4, int(pnum)))}"  # never P0, never below P4
+    if at_or_above is not None and pnum > at_or_above:
+        return None, f"below --at-or-above P{at_or_above}"
+    priority = f"P{max(1, min(4, pnum))}"  # never P0, never below P4
 
     scope = derive_scope(files)
     key = f"{finding.get('skill')}/{pattern}/{scope}"
@@ -106,42 +123,57 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type):
     return line, None
 
 
-def main():
-    args = sys.argv[1:]
-    parent = None
-    reviewed_issue = None
-    reviewed_pr = None
-    forced_type = "bug"
-    out = None
+def parse_args(args):
+    opts = {"parent": None, "reviewed_issue": None, "reviewed_pr": None,
+            "type": "bug", "out": None, "at_or_above": None}
     positional = []
+
+    def value(flag):
+        if not args:
+            fail(f"{flag} needs a value\n{USAGE}", 2)
+        return args.pop(0)
+
+    def number(flag):
+        v = value(flag)
+        if not v.isdigit():
+            fail(f"{flag} needs an issue number, got {v!r}", 2)
+        return int(v)
+
     while args:
         a = args.pop(0)
         if a == "--parent":
-            parent = int(args.pop(0))
+            opts["parent"] = number(a)
         elif a == "--reviewed-issue":
-            reviewed_issue = int(args.pop(0))
+            opts["reviewed_issue"] = number(a)
         elif a == "--reviewed-pr":
-            reviewed_pr = int(args.pop(0))
+            opts["reviewed_pr"] = number(a)
+        elif a == "--at-or-above":
+            v = value(a)
+            if v not in ("P1", "P2", "P3", "P4"):
+                fail("--at-or-above must be P1, P2, P3, or P4", 2)
+            opts["at_or_above"] = int(v[1])
         elif a == "--type":
-            forced_type = args.pop(0)
-            if forced_type not in ("bug", "task"):
+            opts["type"] = value(a)
+            if opts["type"] not in ("bug", "task"):
                 fail("--type must be bug or task", 2)
         elif a == "--out":
-            out = args.pop(0)
+            opts["out"] = value(a)
         elif a.startswith("-"):
-            fail(f"unknown flag {a}", 2)
+            fail(f"unknown flag {a}\n{USAGE}", 2)
         else:
             positional.append(a)
     if len(positional) != 1:
-        fail(
-            "usage: findings_to_plan.py <findings.json> [--parent <epic>] "
-            "[--reviewed-issue <n>] [--reviewed-pr <n>] [--type bug|task] "
-            "[--out FILE]",
-            2,
-        )
+        fail(USAGE, 2)
+    return positional[0], opts
 
-    with open(positional[0]) as f:
-        data = json.load(f)
+
+def main():
+    path, opts = parse_args(sys.argv[1:])
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        fail(f"cannot read findings file {path}: {e}")
 
     status = data.get("status", "reviewed")
     if status != "reviewed":
@@ -158,17 +190,20 @@ def main():
     for finding in data.get("findings") or []:
         converted = dict(finding, skill=data["skill"])
         line, reason = convert(
-            converted, parent, reviewed_issue, reviewed_pr, forced_type
+            converted, opts["parent"], opts["reviewed_issue"], opts["reviewed_pr"],
+            opts["type"], opts["at_or_above"],
         )
         if line is None:
             skipped += 1
-            print(f"findings_to_plan: skipped finding — {reason_skip(reason, finding)}", file=sys.stderr)
+            title = finding.get("title") or "<untitled>"
+            print(f"findings_to_plan: skipped finding — {reason} ({title!r})",
+                  file=sys.stderr)
             continue
         lines.append(line)
 
     text = "".join(json.dumps(l, separators=(",", ":")) + "\n" for l in lines)
-    if out:
-        with open(out, "w") as f:
+    if opts["out"]:
+        with open(opts["out"], "w") as f:
             f.write(text)
     else:
         sys.stdout.write(text)
@@ -176,11 +211,6 @@ def main():
         f"findings_to_plan: {len(lines)} planned, {skipped} skipped",
         file=sys.stderr,
     )
-
-
-def reason_skip(reason, finding):
-    title = finding.get("title") or "<untitled>"
-    return f"{reason} ({title!r})"
 
 
 if __name__ == "__main__":

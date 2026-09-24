@@ -4,10 +4,12 @@ Skills for orchestrating a [hew](https://github.com/lumberbarons/hew) epic acros
 | Directory | What | When to read |
 |-----------|------|--------------|
 | `skills/work-epic/` | Pumps an epic: workers, reviewers, findings filing, merge pass | Changing how the pump resolves, spawns, reaps, files, merges, or reports |
-| `skills/work-epic/REFERENCE.md` | Both scripts' schemas, prompt templates, filing flow, naming, budgets, report format | Changing what the pump tells its agents or how it reads them back |
+| `skills/work-epic/REFERENCE.md` | The scripts' schemas, prompt templates, review-round comment, filing flow, naming, budgets, report format | Changing what the pump tells its agents or how it reads them back |
 | `skills/work-epic/scripts/resolve_ready.py` | The deterministic spawn planner | Changing which children get worked or in what order |
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, update, hold, or escalate |
-| `README.md` | Plugin overview and the two modes | Understanding what work-epic does |
+| `skills/work-epic/scripts/repo_state.py` | Read-only git/gh probes both planners share | Changing how PRs, branches, or the default branch are read |
+| `skills/work-epic/scripts/test_*.py` | stdlib `unittest` over both decision tables | Changing any decision, skip reason, or parser — add the pinning case |
+| `README.md` | Plugin overview and the modes | Understanding what work-epic does |
 
 Requires `hew` on PATH (authenticated), the `herdr` CLI, and the skills this pump drives:
 `work-issue` (hew plugin) for workers and `review-code` (critique plugin) for reviewers;
@@ -25,8 +27,14 @@ conflict. Autonomous mode moves the *merge* off the human's list — bounded to 
 PRs, CI green, a current review, and no finding at or above `--block-on` — not the judgement:
 P1 holds, conflicts, and ping-pong escalations all land on the human. Removing any of those
 bounds turns an accelerator into an unsupervised committer. The `we-`/`wr-` name prefixes are
-the ownership rule that lets several orchestrators share a repo safely — closing or
-reassigning an agent outside your own prefix breaks that.
+the ownership rule that lets several orchestrators share a herdr server safely — closing or
+reassigning an agent outside your own prefix breaks that. hew's claim lock tells users apart,
+not orchestrators: two orchestrators on one gh login are only kept apart by sharing a herdr
+server, where agent names are unique.
+
+The pump never runs git inside a PR branch in the human's main checkout: branch updates are
+`gh pr update-branch`, reviewers and the integration pass get their own worktree, and the
+post-merge fast-forward happens only while the main checkout sits on the default branch.
 
 Worker and reviewer outcomes are read from `--json` files, never inferred from terminal output:
 herdr's settled states prove an agent stopped, the file says what happened. Pointing outcome

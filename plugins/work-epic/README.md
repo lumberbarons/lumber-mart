@@ -15,7 +15,7 @@ One epic, pumped: the orchestrator never implements, reviews by hand, closes, or
 conflicts. It accelerates everything up to the gates, not through them — and which gate is
 which depends on the mode you pick.
 
-## Two modes
+## Modes
 
 **Autonomous (default).** The reviewer is a findings generator: P1/P2 findings become epic
 children (filed `blocked-by` the reviewed issue, so their fixes unblock exactly when the PR
@@ -49,13 +49,19 @@ is a human's click.
 /work-epic:work-epic 12 --kind codex               # drive workers via skill files, not skills
 /work-epic:work-epic 12 --dry-run                  # resolver + merge-pass plans only
 /work-epic:work-epic 12 --no-review                # autonomous: merge on CI green alone
+/work-epic:work-epic 12 --allow-no-checks          # repo has no CI: no checks counts as green
+/work-epic:work-epic 12 --resume                   # pick up your own claims a crashed run left
 ```
+
+The pump spawns from, and fast-forwards, the main checkout, so that checkout must be on the
+default branch; it stops and says so otherwise rather than touch a branch you are working on.
 
 ## How it works
 
-**Both plans come from scripts.** `resolve_ready.py` reads the epic and emits a JSON fan-out
+**The plans come from scripts.** `resolve_ready.py` reads the epic and emits a JSON fan-out
 plan — eligible children in priority-sorted, oldest-tie-break order, every open child left
-behind with its skip reason, plus the main checkout and default branch. `pr_state.py` reads
+behind with its skip reason (including children already in review or whose worker
+failed, so the pump never respawns its own work), plus the main checkout and default branch. `pr_state.py` reads
 the epic's open PRs (CI rollups, merge states, review rounds, finding holds) and emits one
 deterministic action per PR. A pump that picks differently on each run cannot be reasoned
 about from its logs, so the agent never sorts hew or gh output itself.
@@ -68,20 +74,23 @@ prompt for external access.
 **Review is a findings generator (and a gate).** A reviewer agent runs `review-code` against
 each delivered PR's head. In autonomous mode its findings are converted into `hew apply` plan
 lines and filed as epic children — deduplicated by review key, `blocked-by` the reviewed
-issue — so the pump itself picks the fixes up once the blocker clears. A P1 additionally
-holds its PR as a draft with the hold's reason commented on it.
+issue — so the pump itself picks the fixes up once the blocker clears. Every review leaves one
+round comment on the PR recording the head it reviewed; a finding at or above `--block-on`
+holds the PR as a draft, and a review that could not run is escalated, never read as clean.
 
 **The merge pass is classified, not judged.** `pr_state.py` decides per PR: merge (green,
-current review, no holds), update the branch when it falls behind default, re-review a moved
-head, file-and-escalate a conflict, hold on a P1, or wait for CI. The pump executes the
+current review, no holds), mark a draft ready, update the branch when it falls behind default
+(server-side, via `gh pr update-branch`), re-review a moved head, file-and-escalate a
+conflict, hold on a blocking finding, flag branch protection it cannot satisfy, or wait for
+CI — where "no checks yet" is waiting, not green. The pump executes the
 classification and re-runs the planner after every write. It never merges outside the epic,
 never `--admin`, never force-pushes, and never resolves a conflict.
 
 **The merge gate is CI + severity; the judgement gates stay human.** Closing issues and the
-epic, clearing a P1 hold, resolving a conflict, and anything past a blocked worker's dialog
+epic, clearing a hold, resolving a conflict, and anything past a blocked worker's dialog
 are decisions the pump escalates, never makes.
 
 **Multi-PR runs still re-check coupling in human-review mode.** Delivered PRs are merged one
 at a time onto a throwaway integration branch and gated over the union. Autonomous mode
-dropped the replica: main is the integration surface, every PR is re-based onto the current
-default before merge, and CI is the gate that runs where it ships.
+dropped the replica: main is the integration surface, every PR is brought up to date with
+the default branch before merge, and CI is the gate that runs where it ships.

@@ -66,7 +66,8 @@ path, where no agent hand-composes plan lines:
 
 ```bash
 findings_to_plan.py <findings.json> [--parent <epic>] [--reviewed-issue <n>]
-                    [--reviewed-pr <n>] [--type bug|task] [--out FILE]
+                    [--reviewed-pr <n>] [--at-or-above P1..P4] [--type bug|task]
+                    [--out FILE]
 ```
 
 Per finding it emits the plan shape above, deriving `review-key: <skill>/<pattern>/<scope>`
@@ -79,7 +80,9 @@ converter's job: run the Step 3 table against the emitted keys yourself before `
 
 A finding is skipped and counted when it lacks priority, files, fix, or pattern — the pump
 files from critique findings files, which always carry a pattern; hand-written lists go
-through the agent flow instead. The whole file is rejected when `skill` is missing, and a
+through the agent flow instead. `--at-or-above P2` also skips findings less severe than P2,
+for callers (the work-epic pump) that relay those elsewhere rather than track them; the
+threshold compares the finding's own priority, so a P0 still passes and files as P1. The whole file is rejected when `skill` is missing, and a
 file whose `status` is `no_scope` or `error` exits 3 — nothing was reviewed, which is a
 different outcome from "reviewed, nothing found" (exit 0, empty plan).
 
