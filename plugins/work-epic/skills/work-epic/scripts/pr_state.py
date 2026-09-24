@@ -9,10 +9,11 @@ stdout:
     "epic": <n>, "blockOn": "P1", "defaultBranch": "main",
     "mainCheckout": "/abs/path",
     "queueHead": <pr number or null>,
+    "reconcileHead": <pr number or null>,
     "prs": [ { "number", "issue", "issueState", "branch", "head", "draft",
                "mergeState", "mergeable", "checks", "behindBy",
-               "reviewRounds", "reviewedHead", "worstOpenFinding", "action",
-               "note" } ... ],
+               "reviewRounds", "reviewedHead", "reconcileFailures",
+               "worstOpenFinding", "action", "note" } ... ],
     "unmatched": [ {"number", "scrapedIssue", "reason",
                     "action": "outside_epic"} ... ],
     "counts": { "<action>": n, ... }
@@ -27,6 +28,8 @@ and a `reviewed-head: <sha>` line; those comments are the round count.
 
 Actions, in decision order (first match wins):
   wait            issue closed, or the PR's comments could not be read
+  wait            conflicted under --resolve-conflicts with unreadable
+                  comments — the failed-attempt count is unknown, not zero
   reconcile       mergeState DIRTY or mergeable CONFLICTING with
                   --resolve-conflicts, no review-enforced blocker open, and
                   fewer than two failed attempts recorded — a reconciler
@@ -73,8 +76,15 @@ only while `queueHead` is null (a merge landing mid-reconciliation would
 re-conflict it), the lowest-numbered candidate; every other candidate becomes
 `queued` too.
 
+GitHub cannot say a reconciler is running, so the pump passes one
+`--reconciling <pr>` per live `wc-<pr>` agent. While any is live the plan
+freezes around it: that PR is `wait`, `reconcileHead` is the lowest live one,
+`queueHead` is null, and every other `merge`, `update_branch`, and `reconcile`
+is `queued` behind it — main does not move and no second reconciler starts.
+
 Usage: pr_state.py <epic-number> [--repo owner/name] [--block-on P1|P2|none]
                    [--no-review] [--allow-no-checks] [--resolve-conflicts]
+                   [--reconciling <pr>]...
 Exit: 0 ok (prs may be empty) · 1 runtime error · 2 usage error / not an epic
 """
 
@@ -239,9 +249,11 @@ def plan_pr(pr, issue, issue_state, findings, block_on_num, review,
     if review and comments is None:
         return act("wait", "PR comments unreadable — review state unknown")
     if merge_state == "DIRTY" or mergeable == "CONFLICTING":
-        if (reconcile and not (review and blocking)
-                and reconcile_failures < MAX_RECONCILE_ATTEMPTS):
-            return act("reconcile", "reconciler agent merges the base branch in")
+        if reconcile and not (review and blocking):
+            if comments is None:
+                return act("wait", "PR comments unreadable — reconcile attempts unknown")
+            if reconcile_failures < MAX_RECONCILE_ATTEMPTS:
+                return act("reconcile", "reconciler agent merges the base branch in")
         return act("conflict")
     if review and review_rounds >= 2 and blocking:
         return act("escalate", "two review rounds, blocking finding still open")
@@ -322,11 +334,35 @@ def queue_reconciles(prs, merge_head):
     return head["number"]
 
 
+def schedule(prs, reconciling):
+    """Order the pass: the merge queue, then reconciliations — or neither.
+
+    `reconciling` is the PR numbers of live `wc-<pr>` agents. While any is
+    live, its PR waits on the reconciler whatever GitHub reads, and every
+    other `merge`, `update_branch`, and `reconcile` is queued behind the
+    lowest live one: a merge would re-conflict the reconciliation, and a
+    second reconciler is the one the planner exists to prevent. Mutates in
+    place and returns `(queueHead, reconcileHead)`.
+    """
+    if not reconciling:
+        merge_head = queue_merges(prs)
+        return merge_head, queue_reconciles(prs, merge_head)
+    head = min(reconciling)
+    for p in prs:
+        if p["number"] in reconciling:
+            p["action"] = "wait"
+            p["note"] = f"reconciler wc-{p['number']} in flight"
+        elif p["action"] in ("merge", "update_branch", "reconcile"):
+            p["action"] = "queued"
+            p["note"] = f"queued behind reconciliation of PR #{head}"
+    return None, head
+
+
 def parse_args(args):
     """Flags in any position — the skill passes them after the epic number."""
     args = list(args)
     repo, block_on, review, allow_no_checks = None, BLOCK_ON, True, False
-    reconcile = False
+    reconcile, reconciling = False, set()
     positional = []
     while args:
         a = args.pop(0)
@@ -342,6 +378,10 @@ def parse_args(args):
             review = False
         elif a == "--resolve-conflicts":
             reconcile = True
+        elif a == "--reconciling":
+            if not args or not args[0].isdigit():
+                fail("--reconciling needs a PR number", 2)
+            reconciling.add(int(args.pop(0)))
         elif a == "--allow-no-checks":
             allow_no_checks = True
         else:
@@ -350,13 +390,15 @@ def parse_args(args):
         fail(
             "usage: pr_state.py <epic-number> [--repo owner/name] "
             "[--block-on P1|P2|none] [--no-review] [--allow-no-checks] "
-            "[--resolve-conflicts]",
+            "[--resolve-conflicts] [--reconciling <pr>]...",
             2,
         )
-    return positional[0], repo, block_on, review, allow_no_checks, reconcile
+    return (positional[0], repo, block_on, review, allow_no_checks, reconcile,
+            frozenset(reconciling))
 
 
-def plan(epic_n, repo, block_on, review, allow_no_checks, reconcile):
+def plan(epic_n, repo, block_on, review, allow_no_checks, reconcile,
+         reconciling=frozenset()):
     suffix = ["--repo", repo] if repo else []
     gh_suffix = ["-R", repo] if repo else []
 
@@ -410,8 +452,7 @@ def plan(epic_n, repo, block_on, review, allow_no_checks, reconcile):
                 reconcile,
             )
         )
-    queue_head = queue_merges(prs_out)
-    reconcile_head = queue_reconciles(prs_out, queue_head)
+    queue_head, reconcile_head = schedule(prs_out, reconciling)
     counts = {}
     for p in prs_out:
         counts[p["action"]] = counts.get(p["action"], 0) + 1
@@ -432,11 +473,12 @@ def plan(epic_n, repo, block_on, review, allow_no_checks, reconcile):
 
 
 def main():
-    epic_n, repo, block_on, review, allow_no_checks, reconcile = parse_args(
-        sys.argv[1:]
+    epic_n, repo, block_on, review, allow_no_checks, reconcile, reconciling = (
+        parse_args(sys.argv[1:])
     )
     try:
-        out = plan(epic_n, repo, block_on, review, allow_no_checks, reconcile)
+        out = plan(epic_n, repo, block_on, review, allow_no_checks, reconcile,
+                   reconciling)
     except CommandError as e:
         fail(str(e))
     print(json.dumps(out, indent=2))

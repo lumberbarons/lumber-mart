@@ -65,8 +65,8 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
 ## Merge-pass output
 
 One JSON object from `scripts/pr_state.py <epic> [--repo owner/name]
-[--block-on P1|P2|none] [--no-review] [--allow-no-checks] [--resolve-conflicts]`
-(flags in any position):
+[--block-on P1|P2|none] [--no-review] [--allow-no-checks] [--resolve-conflicts]
+[--reconciling <pr>]...` (flags in any position):
 
 ```json
 {
@@ -120,7 +120,9 @@ One JSON object from `scripts/pr_state.py <epic> [--repo owner/name]
 - `note` says why, on `wait` and the gated actions.
 - Decision order, first match wins: issue closed → `wait` · comments unreadable → `wait` ·
   `DIRTY` or `CONFLICTING` → `reconcile` when `--resolve-conflicts` is set, no review-enforced
-  blocker is open, and fewer than two failed attempts are recorded; otherwise `conflict` · two
+  blocker is open, and fewer than two failed attempts are recorded — `wait` instead when the
+  comments that record those attempts are unreadable, even under `--no-review`; otherwise
+  `conflict` · two
   rounds with an open blocker → `escalate` · open
   blocker → `hold` · ready PR behind (`behindBy` > 0 or `BEHIND`) → `update_branch` · stale
   draft → `re_review` · no review round → `wait` · checks not green → `wait` · draft →
@@ -140,17 +142,23 @@ One JSON object from `scripts/pr_state.py <epic> [--repo owner/name]
   the reconciliation, and reconciliations done side by side are invalidated by the first merge.
   Every other candidate becomes `queued`, behind the reconciliation head or behind the PR whose
   merge is in flight.
+- `--reconciling <pr>` (repeatable) names the PRs whose `wc-<pr>` is live — the pump passes
+  every one, because the planner re-runs while the reconciler works and GitHub shows nothing of
+  it. While any is live the plan freezes around it: that PR is `wait` ("reconciler wc-<pr> in
+  flight") whatever GitHub reads, `reconcileHead` is the lowest live one, `queueHead` is
+  `null`, and every other `merge`, `update_branch`, and `reconcile` is `queued` behind it.
 - Exit codes: `0` success (prs may be empty), `1` runtime error, `2` usage error or "not an
   epic".
 
 ## Prompt templates
 
 Substitute `<n>` (issue), `<pr>` (PR number), `<path>` (outcome/findings file), `<default>`
-(origin's default branch), and — for codex, which has no skill loader — `<work-issue dir>` /
-`<review-code dir>`: the installed skill directories, resolved the same way as this skill's own
-(the directory holding that skill's `SKILL.md`; work-issue ships in the hew plugin, review-code
-in critique). Send the literal text; the skills load by name inside opencode, by file path
-inside codex.
+(origin's default branch), and `<work-issue dir>` / `<review-code dir>`: the installed skill
+directories, resolved the same way as this skill's own (the directory holding that skill's
+`SKILL.md`; work-issue ships in the hew plugin, review-code in critique). The worker and
+reviewer prompts need them only for codex, which has no skill loader — the skills load by name
+inside opencode, by file path inside codex; the reconciler loads no skill and needs
+`<work-issue dir>` for both kinds. Send the literal text.
 
 ### Worker — opencode
 
@@ -197,8 +205,8 @@ read it with `hew show <n>` when its intent is not clear from the diff.
    the incoming side is already-merged work. Combine both when they are compatible; when they
    contradict each other in behaviour — not just in text — stop and write status
    "irreconcilable" with the clashing files and why. Never drop one side wholesale, never guess.
-4. Run the quality gate the changed files select (work-issue's REFERENCE.md table) over the
-   union of files the merge touched. A failing gate is "irreconcilable"; do not push.
+4. Run the quality gate the changed files select (the table in <work-issue dir>/REFERENCE.md)
+   over the union of files the merge touched. A failing gate is "irreconcilable"; do not push.
 5. Commit the merge and `git push`. Never `--force`, never rebase, never touch a branch other
    than this PR's.
 6. Write '<path>' as JSON:
@@ -259,7 +267,8 @@ reconciled-head: <head from the outcome file>
 EOF
 )"
 
-# irreconcilable or failed — the planner counts these toward the two-attempt cap
+# anything but a verified resolved push — irreconcilable, error, no outcome file, a spent
+# budget, a head mismatch; the planner counts these toward the two-attempt cap
 gh pr comment <pr> --body "$(cat <<'EOF'
 work-epic conflict reconciliation failed (reconciler agent):
 
@@ -321,8 +330,10 @@ reaping loop like this:
   rather than killing a run that may be legitimately long.
 - **Hard per-reviewer budget:** ~1 hour of continuous `working`, handled the same way. A
   review is read-only and bounded by one PR's diff; one running this long is stuck.
-- **Hard per-reconciler budget:** ~1 hour of continuous `working`, handled the same way. A
+- **Hard per-reconciler budget:** ~1 hour of continuous `working`, handled the same way, and
+  its failure comment posted then — an uncounted hang is respawned by every later run. A
   reconciliation is bounded by one PR's conflict plus the gate; one running this long is stuck.
+  Left un-closed, it stays `--reconciling` and keeps the queue held until the human closes it.
 - **`blocked`:** notify once per agent, not on every pass — re-notifying on each poll turns
   the escalation channel into spam.
 - **`unknown`:** never counts as settled. `herdr agent explain <name>` and `agent read` before
@@ -413,7 +424,7 @@ stops are listed so the next run — or the human — knows what is still in fli
 
 ## Script tests
 
-The decision logic of the scripts — `pr_state.plan_pr`, `pr_state.queue_reconciles`,
+The decision logic of the scripts — `pr_state.plan_pr`, `pr_state.schedule`,
 `resolve_ready.classify` — is pure over hew and gh JSON and covered by stdlib `unittest` files
 beside them:
 

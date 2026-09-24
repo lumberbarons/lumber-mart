@@ -94,10 +94,11 @@ Strip flags; what remains is the epic number.
 - **`--resolve-conflicts`** — delegate a PR's conflict with the default branch to a reconciler
   agent (`wc-<pr>`) instead of filing and parking it. Off by default: the human gate stands
   unless a run is told otherwise. One reconciler at a time, only while the merge queue is idle
-  (a merge landing mid-reconciliation would re-conflict it), occupying a `--workers` slot, and
-  refused together with `--merge-method rebase` — the reconciliation is a hand-edited merge
-  commit and a rebase-and-merge would drop its edits. A resolved head is un-readied and
-  re-reviewed; two failed attempts park the PR for the human like any other conflict.
+  (a merge landing mid-reconciliation would re-conflict it), occupying a `--workers` slot.
+  Refused together with `--merge-method rebase` — the reconciliation is a hand-edited merge
+  commit and a rebase-and-merge would drop its edits — and with `--human-review`, which runs
+  no merge pass for it to act in. A resolved head is un-readied and re-reviewed; two failed
+  attempts park the PR for the human like any other conflict.
 - **`--resume`** — pass through to the resolver to pick up this user's own claims that have
   neither a PR nor a pushed branch — a crashed earlier run. Explicit instruction only.
 
@@ -313,8 +314,12 @@ delivered by earlier runs or other orchestrators are merged by the same plan or 
 
 ```bash
 uv run --no-project "$PRSTATE" <epic-n> --block-on <block-on> [--no-review]
-  [--allow-no-checks] [--resolve-conflicts]
+  [--allow-no-checks] [--resolve-conflicts] [--reconciling <pr>]...
 ```
+
+Pass one `--reconciling <pr>` for every live `wc-<pr>` in `herdr agent list`. GitHub cannot
+see a reconciler at work, and the planner runs on every pass while one does: without the list
+it would start a second reconciler, or merge main out from under the first.
 
 Execute each PR's `action` exactly as classified — the planner is the decision, the pass is
 the hands (commands, CI-wait budgets, and merge-failure handling in
@@ -325,7 +330,7 @@ the hands (commands, CI-wait budgets, and merge-failure handling in
 | `merge` | `gh pr merge --<merge-method> --delete-branch`; notify; then fast-forward main (below) |
 | `mark_ready` | `gh pr ready` — a draft's merge state reads `DRAFT` until then, hiding `BEHIND` or `BLOCKED`; the next pass sees the real state |
 | `update_branch` | `gh pr update-branch <pr>` — GitHub merges the default branch in server-side; a failure re-runs the planner, whose next pass sees `DIRTY` and hands it to `reconcile` under `--resolve-conflicts` (or to `conflict`) |
-| `reconcile` | spawn a reconciler agent (`wc-<pr>`, prompt in [REFERENCE.md](REFERENCE.md)) for the planner's single `reconcileHead`; the planner emits one only while `queueHead` is null |
+| `reconcile` | spawn a reconciler agent (`wc-<pr>`, prompt in [REFERENCE.md](REFERENCE.md)) for the planner's single `reconcileHead`; the planner emits one only while `queueHead` is null and no `--reconciling` is live |
 | `queued` | nothing; it waits its turn behind `queueHead` or behind the reconciliation head, and spends no CI budget of its own |
 | `re_review` | spawn a fresh reviewer (Step 5) for the new head |
 | `conflict` | file the coupling (`hew search` first, then `hew create --discovered-from <n>`), notify, leave the PR — the pump never reconciles one itself, so without `--resolve-conflicts` or after two failed attempts it parks here |
@@ -348,10 +353,12 @@ not next to merge, and moving a draft's head spends a review round.
 its `reconcileHead` — and only while `queueHead` is `null`: a merge landing mid-reconciliation
 would re-conflict it. Spawn `wc-<pr>` for it exactly like a worker of the same kind (Step 3's
 isolation and prompt shapes, outcome file `$OUTDIR/wc-<pr>.json`) and reap it with Step 4's
-loop; a live `wc-<pr>` stops a second spawn, and a reconciler occupies a `--workers` slot
-while it runs. The prompt is the reconciler's whole contract: it merges `origin/$DEFAULT`
-(freshly fetched) into the PR branch, reconciles both sides' intent, runs the gate, and pushes
-— never `$MAIN`, never `--force`, never rebase. Then, from its outcome file:
+loop; it occupies a `--workers` slot while it runs. Until it is reaped, every pass hands its
+PR number to the planner as `--reconciling`, which holds that PR at `wait` and queues every
+other merge, update, and reconciliation behind it. The prompt is the reconciler's whole
+contract: it merges `origin/$DEFAULT` (freshly fetched) into the PR branch, reconciles both
+sides' intent, runs the gate, and pushes — never `$MAIN`, never `--force`, never rebase.
+Then, from its outcome file:
 
 - **`resolved`** — verify the outcome's `head` is the PR's new head
   (`gh pr view <pr> --json headRefOid`); a mismatch is an escalation, not a merge. Post the
@@ -360,10 +367,13 @@ while it runs. The prompt is the reconciler's whole contract: it merges `origin/
   through a fresh reviewer — nothing reconciled merges without that round. Notify, close the
   tab (a codex reconciler's worktree with it, `worktree remove --force`: the agent changes
   nothing worth keeping beyond the pushed commit).
-- **`irreconcilable` / `failed`** — post the failure comment, which is what `pr_state.py`
-  counts; after two, the PR parks on `conflict`. Do that row's filing and notification, and
-  leave the branch alone.
-- **`error` / missing file** — the worker rules: escalate, spawn nothing new.
+- **`irreconcilable`** — post the failure comment, which is what `pr_state.py` counts; after
+  two, the PR parks on `conflict`. Do that row's filing and notification, and leave the branch
+  alone.
+- **`error`, a missing file, a spent budget, or a `head` mismatch** — post the failure comment
+  too, with what went wrong as its reason: every run that does not end in a verified push
+  counts toward the cap, or a reconciler that always hangs is respawned by every later run.
+  Then the worker rules: escalate, spawn nothing new.
 
 An outcome that could not reconcile both sides' intent, or that fails the gate, is
 `irreconcilable`, not a guess: the pump files the coupling and the human decides.
@@ -462,7 +472,8 @@ Then report:
 - Rebasing main, or force-pushing a PR branch — a reconciliation is a fast-forward push of a
   merge commit
 - Spawning a second reconciler, or resolving while the merge queue is moving main — the planner
-  emits at most one, and only for an idle queue
+  emits at most one, only for an idle queue, and holds the queue while one is live; running it
+  without every live `wc-*` as `--reconciling` hides that one from it
 - Merging a reconciled head before its fresh review round, or running `--resolve-conflicts`
   with `--merge-method rebase` — a rebase-and-merge drops the reconciliation's edits
 - Fixing reviewer findings into the PR that produced them, or re-reviewing past two rounds
