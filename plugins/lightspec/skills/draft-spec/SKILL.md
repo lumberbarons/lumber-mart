@@ -1,6 +1,6 @@
 ---
 name: draft-spec
-description: Draft a lightweight feature spec — description, prior decisions, prioritised user stories, a task list, and a done-when checklist — into specs/NNN-slug/spec.md in a fixed format enforced by a checker script. Use whenever a feature should be specified before it is built: "spec this out", "write a spec for X", "scope this feature", "plan this feature", "turn this into a task list", or a feature description handed over for planning. Produces a spec at status Draft; approving one is the separate approve-spec skill. Not for a single bug fix or a one-file change.
+description: Draft a lightweight feature spec — description, prior decisions, prioritised user stories, a task list, and a done-when checklist — into specs/NNN-slug/spec.md in a fixed format enforced by a checker script. Use whenever a feature should be specified before it is built — "spec this out", "write a spec for X", "scope this feature", "plan this feature", "turn this into a task list", or a feature description handed over for planning. Produces a spec at status Draft; approving one is the separate approve-spec skill. Not for a single bug fix or a one-file change.
 argument-hint: Describe the feature to specify
 ---
 

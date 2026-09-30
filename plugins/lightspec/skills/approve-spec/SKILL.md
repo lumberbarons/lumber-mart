@@ -1,6 +1,6 @@
 ---
 name: approve-spec
-description: Review a drafted feature spec on its substance — is it worth doing now, is the scope honest, are the stories real, could a stranger falsify the done-when list, does it contradict a recorded decision — then either move it to Accepted or send it back with blocking objections. Use whenever a spec needs approving, accepting, reviewing or sanity-checking before the work starts: "approve this spec", "review spec 009", "is this spec any good", "can we build from this", "sign this off". Reviews specs, not code.
+description: Review a drafted feature spec on its substance — is it worth doing now, is the scope honest, are the stories real, could a stranger falsify the done-when list, does it contradict a recorded decision — then either move it to Accepted or send it back with blocking objections. Use whenever a spec needs approving, accepting, reviewing or sanity-checking before the work starts — "approve this spec", "review spec 009", "is this spec any good", "can we build from this", "sign this off". Reviews specs, not code.
 argument-hint: The spec to approve — path or number
 ---
 
