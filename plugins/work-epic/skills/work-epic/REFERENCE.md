@@ -325,6 +325,9 @@ reaping loop like this:
 
 - **Single wait timeout:** ~10 minutes. On timeout, `herdr agent get <name>`; if still
   `working`, wait again.
+- **Settled with no outcome file:** poll the path for 60–120s, a few seconds between reads,
+  before treating it as an `error` — the write can trail the state change. A file still missing
+  past the grace period is an `error`, never an inference from terminal output.
 - **Hard per-worker budget:** ~2 hours of continuous `working`. Beyond it, `agent read` the
   worker, escalate via `herdr notification show ... --sound request`, and keep it un-closed
   rather than killing a run that may be legitimately long.
@@ -334,8 +337,13 @@ reaping loop like this:
   its failure comment posted then — an uncounted hang is respawned by every later run. A
   reconciliation is bounded by one PR's conflict plus the gate; one running this long is stuck.
   Left un-closed, it stays `--reconciling` and keeps the queue held until the human closes it.
-- **`blocked`:** notify once per agent, not on every pass — re-notifying on each poll turns
-  the escalation channel into spam.
+- **`blocked`:** confirm it before counting it as a dialog — `herdr agent explain <name>` (a
+  fallback block shows `rule: none` / `default_known_agent_idle_fallback`, meaning no dialog UI
+  was recognized) and `agent read` (is output still arriving?). A soft block on an agent still
+  producing output re-enters the wait loop under the budget of the agent it belongs to; only a
+  genuine dialog is notified, once per agent, not on every pass — re-notifying on each poll
+  turns the escalation channel into spam. When notifications are disabled (Prerequisites), the
+  escalation's fallback channels apply instead.
 - **`unknown`:** never counts as settled. `herdr agent explain <name>` and `agent read` before
   believing anything about it.
 - **CI wait (merge pass):** poll `pr_state.py` on a ~2-minute cadence; a PR with no state
