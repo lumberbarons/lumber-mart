@@ -25,3 +25,6 @@ build/
 plugins/*/skills/*-workspace/
 
 .claude/worktrees
+.opencode/worktrees/
+.opencode/plugins/worktree.ts
+.opencode/worktree/
