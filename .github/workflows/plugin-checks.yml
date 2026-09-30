@@ -1,0 +1,28 @@
+name: plugin-checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      CLAUDE_CODE_VERSION: 2.1.285
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - name: Validate marketplace and plugin manifests
+        run: npx --yes "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION" plugin validate --strict .
+      - name: Validate skill frontmatter
+        run: uv run --no-project --with pyyaml python3 scripts/check-skill-frontmatter.py
+      - name: Check marketplace metadata
+        run: python3 scripts/check-marketplace.py
+      - name: Run lightspec tests
+        run: python3 -m unittest discover -s plugins/lightspec/skills/draft-spec/scripts
+      - name: Check shell scripts
+        run: find plugins scripts -name '*.sh' -not -path '*/evals/fixtures/*' -print0 | xargs -0 uv run --no-project --with shellcheck-py shellcheck
