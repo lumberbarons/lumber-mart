@@ -64,6 +64,20 @@ Closing that workspace ends every agent in it — leave it open until the pump r
 `hew` on PATH and authenticated — exit code 4 from any `hew` command means run `gh auth login`,
 and here that halts the whole pump as an `error`, not as an empty queue.
 
+Notifications are the pump's escalation channel, so prove they are live once at startup:
+
+```bash
+herdr notification show "work-epic: escalation check" --sound none
+```
+
+A response carrying `"reason":"disabled"` means notifications are off for this user and every
+`herdr notification show` this run raises will go unseen. That is not an `error` — the pump
+still stops at every gate it would have stopped at, and never routes around one — but it
+changes where escalations land. Wherever this skill says "notify", the disabled case adds its
+fallback: carry the escalation in Step 8's report and, when it concerns an open PR, post it as
+a comment on that PR, so it still reaches the human rather than a channel that silently
+drops it.
+
 ## Arguments
 
 Strip flags; what remains is the epic number.
@@ -226,8 +240,11 @@ herdr agent wait we-<n>   # re-loop on timeout while state is still `working`
 What settled means, per state:
 
 - **`idle` / `done`** — read the outcome file (`$OUTDIR/we-<n>.json`). A missing or unreadable
-  file is an `error`, never an inference from terminal output — the whole point of `--json` is
-  that lifecycle settles prove the agent stopped, the file says what happened. Then:
+  file is re-checked for 60–120s on a few-seconds cadence before it becomes an `error`: the
+  write can trail the state change, so the settle alone does not prove the outcome is absent.
+  Past that grace a missing file is an `error` all the same — never an inference from terminal
+  output — because the whole point of `--json` is that lifecycle settles prove the agent
+  stopped and the file says what happened. Then:
 
   | outcome | action here |
   |---|---|
@@ -242,18 +259,34 @@ What settled means, per state:
   frees the worker's branch — git will not check a branch out in two worktrees, and the
   reviewer's `gh pr checkout` needs it.
 
-- **`blocked`** — the agent sits at a permission/question dialog. Notify rather than answer:
+- **`blocked`** — herdr has recognized an approval or question UI, but that state is only as
+  good as the rule behind it: an agent whose detection has no matching rule can settle
+  `blocked` on the fallback seconds into a run while still working. Confirm before calling it a
+  dialog:
+
+  ```bash
+  herdr agent explain we-<n>   # which rule fired; rule: none / default_known_agent_idle_fallback
+  herdr agent read we-<n>      # is the agent still producing output?
+  ```
+
+  A soft block like that, on an agent still producing output, is re-waited
+  (`herdr agent wait we-<n>` again, under the worker budget) rather than notified: it is a
+  worker on the job, not a dialog, and notifying or counting it as one raises a false
+  escalation. Only a blocked state with a genuine pending question — a non-fallback block whose
+  output has stopped at a prompt — is notified, never answered:
 
   ```bash
   herdr notification show "work-epic: we-<n> blocked on #<n>" --sound request
   ```
 
-  A blocked worker still counts against capacity — otherwise the pump spawns past its own stuck
-  worker and buries the escalation. Never answer the dialog on the user's behalf.
+  Capacity does not change for a soft block — a live worker holds its `--workers` slot while it
+  finishes either way, and the re-wait is what lets it finish. A genuine dialog counts against
+  capacity too; otherwise the pump spawns past its own stuck worker and buries the escalation.
+  Never answer the dialog on the user's behalf.
 
 - **Agent process exited outright** (name no longer resolves in `agent list`) — treat like
-  settled-without-file: escalate or report `error`, close the tab (and remove a codex worktree
-  as above).
+  settled-without-file, the same 60–120s poll for the outcome file included: then escalate or
+  report `error`, close the tab (and remove a codex worktree as above).
 
 ## Step 5 — Review delivered PRs (skip under `--no-review`)
 
