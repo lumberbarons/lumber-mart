@@ -2,6 +2,23 @@
 
 A plugin providing review skills for code, tests, documentation, observability, and skill portability. Produces structured findings reports that surface design, coverage, doc-structure, logging/error-message, and agent-harness-coupling issues that linters and static analysis miss.
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add critique@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install critique --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 Five focused review skills, each operating on a path you specify:

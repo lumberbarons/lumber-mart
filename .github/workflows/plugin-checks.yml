@@ -27,10 +27,12 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ -n "$BASE_REF" ] && [ "$BASE_REF" != "0000000000000000000000000000000000000000" ]; then
-            python3 scripts/check-marketplace.py --base "$BASE_REF"
+            uv run --no-project --with jsonschema python3 scripts/check-marketplace.py --base "$BASE_REF"
           else
-            python3 scripts/check-marketplace.py
+            uv run --no-project --with jsonschema python3 scripts/check-marketplace.py
           fi
+      - name: Test marketplace validation
+        run: uv run --no-project --with jsonschema python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Run lightspec tests
         run: python3 -m unittest discover -s plugins/lightspec/skills/draft-spec/scripts
       - name: Check shell scripts

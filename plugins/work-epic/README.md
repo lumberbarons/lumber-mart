@@ -4,6 +4,23 @@ A Claude Code skill for working a [hew](https://github.com/lumberbarons/hew) epi
 orchestrating agents rather than by hand, using [herdr](https://github.com/lumberbarons/herdr)
 to run them.
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add work-epic@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install work-epic --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 - **work-epic** — resolves an epic's ready children with a deterministic script, spawns one
@@ -41,6 +58,8 @@ is a human's click.
 - Run from a checkout of the target repository (`--repo owner/name` overrides detection)
 
 ## Usage
+
+The examples below use Claude Code syntax. In Codex, select `work-epic` or ask the agent to use it with the same arguments. The orchestrator still needs to run inside herdr.
 
 ```
 /work-epic:work-epic 12                            # pump epic 12; merge on CI green

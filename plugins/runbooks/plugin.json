@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "runbooks",
+  "description": "Skills for creating and maintaining operational runbooks with consistent structure and built-in maintenance feedback loops.",
+  "version": "1.3.0",
+  "author": {
+    "name": "lumberbarons"
+  },
+  "homepage": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/runbooks",
+  "repository": "https://github.com/lumberbarons/lumber-mart",
+  "license": "MIT",
+  "keywords": [
+    "runbooks",
+    "operations",
+    "deployment",
+    "ops",
+    "documentation",
+    "procedures"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Runbooks",
+        "shortDescription": "Create operational runbooks from project-specific procedures",
+        "longDescription": "Skills for creating and maintaining operational runbooks with consistent structure and built-in maintenance feedback loops.",
+        "developerName": "lumberbarons",
+        "category": "Developer Tools",
+        "websiteURL": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/runbooks"
+      }
+    }
+  }
+}

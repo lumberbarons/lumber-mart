@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hew",
+  "description": "Skills for tracking work in GitHub Issues via the hew CLI. Files review findings as deduplicated issues using a stable review key (with a findings-to-plan converter for unattended filing), and takes a tracked issue — or a bounded batch of them, verified together — from claimed to draft PR test-first, driven by the issue's own acceptance checklist.",
+  "version": "2.3.0",
+  "author": {
+    "name": "lumberbarons"
+  },
+  "homepage": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/hew",
+  "repository": "https://github.com/lumberbarons/lumber-mart",
+  "license": "MIT",
+  "keywords": [
+    "hew",
+    "github-issues",
+    "issues",
+    "tracking",
+    "review-findings",
+    "triage",
+    "workflow",
+    "tdd",
+    "implementation",
+    "pull-requests"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Hew",
+        "shortDescription": "Track GitHub issues and take them from claim to draft PR",
+        "longDescription": "Skills for tracking work in GitHub Issues via the hew CLI. Files review findings as deduplicated issues using a stable review key (with a findings-to-plan converter for unattended filing), and takes a tracked issue — or a bounded batch of them, verified together — from claimed to draft PR test-first, driven by the issue's own acceptance checklist.",
+        "developerName": "lumberbarons",
+        "category": "Developer Tools",
+        "websiteURL": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/hew"
+      }
+    }
+  }
+}

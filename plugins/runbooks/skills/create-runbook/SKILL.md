@@ -72,18 +72,18 @@ Edit the scaffolded file, replacing all template placeholders with project-speci
 
 ### Step 6: Update the runbook index (if one exists)
 
-Check if the runbook directory has an index file (e.g., `CLAUDE.md`, `README.md`, or `INDEX.md` in the runbook directory). If so, add an entry for the new runbook following the existing format.
+Check if the runbook directory has an index file (e.g., `AGENTS.md`, `CLAUDE.md`, `README.md`, or `INDEX.md` in the runbook directory). If so, add an entry for the new runbook following the existing format.
 
-### Step 7: Register the runbook in the project CLAUDE.md
+### Step 7: Register the runbook in the project agent instructions
 
 > [!IMPORTANT]
-> This step is critical. Runbooks only get used if agents and developers know they exist. The project's root `CLAUDE.md` is the single source of truth that Claude Code always reads — if a runbook isn't listed there, it effectively doesn't exist.
+> Runbooks only get used if agents and developers know they exist. Register the runbook in the project's root agent-instructions file so future sessions can discover it.
 
-Read the project's root `CLAUDE.md`. Look for an existing `## Operational Runbooks` section.
+Read the project's root `AGENTS.md`, or `CLAUDE.md` where that is the established convention. If both exist, update both, preserving any existing delegation or import between them rather than duplicating the index. If neither exists, create `AGENTS.md`. Look for an existing `## Operational Runbooks` section.
 
 **If the section already exists**, add a new row to the table for the runbook you just created, following the existing format.
 
-**If the section does not exist**, append it to the end of `CLAUDE.md` using this format (substitute the actual runbook directory, filename, and a concise "when to use" description):
+**If the section does not exist**, append it to the agent-instructions file using this format (substitute the actual runbook directory, filename, and a concise "when to use" description):
 
 ```markdown
 ## Operational Runbooks

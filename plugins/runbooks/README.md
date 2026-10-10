@@ -2,6 +2,23 @@
 
 Operational runbook creation and maintenance tooling for coding agents (Claude Code, opencode, codex).
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add runbooks@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install runbooks --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 Runbooks are step-by-step operational procedures for tasks like deployments, incident response, and system maintenance. This plugin provides skills to create well-structured runbooks with consistent formatting and built-in maintenance feedback loops that prompt both humans and AI agents to keep runbooks current.
