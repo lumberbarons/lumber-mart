@@ -16,7 +16,10 @@ an unchanged version is indistinguishable from no change at all. CI passes the
 PR base commit, or the previous tip on a push to main, with full history
 fetched.
 
-Run: python3 scripts/check-marketplace.py [--base <git-ref>]
+Portable root manifests and the Codex catalog must agree with the Claude
+metadata. The vendored Agent Plugins schema validates the portable format.
+
+Run: uv run --no-project --with jsonschema python3 scripts/check-marketplace.py [--base <git-ref>]
 """
 
 from __future__ import annotations
@@ -27,6 +30,11 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
+
+PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+IDENTITY_FIELDS = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
 
 SEMVER = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\Z")
 VERSION_PARTS = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?\Z")
@@ -102,6 +110,82 @@ def check_bumps(root: Path, base: str, versions: dict[str, str], problems: list[
                 f"{relative}: the plugin changed but version {version!r} has not advanced past "
                 f"{base_version!r} on {base}; bump it in plugin.json and marketplace.json"
             )
+
+
+def check_portable(root: Path, claude_marketplace: dict, problems: list[str]) -> None:
+    schema = load(root / "scripts/schemas/plugin.schema.json", problems)
+    validator = Draft202012Validator(schema) if schema is not None else None
+    catalog_path = root / ".agents/plugins/marketplace.json"
+    catalog = load(catalog_path, problems)
+    if catalog is None:
+        return
+    if catalog.get("name") != claude_marketplace.get("name"):
+        problems.append(f"{catalog_path}: name does not match the Claude marketplace")
+    interface = catalog.get("interface")
+    if not isinstance(interface, dict) or not interface.get("displayName"):
+        problems.append(f"{catalog_path}: interface.displayName is missing")
+    entries = catalog.get("plugins")
+    if not isinstance(entries, list):
+        problems.append(f"{catalog_path}: plugins is not an array")
+        entries = []
+    listed: dict[str, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"]:
+            problems.append(f"{catalog_path}: entry missing a name")
+            continue
+        name = entry["name"]
+        if name in listed:
+            problems.append(f"{catalog_path}: {name}: duplicate entry")
+        listed[name] = entry
+        source = entry.get("source")
+        expected_path = f"./plugins/{name}"
+        if source != {"source": "local", "path": expected_path}:
+            problems.append(f"{catalog_path}: {name}: source must be local at {expected_path!r}")
+        policy = entry.get("policy")
+        if not isinstance(policy, dict) or policy.get("installation") not in (
+            "AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"
+        ) or policy.get("authentication") not in ("ON_INSTALL", "ON_USE"):
+            problems.append(f"{catalog_path}: {name}: invalid installation/authentication policy")
+        if not isinstance(entry.get("category"), str) or not entry["category"]:
+            problems.append(f"{catalog_path}: {name}: category is missing")
+
+    claude_entries = claude_marketplace.get("plugins", [])
+    if not isinstance(claude_entries, list):
+        claude_entries = []
+    claude_listed = {entry["name"]: entry for entry in claude_entries
+                     if isinstance(entry, dict) and isinstance(entry.get("name"), str)}
+    if set(listed) != set(claude_listed):
+        problems.append(f"{catalog_path}: plugin names do not match the Claude marketplace")
+    for name, entry in listed.items():
+        claude_entry = claude_listed.get(name)
+        if claude_entry is not None:
+            source = entry.get("source")
+            if not isinstance(source, dict) or source.get("path") != claude_entry.get("source"):
+                problems.append(f"{catalog_path}: {name}: source path differs from the Claude marketplace")
+
+    for directory in sorted(path for path in (root / "plugins").iterdir() if path.is_dir()):
+        manifest_path = directory / "plugin.json"
+        manifest = load(manifest_path, problems)
+        if manifest is None:
+            continue
+        if validator is not None:
+            for error in validator.iter_errors(manifest):
+                field = ".".join(str(part) for part in error.path) or "manifest"
+                problems.append(f"{manifest_path}: {field}: {error.message}")
+        if manifest.get("$schema") != PLUGIN_SCHEMA:
+            problems.append(f"{manifest_path}: must declare the Agent Plugins 1.0.0 schema")
+        claude = load(directory / ".claude-plugin/plugin.json", problems)
+        if claude is not None:
+            for field in IDENTITY_FIELDS:
+                if manifest.get(field) != claude.get(field):
+                    problems.append(f"{manifest_path}: {field} differs from the Claude manifest")
+        if not list((directory / "skills").glob("*/SKILL.md")):
+            problems.append(f"{directory}: no skills found at skills/<name>/SKILL.md")
+        extensions = manifest.get("extensions")
+        extension = extensions.get("com.openai", {}) if isinstance(extensions, dict) else {}
+        interface = extension.get("interface") if isinstance(extension, dict) else None
+        if not isinstance(interface, dict) or not interface.get("displayName") or not interface.get("shortDescription"):
+            problems.append(f"{manifest_path}: OpenAI interface displayName/shortDescription is missing")
 
 
 def main() -> int:
@@ -187,6 +271,8 @@ def main() -> int:
         if entry is not None:
             if entry.get("name") != manifest.get("name"):
                 problems.append(f"{manifest_path}: name does not match its marketplace entry")
+            if entry.get("description") != manifest.get("description"):
+                problems.append(f"{marketplace_path}: {name}: description differs from the plugin manifest")
             entry_version = entry.get("version")
             if not isinstance(entry_version, str) or not entry_version:
                 problems.append(
@@ -197,6 +283,8 @@ def main() -> int:
                     f"{marketplace_path}: {name}: entry version {entry_version!r} does not match "
                     f"plugin.json version {version!r}"
                 )
+
+    check_portable(root, marketplace, problems)
 
     if args.base:
         check_bumps(root, args.base, versions, problems)

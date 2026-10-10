@@ -9,6 +9,7 @@ Skills for orchestrating a [hew](https://github.com/lumberbarons/hew) epic acros
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, reconcile, update, hold, or escalate |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh probes both planners share | Changing how PRs, branches, or the default branch are read |
 | `skills/work-epic/scripts/test_*.py` | stdlib `unittest` over both decision tables | Changing any decision, skip reason, or parser — add the pinning case |
+| `plugin.json` | Canonical portable manifest; identity matches the Claude manifest | Changing plugin metadata or versions |
 | `README.md` | Plugin overview and the modes | Understanding what work-epic does |
 
 Requires `hew` on PATH (authenticated), the `herdr` CLI, and the skills this pump drives:

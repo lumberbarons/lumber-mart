@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "decisions",
+  "description": "Skills for creating, maintaining, and enforcing Architectural Decision Records (ADRs) as standalone, append-only policy. MADR format with AI-native metadata, ADR-to-ADR relationship tracking, registration in the project's agent instructions (AGENTS.md/CLAUDE.md), and policy compliance review of code changes against accepted ADRs.",
+  "version": "1.4.0",
+  "author": {
+    "name": "lumberbarons"
+  },
+  "homepage": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/decisions",
+  "repository": "https://github.com/lumberbarons/lumber-mart",
+  "license": "MIT",
+  "keywords": [
+    "adr",
+    "architecture",
+    "decisions",
+    "madr",
+    "documentation",
+    "policy",
+    "specs",
+    "review",
+    "compliance"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Decisions",
+        "shortDescription": "Record architectural decisions and review policy compliance",
+        "longDescription": "Skills for creating, maintaining, and enforcing Architectural Decision Records (ADRs) as standalone, append-only policy. MADR format with AI-native metadata, ADR-to-ADR relationship tracking, registration in the project's agent instructions (AGENTS.md/CLAUDE.md), and policy compliance review of code changes against accepted ADRs.",
+        "developerName": "lumberbarons",
+        "category": "Developer Tools",
+        "websiteURL": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/decisions"
+      }
+    }
+  }
+}

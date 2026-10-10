@@ -3,6 +3,23 @@
 Architectural Decision Record (ADR) creation, maintenance, and enforcement tooling for coding
 agents (Claude Code, opencode, codex).
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add decisions@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install decisions --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 ADRs capture the *why* behind significant architectural choices — constraints, trade-offs, rejected alternatives — and act as standalone, append-only policy. A spec describes *what* to build and cites the ADRs that constrained it; the ADR itself does not track downstream specs. When decisions live only in Slack threads or a reviewer's memory, future agents re-litigate settled questions or quietly drift from intent. This plugin produces structured, version-controlled ADRs that agents can read and honor.

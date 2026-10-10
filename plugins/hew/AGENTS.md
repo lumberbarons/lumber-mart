@@ -4,6 +4,7 @@ Skills for tracking work in GitHub Issues through the [hew](https://github.com/l
 |-----------|------|--------------|
 | `skills/raise-issues/` | Files review findings as deduplicated hew issues | Changing how findings become issues, or the review-key scheme |
 | `skills/work-issue/` | Takes a tracked issue from claimed to draft PR, test-first | Changing how issues get implemented, verified, or shipped |
+| `plugin.json` | Canonical portable manifest; identity matches the Claude manifest | Changing plugin metadata or versions |
 | `README.md` | Plugin overview, the review-key contract, and the unattended pipeline | Understanding what hew skills do |
 
 Requires the `hew` binary on PATH, authenticated via `gh auth login`.

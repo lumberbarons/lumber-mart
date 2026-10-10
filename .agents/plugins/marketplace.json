@@ -1,0 +1,80 @@
+{
+  "name": "lumber-mart",
+  "interface": {
+    "displayName": "Lumber Mart"
+  },
+  "plugins": [
+    {
+      "name": "runbooks",
+      "source": {
+        "source": "local",
+        "path": "./plugins/runbooks"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "critique",
+      "source": {
+        "source": "local",
+        "path": "./plugins/critique"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "decisions",
+      "source": {
+        "source": "local",
+        "path": "./plugins/decisions"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "work-epic",
+      "source": {
+        "source": "local",
+        "path": "./plugins/work-epic"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "lightspec",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lightspec"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "hew",
+      "source": {
+        "source": "local",
+        "path": "./plugins/hew"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

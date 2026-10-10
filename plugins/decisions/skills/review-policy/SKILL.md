@@ -94,7 +94,7 @@ Record the applicable/possibly-applicable set and *why* each made the list. Incl
 ### Step 4 — Choose execution strategy
 
 - **1–2 applicable ADRs → Direct mode**: evaluate the change against each ADR inline, then proceed to Synthesis.
-- **3+ applicable ADRs → Parallel mode**: spawn one subagent per ADR (or batch two ADRs per subagent if there are many), collect results, merge.
+- **3+ applicable ADRs → Parallel mode**, when delegation is available and permitted: spawn one subagent per ADR (or batch two ADRs per subagent if there are many), collect results, merge. Otherwise review each ADR directly and use the same synthesis rules.
 
 ### Parallel Review Mode
 
@@ -102,7 +102,7 @@ Use this mode when 3 or more applicable ADRs are discovered.
 
 #### Spawn subagents
 
-Use `Agent(subagent_type="general-purpose")`. **Spawn all subagents in a single message** so they run in parallel.
+Use the current agent's available delegation mechanism. Dispatch independent ADR reviews concurrently where supported. If delegation is unavailable or prohibited by the session, review each ADR directly; do not require a particular host's tool name or call syntax.
 
 Each subagent prompt MUST include:
 

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "lightspec",
+  "description": "Skills for the lightspec spec pipeline: draft a feature spec into specs/NNN-slug/spec.md in a script-enforced format, approve it on substance, and convert an accepted spec into a hew epic with one child issue per user story. ADR → spec → approve → tracker.",
+  "version": "1.2.0",
+  "author": {
+    "name": "lumberbarons"
+  },
+  "homepage": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/lightspec",
+  "repository": "https://github.com/lumberbarons/lumber-mart",
+  "license": "MIT",
+  "keywords": [
+    "spec",
+    "specifications",
+    "lightspec",
+    "adr",
+    "planning",
+    "user-stories",
+    "hew",
+    "epic",
+    "workflow"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Lightspec",
+        "shortDescription": "Draft and approve feature specs, then file trackable work",
+        "longDescription": "Skills for the lightspec spec pipeline: draft a feature spec into specs/NNN-slug/spec.md in a script-enforced format, approve it on substance, and convert an accepted spec into a hew epic with one child issue per user story. ADR → spec → approve → tracker.",
+        "developerName": "lumberbarons",
+        "category": "Developer Tools",
+        "websiteURL": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/lightspec"
+      }
+    }
+  }
+}

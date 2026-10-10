@@ -4,6 +4,23 @@ Agent skills for tracking work in GitHub Issues through the
 [hew](https://github.com/lumberbarons/hew) CLI, usable from any coding agent that loads skills
 (Claude Code, opencode, codex).
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add hew@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install hew --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 - **raise-issues** — turns structured review findings into hew issues, deduplicated against

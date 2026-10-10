@@ -4,6 +4,23 @@ Skills for the lightspec spec pipeline: turn a feature request into one reviewab
 approve it on substance, and file it as a hew epic. Usable from any coding agent that loads
 skills (Claude Code, opencode, codex).
 
+## Installation
+
+Codex:
+
+```bash
+codex plugin marketplace add lumberbarons/lumber-mart
+codex plugin add lightspec@lumber-mart
+```
+
+Claude Code:
+
+```text
+/plugin install lightspec --marketplace lumberbarons/lumber-mart
+```
+
+See the [marketplace README](../../README.md#installation) for local testing and desktop installation.
+
 ## Overview
 
 The process this serves is **ADR → spec → approve → implement**:

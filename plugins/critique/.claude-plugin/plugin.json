@@ -1,8 +1,22 @@
 {
   "name": "critique",
   "description": "Review skills for code, tests, documentation, observability, and skill portability. Finds design, coverage, doc-structure, logging/error-message, and agent-harness-coupling issues that linters miss.",
-  "version": "5.5.1",
+  "version": "5.6.0",
   "author": {
     "name": "lumberbarons"
-  }
+  },
+  "homepage": "https://github.com/lumberbarons/lumber-mart/tree/main/plugins/critique",
+  "repository": "https://github.com/lumberbarons/lumber-mart",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "test-review",
+    "docs-review",
+    "observability-review",
+    "skill-portability",
+    "agent-agnostic",
+    "logging",
+    "quality",
+    "review"
+  ]
 }

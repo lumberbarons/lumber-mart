@@ -5,6 +5,7 @@ The lightspec spec pipeline: draft, approve, and file a feature spec as trackabl
 | `skills/draft-spec/` | Drafts a spec into `specs/NNN-slug/spec.md`, checker-enforced | Changing the spec format, the checker, or the drafting workflow |
 | `skills/approve-spec/` | Reviews a Draft spec on substance, moves it to Accepted | Changing the review questions or the verdict vocabulary |
 | `skills/spec-to-epic/` | Files an Accepted spec as a hew epic with one child per story | Changing the mapping to hew's body conventions or the plan schema |
+| `plugin.json` | Canonical portable manifest; identity matches the Claude manifest | Changing plugin metadata or versions |
 | `README.md` | Pipeline overview | Understanding what lightspec does |
 
 The format lives in `skills/draft-spec/scripts/lightspec.py`, and the format is defined twice —
