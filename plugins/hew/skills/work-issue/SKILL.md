@@ -195,45 +195,45 @@ claimed issue the PR is for from the number in it, and warns when the prefix dis
 issue type. Use `<prefix>/<n>-<slug>` — `bug` → `fix/`, `enhancement` → `feat/`, `task` →
 `chore/`.
 
-Where the branch comes from depends on how the session started:
+Follow the user's and repository's checkout conventions; worktrees are optional. Decide from
+the actual Git state rather than the agent's name or an assumed checkout layout:
 
-- **Already isolated** — an agent worktree puts you on a branch the harness named itself
-  (e.g. `worktree-feat+some-task` under Claude Code, `opencode/<slug>` under opencode): no issue
-  number, no conventional prefix, so it satisfies neither reader above. Do not rename it; the
-  harness tracks that branch for its own cleanup.
-  Push to a well-named upstream instead, and let the names differ:
+```bash
+git symbolic-ref --quiet --short HEAD
+```
+
+Exit 0 prints the current local branch; exit 1 means detached HEAD.
+
+- **A named branch already dedicated to this issue** — reuse it, including when resuming an
+  earlier attempt. Its local name can stay as it is; push to the conventional upstream name:
 
   ```bash
   git push -u origin HEAD:fix/42-write-commands-guard-closed
   ```
 
-  `hew pr` resolves the PR head from the upstream ref, so the well-named branch is what reaches
-  GitHub, the prefix check, and the reviewer.
+- **Detached HEAD** — first confirm that the checkout contains only this issue's work relative
+  to the default branch. Attach a new issue branch at the current commit before implementing
+  or pushing; this retains any commits from an earlier attempt:
 
-- **Not isolated** — branch from the default branch yourself, so the PR carries this issue only.
+  ```bash
+  git switch -c fix/42-write-commands-guard-closed
+  ```
 
-Under `--batch`, reset to the default branch between issues and push each to its own remote
-branch, so every PR carries one issue's diff:
+- **A fresh branch is needed** — create it from the default branch so the PR carries this
+  issue only. Preserve unrelated work on its existing branch:
 
-```bash
-git checkout -B <next> origin/<default>
-```
+  ```bash
+  git switch -c <prefix>/<n>-<slug> origin/<default>
+  ```
 
-Working the next issue on top of the last one instead would pile the batch into a single PR that
-no one can review a piece of — which is the failure this reset exists to prevent, and it is worth
-the cost below.
+Before shipping, HEAD must be attached to a local branch. `git push -u` establishes its upstream,
+and `hew pr` resolves the PR head from that upstream ref. Merely pushing a detached commit does
+not establish branch tracking, even with a fully qualified remote ref.
 
-That cost lands in a worktree, where the two rules above genuinely collide: one worktree has one
-checked-out branch, and a batch needs several. From the second issue onward the run is no longer
-on the branch the harness named, and the harness tracks the branch it created rather than the run
-that moved off it. Nothing is lost — each branch is pushed before the next is created, and the
-PRs are already open — but the worktree ends on the last issue's branch and carries a local
-branch per issue. Name them in the report so whoever cleans up knows what is there. Do not try to
-satisfy both rules; only one of them can hold, and one unreviewable PR is the worse outcome.
-
-Give those branches their conventional `<prefix>/<n>-<slug>` names locally. Past the first issue
-there is no harness-named branch left to preserve, the local and upstream names may as well
-agree, and Step 8 merges them by name.
+Under `--batch`, give each issue its own branch from the same default-branch base. Commit and
+push each issue before starting the next, and record its local branch and upstream name for
+Step 8. Follow the existing checkout conventions when switching between issues. The required
+result is one issue's diff per PR, with no completed issue's commits carried into the next.
 
 ## Step 5 — Implement, test-first
 
@@ -397,7 +397,7 @@ Under `--batch`, one block per issue, then the integration result and a summary:
 ```
 Batch: 3 of 3 delivered — 7 ready issues remain
 Integration: integration/batch-42-51, gate passed — the three fixes hold together
-Worktree left on fix/51-...; local branches fix/42-..., fix/47-..., fix/51-...
+Checkout left on fix/51-...; local branches fix/42-..., fix/47-..., fix/51-...
 ```
 
 Say how many ready issues are left. Stopping at the run's own ceiling is success, not a drained

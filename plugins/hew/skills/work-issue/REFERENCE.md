@@ -88,9 +88,11 @@ integration pass runs both.
 ## Branch and commit conventions
 
 Branch: `<prefix>/<n>-<slug>`, where the slug is the issue title lowercased and hyphenated,
-truncated to something readable. In an agent worktree this is the **upstream** name — the local
-branch keeps whatever the harness called it, and `git push -u origin HEAD:<prefix>/<n>-<slug>`
-is what reconciles the two.
+truncated to something readable. This is the **upstream** name; an existing local branch
+dedicated to the issue can keep its name. Attach detached HEAD to a local issue branch before
+pushing, preserving any commits from an earlier attempt. Then
+`git push -u origin HEAD:<prefix>/<n>-<slug>` establishes tracking for either case. Checkout
+and worktree management follow the user's and repository's conventions.
 
 | Issue type | Branch prefix | Commit prefix | `hew pr` title default |
 |---|---|---|---|
@@ -100,9 +102,8 @@ is what reconciles the two.
 
 The issue number in the branch is load-bearing: `hew pr` uses it to break ties when inferring
 which claimed issue the PR is for, and it checks the prefix against the issue type. Both read
-the name `hew` resolves from the upstream ref, not the local one — which is the whole reason a
-worktree's auto-generated local name (`worktree-feat+something`, carrying neither a number nor a
-prefix) does not have to be fought.
+the name `hew` resolves from the upstream ref, so a dedicated local branch can have a different
+name without losing issue inference or the prefix check.
 
 Commit body explains why the change is what it is, then:
 

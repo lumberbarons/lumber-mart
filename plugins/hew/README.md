@@ -61,8 +61,13 @@ work-issue --dry-run
 ## Working an issue
 
 `work-issue` follows the workflow hew prescribes rather than inventing one: `hew ready` →
-`hew start` → branch → tests → push → `hew pr`. Two properties of that workflow do the heavy
-lifting.
+`hew start` → branch → tests → push → `hew pr`.
+
+Checkout and worktree choices follow the user's and repository's conventions. The skill handles
+named branches and detached HEAD by inspecting Git state, preserving an existing issue branch
+or attaching a new one before pushing. Each PR carries one issue's changes.
+
+Two properties of that workflow do the heavy lifting.
 
 **Work ends at a PR.** `hew pr` composes the PR from tracker state with exactly one `Fixes #n`,
 so the merge closes the issue and the change goes through review. `hew close` stays what it is
