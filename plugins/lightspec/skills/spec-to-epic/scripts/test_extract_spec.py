@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -105,18 +110,80 @@ class ParseTests(unittest.TestCase):
         with self.assertRaises(SpecFormatError):
             parse(broken, Path("spec.md"))
 
-    def test_real_spec_parses(self) -> None:
-        # The fixture above is deliberately tiny; this is the load-bearing case.
-        repo_spec = (
-            Path(__file__).resolve().parents[4]
-            / "specs" / "001-deterministic-retirement-engine" / "spec.md"
+    def test_bundled_example_parses(self) -> None:
+        example = Path(__file__).resolve().parents[1] / "reference" / "example-spec.md"
+        data = parse(example.read_text(encoding="utf-8"), example)
+        self.assertEqual(len(data["stories"]), 2)
+        self.assertEqual(sum(len(s["tasks"]) for s in data["stories"]), 6)
+        self.assertEqual(len(data["cross_cutting_tasks"]), 2)
+        self.assertEqual(len(data["done_when"]), 6)
+
+
+class IsolatedInstallTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        # A per-skill installer copies only this directory, independently of the
+        # target checkout. Spaces exercise the quoted script paths in the skill.
+        self.skill = root / "installed skills" / "spec-to-epic"
+        shutil.copytree(
+            Path(__file__).resolve().parents[1], self.skill,
+            ignore=shutil.ignore_patterns("__pycache__"),
         )
-        if not repo_spec.is_file():
-            self.skipTest("repo spec not present in this checkout")
-        data = parse(repo_spec.read_text(encoding="utf-8"), repo_spec)
-        self.assertEqual(len(data["stories"]), 8)
-        self.assertEqual(sum(len(s["tasks"]) for s in data["stories"]), 25)
-        self.assertEqual(len(data["done_when"]), 8)
+        self.repo = root / "target repo"
+        self.repo.mkdir()
+        (self.repo / ".git").mkdir()
+        self.spec = self.repo / "specs" / "009-widget-export" / "spec.md"
+        self.spec.parent.mkdir(parents=True)
+        self.spec.write_text(MINIMAL, encoding="utf-8")
+
+    def run_script(self, script: str, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(self.skill / "scripts" / script), *args],
+            cwd=self.repo, text=True, capture_output=True, check=False,
+        )
+
+    def test_can_check_status_and_extract_without_other_skills(self) -> None:
+        check = self.run_script("lightspec.py", "check", str(self.spec))
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        status = self.run_script("lightspec.py", "status", str(self.spec))
+        self.assertEqual(status.returncode, 0, status.stdout + status.stderr)
+        self.assertEqual(status.stdout.strip(), "Accepted")
+        extract = self.run_script("extract_spec.py", str(self.spec))
+        self.assertEqual(extract.returncode, 0, extract.stdout + extract.stderr)
+        data = json.loads(extract.stdout)
+        self.assertEqual(data["path"], str(self.spec))
+        self.assertEqual(data["status"], "Accepted")
+        self.assertEqual(data["stories"][0]["tasks"][1]["paths"],
+                         ["internal/csv/writer.go", "internal/csv/rows.go"])
+
+    def test_gate_rejects_malformed_accepted_spec(self) -> None:
+        # The extractor deliberately does not validate task numbering. The
+        # local checker must reject this before an agent builds a filing plan.
+        self.spec.write_text(MINIMAL.replace("T002", "T004"), encoding="utf-8")
+        check = self.run_script("lightspec.py", "check", str(self.spec))
+        self.assertEqual(check.returncode, 1, check.stdout + check.stderr)
+        self.assertIn("expected `T002`", check.stdout)
+
+    def test_citations_resolve_in_target_checkout_and_worktree(self) -> None:
+        self.spec.write_text(MINIMAL.replace(
+            "- None", "- [ADR-0001 Storage](docs/adr/0001-storage.md) — CSV storage",
+        ), encoding="utf-8")
+        for worktree in (False, True):
+            with self.subTest(worktree=worktree):
+                if worktree:
+                    (self.repo / ".git").rmdir()
+                    (self.repo / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
+                missing = self.run_script("lightspec.py", "check", str(self.spec))
+                self.assertEqual(missing.returncode, 1, missing.stdout + missing.stderr)
+                self.assertIn("cited decision `docs/adr/0001-storage.md` does not exist", missing.stdout)
+                adr = self.repo / "docs" / "adr" / "0001-storage.md"
+                adr.parent.mkdir(parents=True, exist_ok=True)
+                adr.write_text("# Storage\n", encoding="utf-8")
+                present = self.run_script("lightspec.py", "check", str(self.spec))
+                self.assertEqual(present.returncode, 0, present.stdout + present.stderr)
+                adr.unlink()
 
 
 if __name__ == "__main__":

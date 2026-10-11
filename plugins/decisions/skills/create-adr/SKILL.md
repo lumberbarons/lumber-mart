@@ -52,6 +52,9 @@ Prefer verb-first, imperative. Keep the slug concise; the title can be slightly 
 
 ### Step 4: Scaffold the ADR
 
+The scaffold script requires `bash` and `jq` on PATH. Check both before running
+it; if a dependency is missing, report it before creating the ADR file.
+
 Run the init script to create the file from the template. The script auto-numbers the ADR by scanning the target directory for the highest existing `NNNN-*.md` and incrementing. It sits in `scripts/` beside this file — resolve it once against this skill's own directory rather than hardcoding a path, which breaks the moment the skill is vendored into another repo or installed elsewhere:
 
 ```bash
@@ -110,9 +113,13 @@ Check if the ADR directory has an index file (e.g., `README.md`, `INDEX.md`). If
 ### Step 9: Register the ADR in the project's agent instructions
 
 > [!IMPORTANT]
-> This step is critical. ADRs only bind future work if agents and developers know they exist. The project's root agent-instructions file — `AGENTS.md`, or `CLAUDE.md` where that is the established convention — is the single source of truth coding agents always read. If an ADR isn't listed there, future agents will re-litigate the decision or quietly drift from it.
+> This step is critical. ADRs only bind future work if agents and developers can discover them. Register the ADR in the repository instructions that future sessions actually load; filenames and precedence depend on the running agent and the project's configuration.
 
-Read the project's root agent-instructions file (`AGENTS.md`, or `CLAUDE.md` if that is what this repo uses — some agents read only one of the two; if both exist, update both). Look for an existing `## Architectural Decisions` section.
+Identify the repository's active instruction files from the session and project configuration. Read root `AGENTS.md`, `AGENTS.override.md`, and `CLAUDE.md` when present, plus repository instruction files selected by configured paths or globs. An override may replace a default file, and a configured file may be the only entry point; updating an inactive default alone does not register the ADR for that agent.
+
+Update the effective repository entry point for each supported agent. Where several active files already share a repository-owned instruction document through imports or links, update that shared document and preserve the existing discovery paths. Otherwise update each active root entry point, including an override that replaces `AGENTS.md`. Follow actual import semantics rather than inventing them for a plain Markdown file. Do not modify user-global instructions outside the repository. If there is no repository instruction file or configured convention, create a root `AGENTS.md` and register the ADR there; report which files you updated.
+
+In each selected file, look for an existing `## Architectural Decisions` section.
 
 **If the section already exists**, add a new row to the table for the ADR you just created, following the existing format.
 

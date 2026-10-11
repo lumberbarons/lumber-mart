@@ -15,7 +15,7 @@ Learn more about Claude Code marketplaces in the [official documentation](https:
 |--------|----------|-------------|
 | [runbooks](plugins/runbooks/) | Workflow | Operational runbook creation with consistent structure and built-in maintenance feedback loops |
 | [critique](plugins/critique/) | Workflow | Review skills for code, tests, documentation, and observability -- design, coverage, doc-structure, and logging issues that linters miss |
-| [decisions](plugins/decisions/) | Workflow | Architectural Decision Record (ADR) authoring in MADR format with relationship tracking and CLAUDE.md registration |
+| [decisions](plugins/decisions/) | Workflow | Architectural Decision Record (ADR) authoring in MADR format with relationship tracking and registration in active agent instructions |
 
 ### [runbooks](plugins/runbooks/)
 
@@ -42,7 +42,7 @@ Architectural Decision Record (ADR) authoring, maintenance, and enforcement. Pro
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `decisions:create-adr` | Skill | Create a new ADR from a MADR template, research context from the codebase, and register it in the project's CLAUDE.md |
+| `decisions:create-adr` | Skill | Create a new ADR from a MADR template, research context from the codebase, and register it in the project's active agent instructions |
 | `decisions:review-policy` | Skill | Review a code change (working diff, PR, or path) against the accepted ADRs, flagging violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit |
 
 ## Usage
