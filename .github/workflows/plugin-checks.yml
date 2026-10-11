@@ -33,5 +33,9 @@ jobs:
           fi
       - name: Run lightspec tests
         run: python3 -m unittest discover -s plugins/lightspec/skills/draft-spec/scripts
+      - name: Run critique and hew regression tests
+        run: |
+          python3 -m unittest discover -s plugins/critique/skills/review-docs/scripts
+          python3 -m unittest discover -s plugins/hew/skills/raise-issues/scripts
       - name: Check shell scripts
         run: find plugins scripts -name '*.sh' -not -path '*/evals/fixtures/*' -print0 | xargs -0 uv run --no-project --with shellcheck-py shellcheck

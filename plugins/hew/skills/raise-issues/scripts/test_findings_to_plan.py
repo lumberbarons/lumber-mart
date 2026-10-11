@@ -34,6 +34,13 @@ def cli(*args, findings=None, status="reviewed"):
 
 
 class Convert(unittest.TestCase):
+    def test_legacy_portability_identity_emits_the_canonical_key(self):
+        plans = [convert(finding(skill=skill, pattern="single-harness-tool"),
+                         None, None, None, "bug")[0]
+                 for skill in ("skills", "portability")]
+        self.assertEqual(plans[0], plans[1])
+        self.assertIn("review-key: portability/single-harness-tool/", plans[0]["where"])
+
     def test_pump_wiring(self):
         line, _ = convert(finding(), 12, 21, 34, "bug")
         self.assertEqual((line["parent"], line["blocked-by"], line["discovered-from"]),

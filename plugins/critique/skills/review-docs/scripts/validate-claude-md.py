@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Validate agent-instructions files (CLAUDE.md, AGENTS.md) for structural correctness.
+"""Validate conventional and explicitly configured project instruction files.
 
 Also validates @path imports (Claude Code memory syntax), .claude/rules/
 directory, and detects leaked local preferences in shared files.
 """
 
+from __future__ import annotations
+
+import argparse
 import fnmatch
+import glob
 import subprocess
-import sys
 import re
 import json
 from pathlib import Path
@@ -17,7 +20,7 @@ from pathlib import Path
 AGENT_MD_LINE_TARGET = 200
 
 # The agent-instructions file names covered across harnesses.
-AGENT_MD_NAMES = ('CLAUDE.md', 'AGENTS.md')
+AGENT_MD_NAMES = ('CLAUDE.md', 'AGENTS.md', 'AGENTS.override.md')
 
 
 def find_git_root(path: Path) -> Path | None:
@@ -122,14 +125,23 @@ def extract_imports(content: str, file_path: Path) -> list[dict]:
 
         # Find @path references
         for m in re.finditer(r'@([\w./_~-][\w./_~-]*)', stripped):
-            ref = m.group(1)
+            ref = m.group(1).rstrip('.')
 
             # Skip email addresses: something@ref
             start = m.start()
             if start > 0 and stripped[start - 1] not in (' ', '\t', '\n', '(', '[', '"', "'", ',', ':'):
                 continue
 
-            # Skip npm scopes / social handles (no slash → likely @username)
+            # Explicit package/install wording distinguishes prose package
+            # mentions without suppressing standalone extensionless imports.
+            package_context = re.search(r'\b(?:install|add|package|dependency)\s+$',
+                                        stripped[:start], re.IGNORECASE) or re.match(
+                r'\s+(?:package|dependency)\b', stripped[m.end():], re.IGNORECASE)
+            if (package_context and not ref.startswith(('.', '/', '~'))
+                    and re.fullmatch(r'[\w.-]+/[\w.-]+', ref)):
+                continue
+
+            # Skip social handles (no slash → likely @username)
             if '/' not in ref and not ref.startswith(('.', '~')):
                 continue
 
@@ -226,10 +238,6 @@ def validate_rules_directory(rules_dir: Path, git_root: Path | None) -> list[dic
 
 def check_leaked_local_preferences(content: str, file_path: Path) -> list[dict]:
     """Detect personal/machine-specific values in shared agent-instructions files."""
-    # Only check shared instruction files, not personal or local variants
-    if file_path.name not in AGENT_MD_NAMES:
-        return []
-
     issues = []
     patterns = [
         (r'/Users/[a-zA-Z][\w.-]+/', 'macOS user home path'),
@@ -256,7 +264,7 @@ def check_leaked_local_preferences(content: str, file_path: Path) -> list[dict]:
                 issues.append({
                     'type': 'leaked_local_preference',
                     'severity': 'P3',
-                    'message': f"Hardcoded {desc} in shared {file_path.name} (line {line_num}) — belongs in a personal, untracked file (e.g. CLAUDE.local.md)",
+                    'message': f"Hardcoded {desc} in shared {file_path.name} (line {line_num}) — belongs in a personal, untracked instruction file",
                 })
 
         if re.search(localhost_pattern, stripped):
@@ -269,7 +277,8 @@ def check_leaked_local_preferences(content: str, file_path: Path) -> list[dict]:
     return issues
 
 
-def validate_agent_md(file_path: Path, git_root: Path | None) -> dict:
+def validate_agent_md(file_path: Path, git_root: Path | None,
+                     imports: bool | None = None) -> dict:
     """Validate a single agent-instructions file."""
     issues = []
 
@@ -326,8 +335,12 @@ def validate_agent_md(file_path: Path, git_root: Path | None) -> dict:
     # choice, and flagging it drives CLAUDE.md toward the file-by-file descriptions
     # that waste context on every load.
 
-    # Validate @path imports
-    issues.extend(validate_imports(file_path, content))
+    # Claude's file format defines @path imports. Other instruction files are
+    # ordinary prose unless the project's explicit convention enables imports.
+    if imports is None:
+        imports = file_path.name == 'CLAUDE.md'
+    if imports:
+        issues.extend(validate_imports(file_path, content))
 
     # Check for leaked local preferences
     issues.extend(check_leaked_local_preferences(content, file_path))
@@ -349,7 +362,7 @@ def is_in_build_directory(file_path: Path) -> bool:
     """
     skip_dirs = {
         'build', 'dist', 'out', 'target', '.next', '__pycache__', 'node_modules',
-        'fixtures', '__fixtures__', 'testdata',
+        'fixtures', '__fixtures__', 'testdata', '.git', '.hg', '.svn',
     }
     for parent in file_path.parents:
         if parent.name in skip_dirs:
@@ -357,34 +370,76 @@ def is_in_build_directory(file_path: Path) -> bool:
     return False
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: validate-claude-md.py <path> [--json]", file=sys.stderr)
-        sys.exit(1)
+def collect_instruction_files(path: Path, git_root: Path | None,
+                              instructions: list[str], imports: list[str]) -> tuple[list[Path], set[Path]]:
+    """Add configured paths/globs to conventional discovery, without duplicates.
 
-    path = Path(sys.argv[1])
-    json_output = "--json" in sys.argv
+    Patterns are relative to the repository root (or the supplied directory
+    outside Git). Personal, ignored, fixture, and external files are excluded.
+    A missing literal path remains in the result so it cannot look like a clean
+    review. --imports also selects a file and explicitly opts it into imports.
+    """
+    root = git_root or (path if path.is_dir() else path.parent)
+    candidates = [path] if path.is_file() else [
+        p for name in AGENT_MD_NAMES for p in path.rglob(name)
+    ]
+    import_paths = set()
+    for pattern in instructions + imports:
+        full_pattern = str(root / pattern)
+        matches = [Path(p) for p in glob.glob(full_pattern, recursive=True)]
+        if not matches:
+            matches = [Path(full_pattern)]
+        for candidate in matches:
+            try:
+                candidate.resolve().relative_to(root.resolve())
+            except ValueError:
+                raise ValueError(f'Instruction path is outside the repository: {pattern}')
+            candidates.append(candidate)
+            if pattern in imports:
+                import_paths.add(candidate.resolve())
+
+    files = {}
+    for candidate in candidates:
+        if candidate.is_dir() or is_in_build_directory(candidate):
+            continue
+        try:
+            candidate.resolve().relative_to(root.resolve())
+        except ValueError:
+            continue
+        if candidate.name in ('CLAUDE.local.md', 'MEMORY.md'):
+            continue
+        if is_gitignored(candidate, git_root):
+            continue
+        files.setdefault(candidate.resolve(), candidate)
+    return sorted(files.values()), import_paths
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('path', type=Path)
+    parser.add_argument('--json', action='store_true')
+    parser.add_argument('--instructions', action='append', default=[], metavar='PATH_OR_GLOB',
+                        help='Additional shared instruction paths, relative to the repository root; repeatable')
+    parser.add_argument('--imports', action='append', default=[], metavar='PATH_OR_GLOB',
+                        help='Select instruction files with an explicit @path import convention; repeatable')
+    args = parser.parse_args()
+    path = args.path.absolute()
+    if not path.exists():
+        parser.error(f'Path not found: {args.path}')
 
     # Find git root once for the entire run
     git_root = find_git_root(path)
 
-    results = []
-
-    if path.is_file() and path.name in AGENT_MD_NAMES:
-        results.append(validate_agent_md(path, git_root))
-    elif path.is_dir():
-        for name in AGENT_MD_NAMES:
-            for agent_md in path.rglob(name):
-                # Skip instruction files inside build/artifact directories
-                if is_in_build_directory(agent_md):
-                    continue
-                # Skip gitignored instruction files
-                if is_gitignored(agent_md, git_root):
-                    continue
-                results.append(validate_agent_md(agent_md, git_root))
+    try:
+        files, import_paths = collect_instruction_files(path, git_root, args.instructions, args.imports)
+    except ValueError as error:
+        parser.error(str(error))
+    results = [validate_agent_md(p, git_root,
+                                imports=p.name == 'CLAUDE.md' or p.resolve() in import_paths)
+               for p in files]
 
     # Validate .claude/rules/ directory if it exists
-    rules_dir = (git_root or path) / '.claude' / 'rules'
+    rules_dir = (git_root or (path if path.is_dir() else path.parent)) / '.claude' / 'rules'
     rules_issues = validate_rules_directory(rules_dir, git_root)
     if rules_issues:
         results.append({
@@ -395,7 +450,7 @@ def main():
             "issues": rules_issues,
         })
 
-    if json_output:
+    if args.json:
         print(json.dumps(results, indent=2))
     else:
         for r in results:

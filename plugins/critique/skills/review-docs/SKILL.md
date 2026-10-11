@@ -45,7 +45,13 @@ Handle the script's exit codes:
 
 A review that ran and found nothing, and a review that never ran, both end with zero findings and mean opposite things — so say which happened, in the report and in the findings file's `status`. A caller that cannot tell them apart reports a broken pipeline as a clean codebase.
 
-The script returns paths language-blind; filter to README.md, CLAUDE.md, and AGENTS.md files.
+The script returns paths language-blind. Keep README.md, CLAUDE.md, AGENTS.md,
+AGENTS.override.md, `.claude/rules/` markdown, and the project's configured instruction
+files. Identify configured sources from project configuration and the active session's
+instruction sources: for example, Codex's `project_doc_fallback_filenames` and OpenCode's
+`instructions` paths/globs in `opencode.json` or `opencode.jsonc`. Review configured files
+in the requested scope even when their names differ from the conventional ones. Exclude
+personal and auto-managed sources as described below.
 
 ## Run the validator
 
@@ -55,7 +61,20 @@ Always repo-wide, regardless of branch scope — a broken reference outside the 
 python3 "<this skill's directory>/scripts/validate-claude-md.py" . --json
 ```
 
-It catches broken references, files over the 200-line target, unresolvable `@path` imports (Claude Code's memory-import syntax, validated where present), bad `paths` globs in `.claude/rules/`, and hardcoded local paths, across `CLAUDE.md` and `AGENTS.md`. Fold its output into your findings.
+Pass each additional shared instruction path/glob identified above with a repeatable
+`--instructions` argument, resolved from the repository root. For a fallback filename, use
+`--instructions '**/TEAM_GUIDE.md'` to include its nested instances. Missing configured files
+are findings, not an empty review. Remote instruction URLs are reviewed as documentation
+references rather than passed to the local validator.
+
+The validator covers CLAUDE.md, AGENTS.md, and AGENTS.override.md by default, plus the
+configured files you supply. It catches broken references, files over the 200-line target,
+bad `paths` globs in `.claude/rules/`, and hardcoded local paths. `@path` imports are validated
+in CLAUDE.md; elsewhere they are ordinary prose unless the project explicitly defines an
+import convention. For that case, pass the file/glob with repeatable `--imports` instead of
+`--instructions`. Explicit package/install wording distinguishes `@scope/package` mentions
+from imports; standalone extensionless imports remain valid. Fold the validator's output
+into your findings.
 
 ## Severity, and why it is strict here
 

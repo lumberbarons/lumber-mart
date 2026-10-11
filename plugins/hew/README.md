@@ -110,7 +110,9 @@ review-key: <skill>/<pattern>/<scope>
 The key is the identity of a *finding*, not of a line of code, which is what makes it survive
 the two things that change constantly — line numbers and the model's phrasing of a title.
 
-- `skill` — which review produced it (`o11y`, `tests`, `docs`, `code`)
+- `skill` — which review produced it (`o11y`, `tests`, `docs`, `code`, `portability`);
+  legacy `skills` reports normalize to `portability` for new plans, and dedup searches both
+  prefixes while preserving existing stored keys
 - `pattern` — the root-cause slug the review emitted, from the vocabulary each critique skill
   owns in its own `REFERENCE.md`, passed through unchanged
 - `scope` — the deepest directory containing every affected file, derived mechanically from the

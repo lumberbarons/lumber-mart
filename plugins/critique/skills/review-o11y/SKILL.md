@@ -47,7 +47,11 @@ A review that ran and found nothing, and a review that never ran, both end with 
 
 The script returns paths language-blind. Filter to source files, excluding tests, generated code, and vendored dependencies.
 
-For three or more source files, fan out: give each subagent a couple of files, the severity rules below, the detected conventions from the next section, and tell it not to use Bash — this is static reading, so shell access only adds latency and risk. Merge what comes back before collapsing patterns.
+For three or more source files, fan out if delegation is available: give each subagent a
+couple of files, the severity rules below, and the detected conventions from the next section.
+Otherwise review the same files sequentially. Keep delegated reviews to static reading: use
+available file-reading/search tools, including terminal commands when needed, but do not
+execute project code. Merge what comes back before collapsing patterns.
 
 ## Judge semantics prescriptively, syntax descriptively
 

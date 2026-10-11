@@ -32,7 +32,7 @@ otherwise have to parse prose.
 
 | Field | Notes |
 |---|---|
-| `skill` | `code`, `tests`, `docs`, `o11y`, or `skills` |
+| `skill` | `code`, `tests`, `docs`, `o11y`, or `portability` |
 | `status` | `reviewed`, `no_scope`, or `error` — see below |
 | `reason` | Required when `status` is not `reviewed`; the stderr message or why nothing was in scope |
 | `scope` | The path or branch range actually reviewed |
@@ -42,6 +42,10 @@ otherwise have to parse prose.
 
 Per finding, `priority`, `files`, and `fix` are what consumers depend on. A finding missing any
 of them is unusable downstream, so fill them or drop the finding.
+
+`portability` is the canonical identity for `review-portability`. Older reports used `skills`;
+consumers accept that alias as `portability` and search both identity prefixes when deduplicating
+against existing tracker issues. Preserve existing issues' stored review keys.
 
 **`files` must list every affected path.** For a pattern-collapsed finding that means all of
 them, not a representative sample. Downstream consumers derive a stable identity for the finding
