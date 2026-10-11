@@ -17,7 +17,8 @@ The process this serves is **ADR → spec → approve → implement**:
   per section; a finding that would not hold up the work is not a finding.
 - **spec-to-epic** — files an Accepted spec as a hew epic: one epic issue carrying the spec's
   framing, one child issue per user story, done-when items derived per story so `work-issue`
-  can drive them test-first.
+  can drive them test-first. Its bundled checker gates on shape and status even when the
+  other skills are not installed.
 
 ## Prerequisites
 
@@ -84,3 +85,9 @@ python3 -m unittest discover plugins/lightspec/skills/spec-to-epic/scripts
 
 A fresh skeleton must fail the check for its `<FILL: ...>` markers and nothing else;
 `reference/example-spec.md` must pass.
+
+The checker shipped by approve-spec and spec-to-epic, and the example shipped by
+spec-to-epic, are synchronized from draft-spec by `scripts/sync-skill-files.sh` at the
+marketplace root. Edit the source and run the sync; CI checks for drift. The spec-to-epic
+tests also copy just that skill to an isolated install and exercise validation against a
+separate target checkout and worktree.

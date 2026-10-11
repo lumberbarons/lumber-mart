@@ -13,7 +13,7 @@ The output is MADR-style (Markdown Architecture Decision Records) with rich fron
 
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
-| `create-adr` | Create a new ADR from a standard MADR template, researching context from the codebase and registering it in the project's agent instructions (`AGENTS.md`/`CLAUDE.md`) | Yes |
+| `create-adr` | Create a new ADR from a standard MADR template, researching context from the codebase and registering it in the repository's active agent instructions | Yes |
 | `review-policy` | Review a code change (working diff, PR, or path) against the accepted ADRs and report violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit | Yes |
 
 ## Usage
@@ -63,9 +63,14 @@ ADRs do not track the specs that inherit their constraints. Specs cite ADRs from
 
 ## Registration in agent instructions
 
-The skill appends (or updates) an `## Architectural Decisions` section in the project's root agent-instructions file — `AGENTS.md`, or `CLAUDE.md` where that is the convention — listing each ADR with a one-line "when this applies" description. This is how future agent sessions discover and honor prior decisions — if an ADR isn't registered, agents won't see it.
+The skill appends (or updates) an `## Architectural Decisions` section in the repository's active agent instructions, listing each ADR with a one-line "when this applies" description. It checks `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, and configured repository instruction paths/globs, preserving existing shared imports or links. Registration follows the files each agent actually loads; an inactive default alone is insufficient. If the repository has no instruction convention, it creates `AGENTS.md`.
+
+Policy reviews use parallel reviewers when delegation is available and review the same ADRs sequentially when it is not.
 
 ## Bundled Resources
+
+ADR scaffolding requires `bash` and `jq` on PATH. Policy diff reviews require
+`git`, and PR reviews additionally require an authenticated `gh` CLI.
 
 ### Scripts
 

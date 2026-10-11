@@ -26,6 +26,8 @@ pairs=(
   "plugins/critique/scripts/discover-files.sh     plugins/critique/skills/review-o11y/scripts/discover-files.sh"
   "plugins/critique/scripts/discover-files.sh     plugins/critique/skills/review-tests/scripts/discover-files.sh"
   "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/approve-spec/scripts/lightspec.py"
+  "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/spec-to-epic/scripts/lightspec.py"
+  "plugins/lightspec/skills/draft-spec/reference/example-spec.md  plugins/lightspec/skills/spec-to-epic/reference/example-spec.md"
 )
 
 check=false

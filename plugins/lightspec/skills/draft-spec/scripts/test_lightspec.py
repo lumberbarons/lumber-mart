@@ -1,7 +1,7 @@
 """Tests for lightspec.
 
-Run with `python3 -m unittest discover .claude/skills/lightspec/scripts` - stdlib
-only, no test dependency to install.
+Run with `python3 -m unittest discover -s "<this skill's directory>/scripts"` -
+stdlib only, no test dependency to install.
 
 The two tests that matter most are the round trip (a fresh skeleton fails only
 for its FILL markers) and the reference example (the file the skill tells the

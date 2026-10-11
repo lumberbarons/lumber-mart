@@ -23,14 +23,15 @@ epic-closes-when-built path, not through anything this skill does.
 
 ## The script
 
-`scripts/extract_spec.py` sits beside this file. Resolve it once against this
-skill's own directory:
+`scripts/extract_spec.py` and a copy of the format checker `scripts/lightspec.py`
+ship inside this skill. Resolve both against this skill's own directory:
 
 ```bash
 EXTRACT="<this skill's directory>/scripts/extract_spec.py"
+LIGHTSPEC="<this skill's directory>/scripts/lightspec.py"
 ```
 
-It parses a lightspec-format `spec.md` into JSON — title, the four framing
+The extractor parses a lightspec-format `spec.md` into JSON — title, the four framing
 sections, every story with its priority and task list, each task's paths,
 and the epic-level Done When list. It is stdlib-only, needs no virtualenv,
 and exists for one reason: a file path or a task id copied out of this
@@ -59,8 +60,17 @@ Take the number or path given. `specs/<NNN>-*/spec.md` resolves a bare
 number; otherwise take the path as given. If neither was given, list what's
 under `specs/` with each one's `**Status**` and ask which.
 
-Read the `**Status**` line directly, or through lightspec if it's installed
-(`uv run --no-project <draft-spec>/scripts/lightspec.py status <path>`).
+Run the bundled checker and read the status for the exact resolved path:
+
+```bash
+uv run --no-project "$LIGHTSPEC" check specs/NNN-slug/spec.md
+uv run --no-project "$LIGHTSPEC" status specs/NNN-slug/spec.md
+```
+
+If `check` does not print `ok`, stop and report its failures before building a
+filing plan. This gate works even when draft-spec and approve-spec are not
+installed; no sibling skill directory is needed.
+
 **Only `Accepted` is fileable.** A `Draft` spec has not been reviewed — filing
 its issues is a quiet way of building from something nobody signed off on,
 which is exactly what approve-spec's gate exists to prevent one step
