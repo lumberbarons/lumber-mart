@@ -5,6 +5,7 @@ A Codex and Claude Code plugin marketplace hosting plugins for hardware and work
 | `plugins/` | Plugin source directories | Adding or modifying a plugin |
 | `.claude-plugin/` | Marketplace metadata | Changing marketplace config or plugin listings |
 | `.agents/plugins/` | Codex marketplace catalog | Changing plugin listings or install policies |
+| `scripts/sync-apm-manifests.py` | Generates each plugin's `apm.yml` and `.apm/` marker from its portable manifest | Changing plugin metadata or APM compatibility |
 | `README.md` | Project overview and quick start | Understanding what lumber-mart is |
 | `scripts/` | Repo tooling: `sync-skill-files.sh` copies files shared by several skills into each skill directory; `check-marketplace.py` enforces the version rules in CI | Editing a file more than one skill ships, or adding one |
 | `.github/` | CI: shared-file sync, official marketplace validation, skill frontmatter, marketplace and version checks, lightspec tests, shellcheck | Changing what CI enforces |
@@ -13,7 +14,10 @@ A Codex and Claude Code plugin marketplace hosting plugins for hardware and work
 Changing a plugin means bumping its `version` in `plugins/<name>/plugin.json` and
 `plugins/<name>/.claude-plugin/plugin.json`, and setting the same value on its entry in
 `.claude-plugin/marketplace.json`, in the same commit as the change. Portable root manifests
-are canonical; keep their identity fields equal to the Claude manifests. Both catalogs must
+are canonical; keep their identity fields equal to the Claude manifests.
+Run `python3 scripts/sync-apm-manifests.py` after changing portable metadata; never edit generated
+`apm.yml` files directly or copy skills into `.apm/`. The marker makes APM prefer the existing
+skill bundle over its Copilot-only portable plugin route. Both catalogs must
 list the same plugins at the same repo-relative paths. Versions must never drift apart:
 Claude Code installs from its manifest, while
 marketplace browsers such as APM display the entry's `version`, and the version is the only thing

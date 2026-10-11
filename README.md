@@ -87,19 +87,33 @@ For local testing, use `/plugin marketplace add /absolute/path/to/lumber-mart`. 
 
 In Claude Code, use `/critique:review-code`. In Codex, select the installed `review-code` skill or ask the agent to use it by name. Plugin READMEs describe the inputs each skill accepts.
 
+### OpenCode through APM
+
+APM 0.33.0 can install the same skills into OpenCode through this Claude-compatible marketplace:
+
+```bash
+apm marketplace add lumberbarons/lumber-mart
+apm install critique@lumber-mart --target opencode
+```
+
+Add `--global` to the install command for user-wide skills. Existing dependencies such as `lumberbarons/lumber-mart/plugins/critique` remain supported. Project installs deploy skills to `.agents/skills/`; global OpenCode installs deploy to `~/.config/opencode/skills/`. Restart OpenCode or start a new session to discover newly installed skills.
+
+Each plugin includes a generated `apm.yml` and a small `.apm/` marker. Together they select APM's skill-bundle installation route ahead of its portable Agent Plugin route, which currently registers whole plugins only for Copilot. A metadata-only `apm.yml` without `.apm/` does not select this route. The actual skills stay in `skills/`, shared with Codex and Claude Code; no duplicate skill tree is maintained.
+
 ## Maintaining the packages
 
 | File | Purpose |
 |------|---------|
 | `plugins/<name>/plugin.json` | Canonical portable identity and metadata; OpenAI presentation under `extensions.com.openai` |
 | `plugins/<name>/.claude-plugin/plugin.json` | Claude Code manifest with matching identity and version |
+| `plugins/<name>/apm.yml` and `.apm/README.md` | Generated explicit APM layout for installing the shared skills into OpenCode |
 | `plugins/<name>/skills/<skill>/SKILL.md` | Shared skill instructions and bundled resources for both hosts |
 | `.agents/plugins/marketplace.json` | Codex catalog with repo-relative local sources and install policies |
 | `.claude-plugin/marketplace.json` | Claude Code catalog with matching plugin names, paths, and versions |
 
 All current plugins contain skills, so they do not need MCP configuration or hooks. If a future plugin bundles an MCP server, use root `mcp.json` with the Agent Plugins schema and provide the configuration Claude Code expects separately.
 
-When changing a plugin, bump its version in both manifests and the Claude catalog. Keep shared identity fields equal, and add/remove catalog entries in both catalogs together. CI validates the portable schema, catalog parity, skill frontmatter, and version advancement against the base branch.
+When changing a plugin, bump its version in both manifests and the Claude catalog, then run `python3 scripts/sync-apm-manifests.py`. Keep shared identity fields equal, and add/remove catalog entries in both catalogs together. CI validates the portable schema, catalog parity, generated APM files, skill frontmatter, and version advancement against the base branch. It also installs all six plugins with pinned APM 0.33.0 through both marketplace selectors and direct subpaths in project and global scope, checking every deployed skill file and allowing only equivalent Markdown link rebasing.
 
 ```bash
 uv run --no-project --with jsonschema python3 scripts/check-marketplace.py
@@ -107,6 +121,8 @@ uv run --no-project --with jsonschema python3 -m unittest discover -s scripts -p
 uv run --no-project --with pyyaml python3 scripts/check-skill-frontmatter.py
 claude plugin validate --strict .
 bash scripts/sync-skill-files.sh --check
+python3 scripts/sync-apm-manifests.py --check
+uv run --no-project --with apm-cli==0.33.0 python3 scripts/check-apm-install.py
 ```
 
 The Agent Plugins 1.0.0 schema is vendored at `scripts/schemas/plugin.schema.json` from [the specification's schema URL](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json), so validation does not depend on a network fetch. Review schema upgrades explicitly.

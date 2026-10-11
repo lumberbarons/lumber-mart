@@ -33,6 +33,10 @@ jobs:
           fi
       - name: Test marketplace validation
         run: uv run --no-project --with jsonschema python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Check generated APM manifests
+        run: python3 scripts/sync-apm-manifests.py --check
+      - name: Verify APM installs every plugin into OpenCode
+        run: uv run --no-project --with apm-cli==0.33.0 python3 scripts/check-apm-install.py
       - name: Run lightspec tests
         run: python3 -m unittest discover -s plugins/lightspec/skills/draft-spec/scripts
       - name: Check shell scripts

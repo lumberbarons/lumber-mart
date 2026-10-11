@@ -1,0 +1,6 @@
+# Generated from plugin.json by scripts/sync-apm-manifests.py.
+name: "lightspec"
+version: "1.3.0"
+description: "Skills for the lightspec spec pipeline: draft a feature spec into specs/NNN-slug/spec.md in a script-enforced format, approve it on substance, and convert an accepted spec into a hew epic with one child issue per user story. ADR → spec → approve → tracker."
+author: "lumberbarons"
+license: "MIT"

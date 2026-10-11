@@ -5,6 +5,7 @@ Review skills for code, tests, documentation quality, and skill portability.
 | `skills/` | Skill definitions (SKILL.md files) | Adding or modifying critique skills |
 | `FINDINGS.md` | Schema for the `--json` findings file; source for the copy in each skill | Changing machine-readable output, or what a downstream consumer can rely on |
 | `scripts/discover-files.sh` | Scope discovery (source for the copy in each skill that scopes); exit codes drive the no_scope/error split | Changing how review scope is determined |
+| `apm.yml` and `.apm/` | Generated APM compatibility metadata and layout marker | Run the root sync script after changing portable metadata; keep skills in `skills/` |
 | `plugin.json` | Canonical portable manifest; identity matches the Claude manifest | Changing plugin metadata or versions |
 | `.claude-plugin/` | Plugin metadata | Changing plugin name, version, or description |
 | `README.md` | Plugin overview and skill docs | Understanding what critique does |

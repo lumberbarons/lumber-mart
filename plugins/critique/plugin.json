@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "critique",
   "description": "Review skills for code, tests, documentation, observability, and skill portability. Finds design, coverage, doc-structure, logging/error-message, and agent-harness-coupling issues that linters miss.",
-  "version": "5.6.0",
+  "version": "5.7.0",
   "author": {
     "name": "lumberbarons"
   },
