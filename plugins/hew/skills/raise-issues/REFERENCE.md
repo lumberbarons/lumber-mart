@@ -2,6 +2,14 @@
 
 Slug handling, file shapes, and a worked example for `raise-issues`.
 
+## Review identities
+
+The canonical `skill` values are `code`, `tests`, `docs`, `o11y`, and `portability`.
+The older `skills` value aliases `portability`. Normalize that alias in new plans, and search
+both `portability/<pattern>/<scope>` and `skills/<pattern>/<scope>` before filing a portability
+finding. Existing stored review keys stay unchanged, including when refreshing issue bodies.
+Apply the normal open/completed/declined match rules to either spelling.
+
 ## Pattern slugs
 
 The `pattern` component of a review key is not defined here. Each critique review skill owns the
@@ -77,6 +85,8 @@ pass greps to attribute an open finding child to the PR it holds — treat it li
 `review-key:`: bare, exact, never re-rendered. Priority passes straight through, clamped to
 `P1..P4` (a P0 finding files as P1 — P0 is a human's declaration). Dedup is *not* the
 converter's job: run the Step 3 table against the emitted keys yourself before `hew apply`.
+The converter emits `portability/` for both `portability` and legacy `skills` input; deduplication
+must still search for already-filed `skills/` keys.
 
 A finding is skipped and counted when it lacks priority, files, fix, or pattern — the pump
 files from critique findings files, which always carry a pattern; hand-written lists go

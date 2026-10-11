@@ -1,6 +1,6 @@
 ---
 name: raise-issues
-description: File review findings as GitHub issues using the hew CLI, deduplicated by a stable review key so re-running a review does not re-file tracked work. Use after any critique review skill (review-code, review-tests, review-docs, review-o11y) or with a findings file, and whenever the user says "raise these", "file these findings", "turn this review into issues", "create issues for these", or runs a review inside an automated loop.
+description: File review findings as GitHub issues using the hew CLI, deduplicated by a stable review key so re-running a review does not re-file tracked work. Use after any critique review skill (review-code, review-tests, review-docs, review-o11y, review-portability) or with a findings file, and whenever the user says "raise these", "file these findings", "turn this review into issues", "create issues for these", or runs a review inside an automated loop.
 ---
 
 # Raise Issues
@@ -56,7 +56,8 @@ The key is what makes a second run recognise its own earlier work:
 review-key: <skill>/<pattern>/<scope>
 ```
 
-- **`skill`** — `o11y`, `tests`, `docs`, or `code`.
+- **`skill`** — `o11y`, `tests`, `docs`, `code`, or `portability`. Normalize the legacy
+  `skills` identity to `portability` for new keys; the dedup step also searches legacy keys.
 - **`pattern`** — comes from the review itself when the findings file carries one, and must be
   passed through unchanged; re-spelling a slug here orphans every issue already filed under the
   original. Only when a finding arrives without one, pick from the vocabulary in the relevant
@@ -75,6 +76,13 @@ recalibration or a pattern collapse — and identity has to survive that.
 Follow the read order the primer prescribes rather than inventing one — `hew search` first, then
 `hew list --json --bodies --state all` when exhaustiveness matters, and `hew show <n>` only to
 read a candidate those surfaced. Search on the key itself: `hew search "review-key: <key>"`.
+
+For portability findings, search both `hew search "review-key: portability/<pattern>/<scope>"`
+and `hew search "review-key: skills/<pattern>/<scope>"`. This applies to conversation reports
+and converter-produced plans, including old plans that still use `skills/`. Treat a match under
+either prefix by the same table below. When refreshing an existing issue, preserve its stored
+review key. Before applying a surviving old plan, normalize its new-issue key to `portability/`.
+Do not bulk-rewrite stored keys or treat an identity spelling change as a regression.
 
 The part to hold on to is `--state all`. Every step of that order spans closed issues as well as
 open ones, and that is load-bearing rather than incidental: a dedup pass reading only open issues

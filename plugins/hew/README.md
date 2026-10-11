@@ -61,8 +61,13 @@ work-issue --dry-run
 ## Working an issue
 
 `work-issue` follows the workflow hew prescribes rather than inventing one: `hew ready` →
-`hew start` → branch → tests → push → `hew pr`. Two properties of that workflow do the heavy
-lifting.
+`hew start` → branch → tests → push → `hew pr`.
+
+Checkout and worktree choices follow the user's and repository's conventions. The skill handles
+named branches and detached HEAD by inspecting Git state, preserving an existing issue branch
+or attaching a new one before pushing. Each PR carries one issue's changes.
+
+Two properties of that workflow do the heavy lifting.
 
 **Work ends at a PR.** `hew pr` composes the PR from tracker state with exactly one `Fixes #n`,
 so the merge closes the issue and the change goes through review. `hew close` stays what it is
@@ -110,7 +115,9 @@ review-key: <skill>/<pattern>/<scope>
 The key is the identity of a *finding*, not of a line of code, which is what makes it survive
 the two things that change constantly — line numbers and the model's phrasing of a title.
 
-- `skill` — which review produced it (`o11y`, `tests`, `docs`, `code`)
+- `skill` — which review produced it (`o11y`, `tests`, `docs`, `code`, `portability`);
+  legacy `skills` reports normalize to `portability` for new plans, and dedup searches both
+  prefixes while preserving existing stored keys
 - `pattern` — the root-cause slug the review emitted, from the vocabulary each critique skill
   owns in its own `REFERENCE.md`, passed through unchanged
 - `scope` — the deepest directory containing every affected file, derived mechanically from the

@@ -94,7 +94,12 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
     priority = f"P{max(1, min(4, pnum))}"  # never P0, never below P4
 
     scope = derive_scope(files)
-    key = f"{finding.get('skill')}/{pattern}/{scope}"
+    # Older portability reports used the schema's `skills` spelling. New plans
+    # share one identity; tracker dedup must still search existing legacy keys.
+    skill = finding.get('skill')
+    if skill == 'skills':
+        skill = 'portability'
+    key = f"{skill}/{pattern}/{scope}"
     where_lines = [
         backtick(finding.get("locations") or files),
         "",
