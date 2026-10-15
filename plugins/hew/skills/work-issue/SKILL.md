@@ -83,18 +83,20 @@ go looking for an epic to descend into because the queue looked disappointing. C
 up an epic is a decision about what to work on next, and an empty queue is exactly the moment a
 human would want to make it rather than discover it was made for them.
 
-**An issue number:** inspect the target's `epic` and `state` fields using a read supported by
-the primer and CLI help. If `epic` is true, descend (below). If it is closed, say so and stop —
-reopening is a human decision.
+**An issue number:** inspect whether the target is an epic and whether it is open or closed,
+using a read supported by the primer and CLI help. If it is an epic, descend (below). If it is
+closed, say so and stop — reopening is a human decision.
 
 **Epic descent — only when an epic was named explicitly.** This path is reachable when you are
 invoked with an explicit issue number `n` that is an epic, never from the no-argument path above. The primer's
 rule against working an epic directly leaves the question of what to do instead.
 Read the epic's children with their `state`, `inProgress`, assignees, `openBlockers` and
-priority, choosing the read and output format from the primer and CLI help. The listing can
-include closed children: filter to `state: "open"`, apply the eligibility rules below, then
-**sort what remains by priority yourself** and take the top one. A progress summary without
-blockers is not enough to select a child.
+priority, choosing the read from the primer and CLI help. For this one step, use structured
+(`--json`) output: you filter and sort on those fields, and eyeballing text annotations is how
+a child gets skipped or misordered. The listing can include closed children: filter to
+`state: "open"`, apply the eligibility rules below, then **sort what remains by priority
+yourself** and take the top one. A progress summary without blockers is not enough to select a
+child.
 
 Sorting explicitly matters here in a way it does not above: `hew ready` is documented as
 priority-sorted so taking its first entry is enough, while an epic's child listing carries no
@@ -179,7 +181,9 @@ such gap:
 
 Use the body obtained during selection or claiming; this step interprets it and does not
 require another read. If it is still missing, retrieve it using the primer and CLI help.
-`body` is markdown in the sections the primer lists. How to read them is the part worth saying:
+
+The issue body is markdown in the sections the primer lists. How to read them is the part worth
+saying:
 
 - **`### Where`** is a boundary, not a hint. Every path it names should appear in your final
   diff, and paths it does not name should not.

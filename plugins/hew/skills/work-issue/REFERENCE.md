@@ -126,15 +126,17 @@ Issue #39 in `lumberbarons/hew`, an `enhancement`, is at the top of `hew ready`.
 $ hew ready
 #39 P3 enhancement  Write commands guard against closed targets
 #40 P3 enhancement  Reopen command symmetric with close
-
-$ hew start --help
 ```
 
-Following the primer and the installed CLI's help, claim #39 and obtain its body in as few
-calls as supported. The claim succeeds (exit 0). Reuse the body if selection or the claim
-already returned it; otherwise retrieve the missing body using the available read command.
-This works with both CLIs that combine claim and read and those that require a separate read,
-without prescribing flags or a redundant follow-up call.
+Claiming #39, using the command surface from the primer, succeeds (exit 0):
+
+```
+claimed #39
+```
+
+Reuse the body if selection or the claim already returned it; otherwise retrieve the missing
+body with the read the primer lists. Which CLI combines claim and read is its own business, and
+the example does not depend on it.
 
 The body carries the four sections, and `### Done when` has three items:
 
@@ -177,8 +179,11 @@ $ hew ready
 #40 P3 enhancement  Reopen command symmetric with close
 ```
 
-Claim #40 using the command surface from the primer and CLI help. This time the claim reports
-that @someone-else holds it (exit 3).
+Claiming #40 fails because @someone-else already holds it:
+
+```
+error: #40 is claimed by @someone-else (exit 3)
+```
 
 Not an error condition — the lock did its job. Move to the next candidate. With nothing else
 ready, the run reports `not_eligible` with `skipped.claimed: 1`, rather than `no_ready_work`.
