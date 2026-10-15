@@ -126,14 +126,18 @@ Issue #39 in `lumberbarons/hew`, an `enhancement`, is at the top of `hew ready`.
 $ hew ready
 #39 P3 enhancement  Write commands guard against closed targets
 #40 P3 enhancement  Reopen command symmetric with close
-
-$ hew start 39
-claimed #39
-
-$ hew show 39 --json
 ```
 
-Its body carries the four sections, and `### Done when` has three items:
+Claiming #39, using the command surface from the primer, succeeds (exit 0):
+
+```
+started #39: Write commands guard against closed targets
+```
+
+Reuse the body if selection or the claim already returned it; otherwise retrieve the missing
+body with the read the primer lists. The example doesn't depend on which form the CLI offers.
+
+The body carries the four sections, and `### Done when` has three items:
 
 ```
 - [ ] set/block/unblock on a closed issue fail with the close state in the message, without mutating
@@ -172,9 +176,12 @@ instead of around it.
 ```bash
 $ hew ready
 #40 P3 enhancement  Reopen command symmetric with close
+```
 
-$ hew start 40
-error: #40 is claimed by @someone-else (exit 3)
+Claiming #40 fails with exit 3 because @someone-else already holds it:
+
+```
+#40 already claimed (assigned to @someone-else); pick the next ready item or --force
 ```
 
 Not an error condition — the lock did its job. Move to the next candidate. With nothing else
