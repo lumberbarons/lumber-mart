@@ -127,13 +127,16 @@ $ hew ready
 #39 P3 enhancement  Write commands guard against closed targets
 #40 P3 enhancement  Reopen command symmetric with close
 
-$ hew start 39
-claimed #39
-
-$ hew show 39 --json
+$ hew start --help
 ```
 
-Its body carries the four sections, and `### Done when` has three items:
+Following the primer and the installed CLI's help, claim #39 and obtain its body in as few
+calls as supported. The claim succeeds (exit 0). Reuse the body if selection or the claim
+already returned it; otherwise retrieve the missing body using the available read command.
+This works with both CLIs that combine claim and read and those that require a separate read,
+without prescribing flags or a redundant follow-up call.
+
+The body carries the four sections, and `### Done when` has three items:
 
 ```
 - [ ] set/block/unblock on a closed issue fail with the close state in the message, without mutating
@@ -172,10 +175,10 @@ instead of around it.
 ```bash
 $ hew ready
 #40 P3 enhancement  Reopen command symmetric with close
-
-$ hew start 40
-error: #40 is claimed by @someone-else (exit 3)
 ```
+
+Claim #40 using the command surface from the primer and CLI help. This time the claim reports
+that @someone-else holds it (exit 3).
 
 Not an error condition — the lock did its job. Move to the next candidate. With nothing else
 ready, the run reports `not_eligible` with `skipped.claimed: 1`, rather than `no_ready_work`.

@@ -17,6 +17,11 @@ The `hew prime` primer — injected at session start — already carries the wor
 conventions, and the command surface. This skill assumes it and does not restate it. If it is
 not in context, the injection is per-repo and optional: run `hew prime` first.
 
+Use the primer and `hew <cmd> --help` for the current command surface. The steps below define
+the intent and constraints; choose commands and output formats that satisfy them in as few
+calls as the CLI allows. Reuse information already returned instead of reading it again, and
+request structured output only when needed to inspect or parse a field.
+
 Two of its rules do the most work here, and both are easy to undo by accident:
 
 **Closing is not delivering.** What closes a delivered issue is the merge, through the `Fixes #n`
@@ -78,20 +83,22 @@ go looking for an epic to descend into because the queue looked disappointing. C
 up an epic is a decision about what to work on next, and an empty queue is exactly the moment a
 human would want to make it rather than discover it was made for them.
 
-**An issue number:** `hew show <n> --json`. If `epic` is true, descend (below). If it is closed,
-say so and stop — reopening is a human decision.
+**An issue number:** inspect the target's `epic` and `state` fields using a read supported by
+the primer and CLI help. If `epic` is true, descend (below). If it is closed, say so and stop —
+reopening is a human decision.
 
 **Epic descent — only when an epic was named explicitly.** This path is reachable when you are
 invoked with an explicit issue number `n` that is an epic, never from the no-argument path above. The primer's
 rule against working an epic directly leaves the question of what to do instead.
-`hew list --epic <n> --json` returns the children with `state`, `inProgress` and
-`openBlockers`. Filter to `state: "open"` — unlike a bare `hew list`, the `--epic` form returns
-closed children too — drop any with open blockers, then **sort what remains by priority
-yourself** and take the top one. Prefer this over `hew epic status`, which renders progress but
-not blockers.
+Read the epic's children with their `state`, `inProgress`, assignees, `openBlockers` and
+priority, choosing the read and output format from the primer and CLI help. The listing can
+include closed children: filter to `state: "open"`, apply the eligibility rules below, then
+**sort what remains by priority yourself** and take the top one. A progress summary without
+blockers is not enough to select a child.
 
 Sorting explicitly matters here in a way it does not above: `hew ready` is documented as
-priority-sorted so taking its first entry is enough, while `--epic` carries no such guarantee.
+priority-sorted so taking its first entry is enough, while an epic's child listing carries no
+such guarantee.
 Trusting its order would let an epic whose children were filed out of priority order get worked
 out of priority order, and nothing downstream would ever flag it.
 
@@ -118,8 +125,8 @@ If ready work exists but none of it is eligible, that is **not** an empty backlo
 claimed by a crashed agent reads as a drained queue and hides the stall indefinitely.
 
 **Sizing the batch.** Under `--batch`, decide the whole batch here, before claiming anything.
-Take the first `n` eligible candidates in queue order, `hew show` each, and size it from the
-body:
+Take the first `n` eligible candidates in queue order, obtain any bodies not already read, and
+size each from its body:
 
 > An issue whose `### Where` names more than three paths, or whose `### Done when` carries more
 > than five items, is large. Work it alone and stop — it is the batch.
@@ -151,15 +158,16 @@ ends the batch, however much of the ceiling is left.
 Stop here under `--dry-run`, after showing the resolved target — under `--batch`, the whole
 planned batch and the size that justified it.
 
-## Step 2 — Claim it
+## Step 2 — Claim and read
 
-```bash
-hew start <n>
-```
+Claim the selected issue and read its body, including Where, Fix or Approach, and Done when,
+in as few calls as the CLI allows. Consult the primer and `hew start --help` for the supported
+claim-and-read options. If the claim returns the body, use it; if the body was already read
+during selection, reuse it. Fetch only information still missing. Never use `--force`.
 
-The exit code is the whole answer, and it is authoritative in a way that reading `assignees`
-first is not — between a read and a claim there is a window for another agent to slip in, and
-the claim itself has no such gap:
+The claim's exit code is authoritative in a way that reading `assignees` first is not — between
+a read and a claim there is a window for another agent to slip in, and the claim itself has no
+such gap:
 
 - **0** — yours. Proceed.
 - **3** — someone else took it. The lock working, not an error: re-resolve from Step 1 rather
@@ -169,10 +177,8 @@ the claim itself has no such gap:
 
 ## Step 3 — Read the contract
 
-```bash
-hew show <n> --json
-```
-
+Use the body obtained during selection or claiming; this step interprets it and does not
+require another read. If it is still missing, retrieve it using the primer and CLI help.
 `body` is markdown in the sections the primer lists. How to read them is the part worth saying:
 
 - **`### Where`** is a boundary, not a hint. Every path it names should appear in your final
