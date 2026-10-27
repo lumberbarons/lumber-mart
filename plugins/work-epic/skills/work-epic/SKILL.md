@@ -260,6 +260,9 @@ uv run --no-project "$RESOLVE" <epic-n> --max-open-prs <max-open-prs>
   names every open child left behind with its reason, `counts` sums them. `mainCheckout` is
   the primary worktree and `defaultBranch` the origin default.
 
+An `eligible` child with `large: true` exceeds work-issue's sizing rule. Spawn it as usual, but
+name it in the report as large, so a human can see why it ran long or stalled.
+
 `mainCheckout` is now the fetch/fast-forward/integration anchor, not the spawn cwd: Orca creates
 each child worktree from `origin/<default>` explicitly, so the human's main checkout may be on
 any branch. The resolver already keeps out what this pump has touched: a child with an open PR
@@ -546,12 +549,24 @@ Read the findings file before anything else:
 A `reviewed` file always produces exactly one **review-round comment** on the PR (template in
 [REFERENCE.md](REFERENCE.md)), clean or not: it carries the marker `pr_state.py` counts rounds
 by and `reviewed-head: $HEAD_SHA`. A PR with no round comment is one the planner treats as
-unreviewed and never merges. Then, in autonomous mode:
+unreviewed and never merges.
 
-- **Findings at P2 or above** — file them as epic children through the raise-issues flow:
-  `findings_to_plan.py --parent <epic> --reviewed-issue <n> --reviewed-pr <pr>
-  --at-or-above P2` (flow and dedup rules in [REFERENCE.md](REFERENCE.md)), dry-run, then
-  `hew apply`. P3s are not filed; the round comment carries them.
+**File first, comment second.** The round comment is what makes a PR mergeable, and the open
+finding child is what holds it. Posting the comment first leaves a window — a crashed pump, a
+failed `hew apply` — where the planner sees a current review and no blocker and merges a PR whose
+P1 was never filed. Filed first, the worst a crash leaves is a PR with no round, which the planner
+never merges; Step 8 re-reviews it, and the review-key dedup keeps the repeat filing from
+duplicating children. The comment also quotes each child's number
+(`Filed as #<child>`), which only exists once the filing has run. So, in autonomous mode:
+
+1. **Findings at P2 or above** — file them as epic children through the raise-issues flow:
+   `findings_to_plan.py --parent <epic> --reviewed-issue <n> --reviewed-pr <pr>
+   --at-or-above P2` (flow and dedup rules in [REFERENCE.md](REFERENCE.md)), dry-run, then
+   `hew apply`. P3s are not filed; the round comment carries them. A filing that fails is an
+   escalation — post no round comment over it.
+2. **Post the round comment**, with the filed children's numbers.
+3. **Decide readiness** from the filed findings:
+
 - **Nothing at or above `--block-on`** — `gh pr ready <pr>`, set the child worktree to
   `work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · clean review by <reviewer>;
   ready to merge`, and notify. The merge pass takes it from here; filed findings below the bar
@@ -831,7 +846,7 @@ Report:
 - **Run id**, objective, and coordinator worktree; the implementer pool, reviewer policy
   (`auto` or the explicit list), reconciler policy, and setup policy used.
 - Per worker: issue, **implementer agent**, outcome, PR number, child worktree id/path/status
-  (kept or removed), reviewer verdict, findings filed.
+  (kept or removed), reviewer verdict, findings filed, and "large" when the resolver flagged it.
 - Per PR: **implementer → reviewer(s)**, with the round number, so a mixed-agent run is
   auditable. Say "same-agent review" when the pool left no other reviewer.
 - Per reviewer: PR, round, **reviewer agent**, worktree id (removed/kept), verdict.

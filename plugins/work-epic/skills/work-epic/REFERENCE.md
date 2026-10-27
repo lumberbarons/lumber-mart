@@ -401,6 +401,8 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
   `createdAt`. `where`/`doneWhen` are bullet counts under the body's `### Where` /
   `### Done when` sections; `large` is work-issue's sizing rule (>3 paths, >5 done-when) —
   surfaced so the report can say why a large child might be worth a `--workers 1` moment.
+  Only `- ` bullets are counted, so a prose `### Where` reads `where: 0` and `large` can
+  under-report; an absent flag is not proof the child is small (tracked in #31).
   `resume` is true only for a child `--resume` brought back.
 - `skipped` — open children left behind, `reason` one of:
   - `in_review` — an open PR's head branch carries the child's number. Delivered; the merge
@@ -626,7 +628,10 @@ new head re-reviewed.
 
 ## Review-round comment
 
-Every `reviewed` findings file — clean or not, in either mode — becomes exactly one comment:
+Every `reviewed` findings file — clean or not, in either mode — becomes exactly one comment.
+In autonomous mode post it **after** the findings are filed (see below): it quotes the children's
+numbers, and a round comment with no blocker filed behind it reads to the planner as a clean
+review:
 
 ```bash
 gh pr comment <pr> --body "$(cat <<'EOF'
@@ -688,7 +693,9 @@ the un-ready and the moved head are what put the PR back into review, and the ne
 
 ## Findings filing (autonomous mode)
 
-The reviewer's findings file (critique's FINDINGS.md shape) becomes epic children:
+The reviewer's findings file (critique's FINDINGS.md shape) becomes epic children. This runs
+before the review-round comment is posted, so a failure here leaves the PR unreviewed rather than
+mergeable with its blocker missing:
 
 ```bash
 uv run --no-project <raise-issues skill dir>/scripts/findings_to_plan.py \
@@ -852,7 +859,7 @@ then the stopped/drained distinction, retained worktrees, and escalations:
 Epic #12 pumped (Run run_abc123, implementers opencode,claude,codex, reviewers auto,
 reconciler auto, 2 workers, max 4 open PRs, block-on P1, squash, resolve-conflicts):
   coordinator: <worktree-id> · in-review
-  #21 we-21 (opencode): delivered → PR #34; clean review by claude, merged (squash),
+  #21 we-21 (opencode, large): delivered → PR #34; clean review by claude, merged (squash),
     main ff'd; worktree removed
   #22 we-22 (claude): delivered → PR #35; P2 finding filed as #41 (blocked by #22);
     reviewed by codex; worktree <id> in-review

@@ -27,8 +27,8 @@ is which depends on the mode you pick.
 children (filed `blocked-by` the reviewed issue, so their fixes unblock exactly when the PR
 merges), and a PR merges once its checks are green, its review is current, and nothing at or
 above `--block-on` (default P1) is open. After each merge the pump fast-forwards main, so every
-new child branches off what actually shipped. A P1 finding holds its PR — the human resolves it
-by closing the finding child or fixing the branch — and a merge conflict is filed and escalated;
+new child branches off what actually shipped. A P1 finding holds its PR — the human lifts the hold
+by closing the finding child, once the branch is fixed or the finding accepted as is — and a merge conflict is filed and escalated;
 under `--resolve-conflicts` a reconciler worker instead merges the default branch in, in the
 child's own worktree, and reconciles both sides' intent. Its new head is re-reviewed before any
 merge.
