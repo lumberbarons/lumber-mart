@@ -16,8 +16,8 @@ reviews by hand.
 skill. The implementer and reviewer are chosen independently from an agent pool, and the default
 reviewer is a **different** agent from the implementer whenever the implementer pool has another
 agent, or an explicit reviewer pool names one. That is the point: a Claude implementation gets a
-Codex or opencode review, an opencode implementation gets a Claude review, and a re-review can
-rotate again. The role is recorded on the Task, the worktree
+Codex or opencode review, an opencode implementation gets a Claude review, and a re-review moves
+to another reviewer whenever the pool leaves one. The role is recorded on the Task, the worktree
 comment, and the report, so a mixed run is traceable rather than guessed from terminal titles.
 
 **Orca is the execution layer.** A Run is this pump's identity and inbox. Each child is a Task
@@ -98,7 +98,7 @@ implementers, `review-code` (critique plugin) for reviewers, and raise-issues'
 skill loader and `review-code` in each reviewer's; a codex worker needs the files on disk because
 its prompt points at them. Reconcilers load no skill, but they read the quality-gate table from
 the work-issue skill directory, so that directory must be readable on the host. The pump ships
-prompt adapters for three agents: opencode and claude load skills by name, codex receives their
+prompt adapters for opencode, claude, and codex: the first two load skills by name, codex receives their
 file paths (see [REFERENCE.md](REFERENCE.md#agent-adapters)). Adding a fourth agent means adding
 its adapter, not changing the orchestration.
 
@@ -147,8 +147,9 @@ Strip flags; what remains is the epic number.
   `(pr + round - 1) % len(candidates)`. An explicit list may name agents outside the
   implementer pool (that is how `--implementers opencode --reviewers claude` works); the pump
   still prefers a different agent when the list contains one, and warns when it does not.
-  `all` expands to `opencode,claude,codex`. A re-review rotates again, so round 2 can be a
-  third point of view.
+  `all` expands to `opencode,claude,codex`. A re-review moves to the next candidate, so
+  round 2 is a different reviewer from round 1 whenever more than one candidate remains; a
+  single-candidate set reviews with the same agent again.
 - **`--reconciler <id|auto>`** — agent for a conflict reconciliation, default `auto`: the
   child's implementer. Set it to a different agent when you want the conflict resolution itself
   written by someone other than the implementer. A reconciler from another run's PR defaults to
@@ -219,6 +220,17 @@ mkdir -p "$OUTDIR"
 ```
 
 It is pump scratch, not a deliverable: do not commit it, and do not point a spawned agent at it.
+Workers, reviewers, and reconcilers also write their outcome files into a `.work-epic/` directory
+in their own worktrees. Keep every such directory out of `git status` by listing it in the
+repository's shared exclude file, which every worktree reads and which is never committed:
+
+```bash
+EXCL="$(git -C "<coord-worktree-path>" rev-parse --path-format=absolute --git-path info/exclude)"
+grep -qxF '.work-epic/' "$EXCL" || echo '.work-epic/' >> "$EXCL"
+```
+
+Ignored, an outcome file neither fails a clean-tree check (including the one before a reconciler
+starts in a child worktree) nor gets swept into a commit by a stray `git add -A`.
 Record the coordinator's worktree id, repo id, path, and the Run id in `$OUTDIR/state.json`
 (schema in [REFERENCE.md](REFERENCE.md)). Then set the coordinator's status line:
 
@@ -229,7 +241,7 @@ ORCA worktree set --worktree "id:<coord-worktree-id>" \
 ```
 
 Do not change the coordinator's display name, issue link, PR link, or parent lineage; that
-worktree may be the human's own. Under `--dry-run`, create no Run, scratch directory, or
+worktree may be the human's own. Under `--dry-run`, create no Run, scratch directory, exclude entry, or
 comment: print the objective, each eligible child with its `we-`/implementer task and worktree
 name, the reviewer rotation for the open PRs, and the merge plan; stop after Step 1 and Step 6's
 plan.
@@ -415,7 +427,7 @@ is an `error` all the same — never an inference from terminal output. Then:
 
 | outcome | action here |
 |---|---|
-| `delivered` | archive the outcome to `$OUTDIR/outcomes/we-<n>.json`, then remove it from the worktree so the checkout is clean for reconciliation; note the PR; set the child worktree `--pr <pr> --workspace-status in-review --comment "work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · PR #<pr> delivered"`; release the worker; keep the worktree for review and reconciliation; spawn the reviewer (Step 5) |
+| `delivered` | archive the outcome to `$OUTDIR/outcomes/we-<n>.json`, then remove it from the worktree so no stale outcome sits in the checkout a reconciler will reuse; note the PR; set the child worktree `--pr <pr> --workspace-status in-review --comment "work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · PR #<pr> delivered; review pending"`; release the worker; keep the worktree for review and reconciliation; spawn the reviewer (Step 5) |
 | `failed` | report; leave the issue claimed; do **not** respawn it — its pushed branch makes it `stalled` on every later resolver pass. Keep the worktree, mark it `--unread`, and put `work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · failed: <reason>` in its comment; release the worker |
 | `no_ready_work` / `not_eligible` | report verbatim, with the skipped counts — a queue of issues claimed by a dead agent reads as drained and hides the stall; release the worker and remove the clean, workless worktree |
 | `error` | **halt the pump**: finish reaping what's live, spawn nothing new, escalate — un-auth or dirty trees are an outage, not an empty queue. Keep the worktree, mark it unread, set its comment to `... · <implementer> · error: <reason>`, release the worker |
@@ -480,7 +492,8 @@ reviewer(pr, round) = candidates[(pr + round - 1) % len(candidates)]
 ```
 
 With `--reviewers auto`, `REVIEWERS` is the implementer pool, so round 1 is a different agent
-from the implementer whenever the pool has more than one, and a re-review rotates again. An
+from the implementer whenever the pool has more than one, and a re-review moves to the next
+candidate when more than one remains. An
 explicit reviewer list may name an agent outside the implementer pool; the pump still removes
 the implementer from the candidate set when another agent remains. A single-candidate set is
 allowed; the report says "same-agent review" rather than pretending otherwise. Record the
@@ -582,7 +595,7 @@ the hands (commands, CI-wait budgets, and merge-failure handling in
 
 | action | what the pass does |
 |---|---|
-| `merge` | free the child worktree first (Step 6's merge order), then `gh pr merge --<merge-method> --delete-branch`; mark the worktree `completed`; notify; fast-forward main |
+| `merge` | `gh pr merge --<merge-method>`; only once it succeeds, finish the child worktree and delete the branch (Step 6's merge order); notify; fast-forward main |
 | `mark_ready` | `gh pr ready` — a draft's merge state reads `DRAFT` until then, hiding `BEHIND` or `BLOCKED`; the next pass sees the real state |
 | `update_branch` | `gh pr update-branch <pr>` — GitHub merges the default branch in server-side; a failure re-runs the planner, whose next pass sees `DIRTY` and hands it to `reconcile` under `--resolve-conflicts` (or to `conflict`) |
 | `reconcile` | start a reconciler worker (`wc-<pr>`) in the child's own worktree when this Run holds one, otherwise in a transient worktree; the planner emits one only while `queueHead` is null and no `--reconciling` is live |
@@ -605,21 +618,35 @@ whatever the repository's protection settings. Drafts and held PRs are never upd
 not next to merge, and moving a draft's head spends a review round.
 
 **Merge order and the worktree.** The child worktree is the card the human has been watching;
-it is also a checkout of the branch being merged. Before `gh pr merge --delete-branch`, mark the
-worktree `completed`, record the merge in `$OUTDIR/state.json`, and remove it if it is clean:
+it is also a checkout of the branch being merged, so it outlives the merge call. Merge first,
+and without `--delete-branch` — gh would try to delete a local branch that is still checked out
+in that worktree:
+
+```bash
+gh pr merge <pr> --<merge-method>
+```
+
+A merge that fails changes nothing here: the card, the checkout, and `$OUTDIR/state.json` still
+describe an open PR, and the planner re-classifies it on the next pass. Only once the merge has
+succeeded, finish the child:
 
 ```bash
 ORCA worktree set --worktree "id:<child-worktree-id>" \
   --workspace-status completed \
   --comment "work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · merged" --json
-ORCA worktree rm --worktree "id:<child-worktree-id>" --json
+ORCA worktree rm --worktree "id:<child-worktree-id>" --json      # only if clean
+gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/<branch>"  # 422 = already gone
+git -C "$MAIN" branch -D "<branch>"                              # if it still exists locally
 ```
 
-Removing it frees the local issue branch, so `gh pr merge --delete-branch` does not fight a
-checked-out branch. If the worktree is dirty **or removal fails**, do **not** discard the work:
-merge without `--delete-branch`, keep the worktree, mark it unread, and report the path; the
-remote branch is deleted separately by the human or a later cleanup. A worktree already removed,
-or a PR from another run with no child worktree here, needs no merge-order step.
+Record the merge in `$OUTDIR/state.json`. `worktree rm` deletes the local branch only when it
+can prove the branch merged, which a squash or rebase merge defeats, hence the explicit
+`branch -D`; the PR is merged, so the branch holds nothing that is not on the default branch. If
+the worktree is dirty **or removal fails**, do **not** discard the work: keep the worktree, mark
+it unread, report the path, and skip the local branch delete (it is still checked out); the
+remote branch delete still runs. Branch cleanup failing after a successful merge is reported,
+never an escalation. A worktree already removed, or a PR from another run with no child
+worktree here, needs only the branch deletes.
 
 **Resolving conflicts (`--resolve-conflicts`).** The planner emits at most one `reconcile` —
 its `reconcileHead` — and only while `queueHead` is `null`: a merge landing mid-reconciliation
@@ -644,8 +671,8 @@ file. Then resolve the child from the PR's `issue` in `$OUTDIR/state.json` or
     --task-title "wc-<pr> · <reconciler>" \
     --worktree new-child \
     --repo "id:<repo-id>" \
-    --name "wc-<pr>" \
-    --display-name "Reconcile PR #<pr> · <reconciler>" \
+    --name "wc-<pr>-a<attempt>" \
+    --display-name "Reconcile PR #<pr> · <reconciler> (attempt <attempt>)" \
     --base-branch "origin/$DEFAULT" \
     --comment "work-epic #<epic-n> · <run-id> · wc-<pr> · <reconciler> · reconciling" \
     --setup inherit \
@@ -654,8 +681,9 @@ file. Then resolve the child from the PR's `issue` in `$OUTDIR/state.json` or
     --json
   ```
 
-  Link the card with `ORCA worktree set --worktree "id:<id>" --pr <pr>
-  --workspace-status in-review`. The prompt checks out the PR branch itself, reconciles, runs
+  `<attempt>` is the planner's `reconcileFailures` plus one, so a worktree kept from a failed
+  attempt never collides with the next one's name. Link the card with
+  `ORCA worktree set --worktree "id:<id>" --pr <pr> --workspace-status in-review`. The prompt checks out the PR branch itself, reconciles, runs
   the gate, and pushes to the PR ref; remove the worktree afterward.
 
 Update the child worktree's comment to
@@ -869,6 +897,7 @@ Report:
   and the orchestration verbs; those bypass Task/Dispatch ownership and settlement
 - Putting worker outcomes outside the worker's own worktree, or committing them
 - Deleting the local review branch while its reviewer is still reading it
-- Removing a completed worktree before `gh pr merge --delete-branch`, which then fights the
-  checked-out branch
+- Marking a worktree `completed` or removing it before `gh pr merge` has succeeded — a merge
+  that then fails leaves an open PR with no checkout and a card claiming it merged
+- Passing `--delete-branch` while the child worktree still has the branch checked out
 - Closing the epic because its children are done — report it; a human closes it

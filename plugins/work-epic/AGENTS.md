@@ -35,7 +35,8 @@ still holds it, and otherwise gets a transient checkout.
 
 The pump is explicitly multi-agent. Implementers, reviewers, and reconcilers are chosen from
 `--implementers`, `--reviewers`, and `--reconciler`; the default reviewer is a different agent
-from the implementer whenever the implementer pool has one, and a re-review rotates again.
+from the implementer whenever the implementer pool has one, and a re-review moves to the next
+candidate when more than one remains.
 Assignment is deterministic by issue/PR/round number, not spawn order. The role's agent is
 recorded in the Task title, the worktree marker, the state file, and the report — never inferred
 from a terminal title. Orca's CLI

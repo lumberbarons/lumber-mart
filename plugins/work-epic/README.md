@@ -14,8 +14,8 @@ are chosen from the pool independently.
   once CI is green, and re-pumps until the epic is drained.
 - **Multi-agent by design** — implementers and reviewers are chosen independently from a pool.
   The default reviewer is a different agent from the implementer whenever the implementer pool
-  has another agent, and a re-review rotates again. A Claude implementation can get a Codex review; an
-  opencode implementation can get a Claude review.
+  has another agent, and a re-review moves to another reviewer when one remains. A Claude
+  implementation can get a Codex review; an opencode implementation can get a Claude review.
 
 One epic, pumped: the orchestrator never implements, reviews by hand, closes, or reconciles a
 conflict itself. It accelerates everything up to the gates, not through them — and which gate
@@ -39,7 +39,7 @@ human's click.
 
 ## Multi-agent roles
 
-The pump separates four roles, and they can be four different agents:
+The pump separates its roles, and each can be a different agent:
 
 | Role | Runs | Default |
 |---|---|---|
@@ -60,8 +60,8 @@ The flags are explicit:
 Assignment is deterministic by issue/PR number, not by spawn order:
 `implementer(n) = implementers[n % len]`, and the reviewer is
 `candidates[(pr + round - 1) % len]` from the pool minus the implementer. That means the same
-issue gets the same implementer on every run, and round 2 of a review can be a third point of
-view. The chosen agents are recorded on the Task, the worktree comment, and the report.
+issue gets the same implementer on every run, and round 2 of a review is a different reviewer
+from round 1 whenever more than one candidate remains. The chosen agents are recorded on the Task, the worktree comment, and the report.
 
 **Orca does not expose an installed-agent list through its CLI.** `worker-start --help` names
 known ids, and `orca account list --json` shows managed accounts/rate limits, but neither proves
@@ -154,7 +154,7 @@ The implementer for child `n` is `implementers[n % len]`. The reviewer for PR `p
 `candidates[(p + r - 1) % len]`, where `candidates` is the reviewer pool minus that PR's
 implementer (or the whole pool when it would otherwise be empty). So the first review has a
 different point of view whenever the implementer pool has another agent or the reviewer list
-names one, and a re-review rotates again.
+names one, and a re-review moves to the next candidate when more than one remains.
 
 **Review is a findings generator (and a gate).** A reviewer runs `review-code` against each
 delivered PR's head on a named review branch. In autonomous mode its findings are converted

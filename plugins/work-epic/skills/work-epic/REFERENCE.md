@@ -6,7 +6,7 @@ review-round comment, findings filing, naming, timeout budgets, and the report f
 
 ## Agent roles and assignment
 
-The pump is explicitly multi-agent. Four roles, potentially four different agent ids:
+The pump is explicitly multi-agent. Each role can be a different agent id:
 
 | Role | What it runs | Default | Chosen by |
 |---|---|---|---|
@@ -40,7 +40,8 @@ different `--workers` value does not reshuffle the pool.
 
 With `--reviewers auto`, `REVIEWERS` is the implementer pool, so the first review of a PR is a
 different agent from the implementer whenever that pool has at least two agents, and a re-review
-rotates to another candidate. `--reviewers all` explicitly expands to the supported set, and an
+moves to the next candidate when more than one remains (with a single candidate the same agent
+reviews again). `--reviewers all` explicitly expands to the supported set, and an
 explicit list may name an agent outside the implementer pool (for example
 `--implementers opencode --reviewers claude`). An explicit `--reviewers codex` means "review with
 codex"; if the implementer was also codex, the pump warns "same-agent review" and proceeds — the
@@ -186,6 +187,10 @@ Write it after every transition:
 }
 ```
 
+Outcome files (`.work-epic/we-<n>.json`, `wr-<pr>.json`, `wc-<pr>.json`) live inside the
+worktree that produced them. Step 0 lists `.work-epic/` in the repository's shared
+`info/exclude` (local, never committed), so they stay out of every worktree's `git status`.
+
 The worktree comment is the durable fallback if `$OUTDIR` is lost; the issue link is the
 durable selector (`ORCA worktree show --worktree "issue:<n>" --json`).
 
@@ -200,8 +205,9 @@ durable selector (`ORCA worktree show --worktree "issue:<n>" --json`).
   `Review PR #<pr> · <reviewer> (round <round>)`. Transient; one per review round.
 - **Reconciler** — no new worktree when the Run holds the child; it runs in
   `--worktree "id:<child-id>"` with task title `wc-<pr> · <reconciler>`. A PR from another
-  run/coordinator gets a transient `wc-<pr>` worktree, display name
-  `Reconcile PR #<pr> · <reconciler>`.
+  run/coordinator gets a transient worktree named `wc-<pr>-a<attempt>` (`<attempt>` is
+  `reconcileFailures` plus one, so a tree kept from a failed attempt never collides with the
+  next), display name `Reconcile PR #<pr> · <reconciler> (attempt <attempt>)`.
 - **Task titles** — start with the role prefix and carry the chosen agent:
   `we-<n> · <implementer>`, `wr-<pr> · <reviewer> · r<round>`, `wc-<pr> · <reconciler>`.
   Filter on the prefix; the suffix is how a human or a resumed pump reads the role's agent
@@ -286,7 +292,7 @@ Status transitions:
 |---|---|---|
 | worktree created, worker starting | `in-progress` | `worker started` |
 | PR delivered | `in-review` | `PR #<pr> delivered; review pending` |
-| review clean, ready to merge | `in-review` | `clean review; ready to merge` |
+| review clean, ready to merge | `in-review` | `clean review by <reviewer>; ready to merge` |
 | review finding holds it | `in-review` + `--unread` | `HOLD: <severity> finding #<child>` |
 | conflict / two-round escalation / protected | `in-review` + `--unread` | `CONFLICT`, `ESCALATE`, or `PROTECTED` |
 | reconciling | `in-review` | `reconciling PR #<pr>` |
@@ -314,10 +320,11 @@ checkout, and the human keeps a live card while the PR is open.
 - **Delivered, PR open** — keep, `in-review`.
 - **Held, conflicted, protected, escalating, failed, blocked** — keep, `--unread`, gate in the
   comment.
-- **Merged** — set `completed`, record the merge in `$OUTDIR/state.json`, remove the worktree
-  *before* `gh pr merge --delete-branch`, so the local issue branch is free. If the tree is
-  dirty, do not remove it or discard anything: merge without `--delete-branch`, keep the tree,
-  mark it unread, and report the path.
+- **Merged** — only after `gh pr merge` has succeeded: set `completed`, record the merge in
+  `$OUTDIR/state.json`, remove the worktree, then delete the remote and local branch. A merge
+  that fails leaves the card, checkout, and state untouched. If the tree is dirty or removal
+  fails, do not discard anything: keep the tree, mark it unread, report the path, and delete
+  only the remote branch (the local one is still checked out).
 - **No ready work / not eligible** — the tree did no work; release and remove it if clean.
 - **Stalled (branch pushed, no PR)** — the branch is on origin; remove the tree if clean, keep
   it if dirty, and report the branch either way. The resolver treats it as `stalled`; a human
@@ -777,17 +784,21 @@ pool flags are the declaration; a failed `worker-start` is the signal.
 Per `pr_state.py` action. None of them checks out a PR branch in `$MAIN`:
 
 ```bash
-# merge order — only when the child worktree is clean; it frees the local issue branch
-ORCA worktree set --worktree "id:<child-id>" --workspace-status completed \
-  --comment "work-epic #<epic> · <run> · we-<n> · <implementer> · merged" --json
-ORCA worktree rm --worktree "id:<child-id>" --json
-
 # mark_ready — flips the draft so the next pass sees the real mergeState
 gh pr ready <pr>
 
-# merge — the planner already verified checks, mergeState, and holds
-gh pr merge <pr> --<method> --delete-branch
-# if the child worktree was dirty and kept: gh pr merge <pr> --<method> (no --delete-branch)
+# merge — the planner already verified checks, mergeState, and holds. No --delete-branch:
+# the child worktree still has the branch checked out. A failure touches nothing else.
+gh pr merge <pr> --<method>
+
+# after a successful merge only — finish the child, then the branches
+ORCA worktree set --worktree "id:<child-id>" --workspace-status completed \
+  --comment "work-epic #<epic> · <run> · we-<n> · <implementer> · merged" --json
+ORCA worktree rm --worktree "id:<child-id>" --json          # only when clean
+gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/<branch>"   # 422 = already gone
+git -C "$MAIN" branch -D "<branch>"                         # skip if the worktree was kept
+# worktree rm deletes the local branch only when it can prove it merged, which a squash or
+# rebase merge defeats — hence the explicit branch -D (the PR is merged; nothing unique is lost)
 
 # update_branch — GitHub merges the base into the PR branch server-side
 gh pr update-branch <pr>
@@ -828,7 +839,9 @@ not available on every repository, and the pump must work on all of them.
 - `gh pr ready <pr>` — draft→ready, after a passing review or on `mark_ready`
 - `gh pr ready --undo <pr>` — back to draft after a reconciliation, so the new head is re-reviewed
 - `gh pr update-branch <pr>` — bring the queue head up to date, server-side
-- `gh pr merge <pr> --<method> --delete-branch` — the bounded merge
+- `gh pr merge <pr> --<method>` — the bounded merge
+- `gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/<branch>` — the remote branch delete,
+  after the merge has succeeded
 
 ## Report format
 
@@ -910,7 +923,8 @@ before the pump that depends on it is trusted.
   report the child as unscheduled, and do not silently substitute a different agent.
 - **The reviewer rotation is deterministic.** Use the PR and round numbers, not spawn order, and
   keep the round suffix on both the review branch and the worktree name. Rotating on re-review is
-  intentional: the second round is a second point of view, not a repeat of the first.
+  intentional: when more than one candidate remains, the second round is a second point of view,
+  not a repeat of the first.
 - **The role's agent is part of the record.** Keep `<agent>` in the Task title, the worktree
   marker, `$OUTDIR/state.json`, and the report. Do not infer it from a terminal title; the task
   title and the marker carry it explicitly.
