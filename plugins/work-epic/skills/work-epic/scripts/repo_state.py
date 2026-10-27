@@ -40,7 +40,9 @@ def main_checkout():
 
     `git worktree list --porcelain` lists the main worktree first; that is
     the checkout every other worktree hangs off, so it is where the pump
-    updates the default branch and where herdr sessions inherit cwd from.
+    fetches, fast-forwards the default branch, and creates the throwaway
+    integration worktree. Orca child worktrees are based on
+    origin/<default> explicitly, not on this checkout's HEAD.
     """
     p = subprocess.run(
         ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True
