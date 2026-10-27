@@ -9,6 +9,7 @@ Skills for orchestrating a [hew](https://github.com/lumberbarons/hew) epic acros
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, reconcile, update, hold, or escalate |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh probes both planners share | Changing how PRs, branches, or the default branch are read |
 | `skills/work-epic/scripts/test_*.py` | stdlib `unittest` over both decision tables | Changing any decision, skip reason, or parser — add the pinning case |
+| `skills/work-epic/evals/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
 | `README.md` | Plugin overview, modes, and the multi-agent role matrix | Understanding what work-epic does |
 
 Requires Orca 1.4+ with the `orca-cli` and `orchestration` skills, the target repo registered in
@@ -18,6 +19,12 @@ raise-issues' `findings_to_plan.py` converter. Install `work-issue` for every im
 `review-code` for every reviewer; the prompt adapters cover `opencode` and `claude` by skill name
 and `codex` by file path. Reconcilers read the work-issue quality-gate table from the skill
 directory.
+
+Never run skill-creator's description optimizer against this skill. Its loop boots one full
+`claude -p` agent per prompt-run — 60 per iteration, five iterations by default — and two runs
+on 2026-10-26 spent a five-hour allowance in minutes while scoring a harness that cannot trigger
+the skill. `skills/work-epic/evals/README.md` has the numbers, why the score is meaningless, and
+the one-session bounded check.
 
 The scripts are the policy layer. Anything that sorts, filters, or sizes hew's output — or
 classifies a PR's mergeability — in the agent's head instead of running `resolve_ready.py` or
