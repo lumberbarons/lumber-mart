@@ -377,8 +377,10 @@ ORCA worktree set --worktree "id:<child-worktree-id>" \
   --issue <n> --workspace-status in-progress --json
 ```
 
-Record `{task, dispatch, worktree, path, implementer, state: "running"}` for the child in
-`$OUTDIR/state.json`.
+Record `{task, dispatch, worktree, path, branch, implementer, state: "running"}` for the child in
+`$OUTDIR/state.json`. `branch` is the branch Orca created for the worktree, read from the receipt
+(its prefix is the user's, so never predict it); every worktree the pump starts records its own
+the same way, because removal leaves it behind ([REFERENCE.md](REFERENCE.md#lifecycle-and-cleanup)).
 
 The worker runs `work-issue` in its own checkout. `work-issue` may create its conventional
 issue branch (`fix/<n>-…`) inside the Orca worktree; that checkout is the child's home for the
@@ -536,8 +538,9 @@ once its findings are read.
 Reap reviewers exactly like workers — same `check --wait` batch, same `worker-show.agentWait`
 gate, reviewer budget in [REFERENCE.md](REFERENCE.md) — and release the reviewer as soon as its
 file is read. Then remove the review worktree with `ORCA worktree rm --worktree "id:<id>"`
-(use `--force` for a review-only worktree; it changed no code). Delete the local review branch
-if Orca retained it, so the next round starts clean.
+(use `--force` for a review-only worktree; it changed no code). Then delete the local review
+branch if Orca retained it and Orca's own branch for the worktree, so the next round starts
+clean.
 
 Read the findings file before anything else:
 
@@ -652,6 +655,7 @@ ORCA worktree set --worktree "id:<child-worktree-id>" \
 ORCA worktree rm --worktree "id:<child-worktree-id>" --json      # only if clean
 gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/<branch>"  # 422 = already gone
 git -C "$MAIN" branch -D "<branch>"                              # if it still exists locally
+git -C "$MAIN" branch -d "<orca-branch>"                         # Orca's own branch, if it differs
 ```
 
 Record the merge in `$OUTDIR/state.json`. `worktree rm` deletes the local branch only when it
@@ -660,8 +664,9 @@ can prove the branch merged, which a squash or rebase merge defeats, hence the e
 the worktree is dirty **or removal fails**, do **not** discard the work: keep the worktree, mark
 it unread, report the path, and skip the local branch delete (it is still checked out); the
 remote branch delete still runs. Branch cleanup failing after a successful merge is reported,
-never an escalation. A worktree already removed, or a PR from another run with no child
-worktree here, needs only the branch deletes.
+never an escalation. `branch -d` (lowercase) on Orca's own branch is deliberate: it refuses a
+branch with commits the default branch lacks, which is the safety check. A worktree already
+removed, or a PR from another run with no child worktree here, needs only the PR-branch deletes.
 
 **Resolving conflicts (`--resolve-conflicts`).** The planner emits at most one `reconcile` —
 its `reconcileHead` — and only while `queueHead` is `null`: a merge landing mid-reconciliation
@@ -699,7 +704,8 @@ file. Then resolve the child from the PR's `issue` in `$OUTDIR/state.json` or
   `<attempt>` is the planner's `reconcileFailures` plus one, so a worktree kept from a failed
   attempt never collides with the next one's name. Link the card with
   `ORCA worktree set --worktree "id:<id>" --pr <pr> --workspace-status in-review`. The prompt checks out the PR branch itself, reconciles, runs
-  the gate, and pushes to the PR ref; remove the worktree afterward.
+  the gate, and pushes to the PR ref; remove the worktree afterward, and delete the local PR branch
+  and Orca's own branch for it.
 
 Update the child worktree's comment to
 `work-epic #<epic-n> · <run-id> · we-<n> · <implementer> · reconciling PR #<pr> (<reconciler>)`

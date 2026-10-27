@@ -154,6 +154,7 @@ Write it after every transition:
     "21": {
       "worktree": "repo-id::/abs/we-21",
       "path": "/abs/we-21",
+      "branch": "lumberbarons/we-21",
       "task": "task_...",
       "dispatch": "dispatch_...",
       "implementer": "opencode",
@@ -168,6 +169,7 @@ Write it after every transition:
   "reviewers": {
     "34": {
       "worktree": "repo-id::/abs/wr-34-r1",
+      "branch": "lumberbarons/wr-34-r1",
       "task": "task_...",
       "dispatch": "dispatch_...",
       "agent": "claude",
@@ -331,9 +333,20 @@ checkout, and the human keeps a live card while the PR is open.
   decides, never a respawn.
 - **Reviewer** — transient. Remove after the findings are read and archived; `--force` is safe
   because the reviewer changes no code. Delete the local `review/<pr>-r<round>` branch if Orca
-  retained it.
+  retained it, and Orca's own branch for the worktree (below).
 - **Transient reconciler** — remove after a verified push; keep on failure if it has conflict
-  markers or useful state, and report the path.
+  markers or useful state, and report the path. Delete the local PR branch and Orca's own
+  branch for the worktree afterward.
+- **Orca's own branch** — `worker-start --worktree new-child --name <n>` makes Orca create a
+  branch for the worktree, `<user>/<n>` (for example `lumberbarons/wr-34-r1`), and report it as
+  `branch` on the receipt. Record it. The agent then switches away — `work-issue` to its
+  `fix|feat|chore/<n>-…` branch, a reviewer to `review/<pr>-r<round>`, a transient reconciler to
+  the PR branch — and `worktree rm` only deletes the branch that is checked out at removal, so
+  Orca's own branch is left behind with nothing on it. Delete it after a successful removal with
+  `git -C "$MAIN" branch -d "<orca-branch>"`: lowercase `-d` refuses a branch holding commits the
+  default branch lacks, so it cannot discard work. A refusal, or a missing receipt `branch`, is
+  reported with the worktree, never forced and never guessed from the name. When the agent never
+  switched, Orca's branch is the checked-out one and `worktree rm` already handled it.
 - **Archive hooks** — `worktree rm` skips repo-defined `orca.yaml` archive hooks unless
   `--run-hooks` is passed. The pump skips them by default; a repo that needs them can opt in in
   its own skill variant. A failed archive hook blocks removal; report and leave the tree.
@@ -804,6 +817,7 @@ ORCA worktree set --worktree "id:<child-id>" --workspace-status completed \
 ORCA worktree rm --worktree "id:<child-id>" --json          # only when clean
 gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/<branch>"   # 422 = already gone
 git -C "$MAIN" branch -D "<branch>"                         # skip if the worktree was kept
+git -C "$MAIN" branch -d "<orca-branch>"                    # Orca's own branch; -d refuses unmerged work
 # worktree rm deletes the local branch only when it can prove it merged, which a squash or
 # rebase merge defeats — hence the explicit branch -D (the PR is merged; nothing unique is lost)
 
@@ -916,8 +930,8 @@ before the pump that depends on it is trusted.
   remove. One failed start costs one child, not the pump.
 - **The child worktree's branch is work-issue's.** Orca creates the worktree with a base
   branch; work-issue may create its conventional `fix|feat|chore/<n>-…` branch inside it. That
-  is the checkout the reconciler reuses. If the worktree ends up with an unused Orca base
-  branch, clean it up only when it has no unique commits and the worktree is being removed.
+  is the checkout the reconciler reuses. The unused Orca branch is recorded from the receipt and
+  deleted with `branch -d` once the worktree is removed (see Orca's own branch, above).
 - **The reviewer must not use detached HEAD.** review-code's scope discovery refuses detached
   HEAD; use a named `review/<pr>-r<round>` branch. The name also keeps the reviewer off the
   child's issue branch.
