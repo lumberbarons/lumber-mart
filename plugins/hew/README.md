@@ -125,6 +125,13 @@ the two things that change constantly — line numbers and the model's phrasing 
 
 Severity is deliberately excluded: it moves between runs, and identity must not.
 
+The key is how candidates are found, not what decides a match. Several findings in one package
+share a skill, pattern and directory, and a finding about a fix shares the key of the finding
+the fix was for. So a hit is treated as already filed only when its stored key line is equal,
+its body describes the same finding, and — for a review of an issue's PR — its `review-of:` line
+names that same issue. `scripts/dedup_candidates.py` applies the key and `review-of:` checks;
+the body comparison stays with the agent.
+
 Dedup then follows hew's own read order — `hew search` first, `hew list --json --bodies --state
 all` when exhaustiveness matters, `hew show` only for a specific candidate — across open *and*
 closed issues. A closed-as-completed match means the pattern regressed and is filed fresh with

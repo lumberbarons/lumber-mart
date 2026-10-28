@@ -26,12 +26,15 @@ is which depends on the mode you pick.
 **Autonomous (default).** The reviewer is a findings generator: P1/P2 findings become epic
 children (filed `blocked-by` the reviewed issue, so their fixes unblock exactly when the PR
 merges), and a PR merges once its checks are green, its review is current, and nothing at or
-above `--block-on` (default P1) is open. After each merge the pump fast-forwards main, so every
-new child branches off what actually shipped. A P1 finding holds its PR — the human lifts the hold
-by closing the finding child, once the branch is fixed or the finding accepted as is — and a merge conflict is filed and escalated;
-under `--resolve-conflicts` a reconciler worker instead merges the default branch in, in the
-child's own worktree, and reconciles both sides' intent. Its new head is re-reviewed before any
-merge.
+above `--block-on` (default P1) is open. Findings are a backlog, not a queue: the pump
+works generation-1 findings against product code and parks a finding that reviews another
+finding as `finding_depth`, so a review chain cannot feed itself forever. `--finding-depth N` is
+the deliberate way to let it chase a deeper chain. After each merge the pump fast-forwards main,
+so every new child branches off what actually shipped. A P1 finding holds its PR — the human
+lifts the hold by closing the finding child, once the branch is fixed or the finding accepted as
+is — and a merge conflict is filed and escalated; under `--resolve-conflicts` a reconciler
+worker instead merges the default branch in, in the child's own worktree, and reconciles both
+sides' intent. Its new head is re-reviewed before any merge.
 
 **`--human-review`.** The older contract, unchanged: every PR stays a draft, P1/P2 findings are
 relayed as comments, multi-PR runs get the throwaway integration branch, and every merge is a
@@ -106,6 +109,7 @@ every gate rather than routing around it.
 /work-epic:work-epic 12 --block-on P2              # P1 and P2 findings hold PRs
 /work-epic:work-epic 12 --workers 3                # more live workers (cap ~4)
 /work-epic:work-epic 12 --max-open-prs 3           # smaller PR backlog (default 2 × workers)
+/work-epic:work-epic 12 --finding-depth 2          # deliberately work generation-2 findings
 /work-epic:work-epic 12 --implementers all         # rotate opencode/claude/codex implementers
 /work-epic:work-epic 12 --implementers claude --reviewers codex   # fixed cross-agent pairing
 /work-epic:work-epic 12 --implementers opencode,claude --reviewers codex --reconciler claude
@@ -125,8 +129,9 @@ the human's checkout never determines what a worker branches from.
 
 **The plans come from scripts.** `resolve_ready.py` reads the epic and emits a JSON fan-out
 plan — eligible children in priority-sorted, oldest-tie-break order, every open child left
-behind with its skip reason (including children already in review or whose worker failed, so
-the pump never respawns its own work), plus the main checkout and default branch. `pr_state.py`
+behind with its skip reason (including children already in review, children whose worker failed,
+and review findings parked past `--finding-depth`, so the pump never respawns its own work or
+chases a review chain forever), plus the main checkout and default branch. `pr_state.py`
 reads the epic's open PRs (CI rollups, merge states, review rounds, finding holds) and emits one
 deterministic action per PR. A pump that picks differently on each run cannot be reasoned about
 from its logs, so the agent never sorts hew or gh output itself.

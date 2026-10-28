@@ -84,6 +84,37 @@ either prefix by the same table below. When refreshing an existing issue, preser
 review key. Before applying a surviving old plan, normalize its new-issue key to `portability/`.
 Do not bulk-rewrite stored keys or treat an identity spelling change as a regression.
 
+**The key finds candidates; it does not decide identity.** Many findings in one package
+legitimately share a skill, pattern and directory, so a key hit is a lead, not a verdict. A hit
+is *this finding, already filed* only when all three hold:
+
+1. its stored `review-key:` line equals the key exactly — a substring hit, such as an older key
+   sitting inside a longer one, is not a match;
+2. its body names the same affected paths and describes the same problem;
+3. it was raised against the same review target. When this run reviews an issue's PR
+   (`--reviewed-issue <n>`), the hit's `review-of:` line must name `#<n>`. A hit with no
+   `review-of:`, or one naming another issue, describes earlier code — including the issue
+   under review itself — so it does not suppress a finding about the fix. Without a review
+   target (a review of product code), ignore `review-of:`.
+
+Test 3 is what stops a review spiral from deduplicating onto itself: a finding about the fix for
+#n shares the key of the finding #n fixed, and only `review-of:` tells them apart. It compares
+the issue, not the PR, so a retry PR for the same issue still matches.
+
+When no hit passes all three, file the finding. Several old issues sharing one key are not a
+reason to stop and ask — compare their bodies and file if none describes this finding. For
+converter plans, `dedup_candidates.py` applies tests 1 and 3 mechanically, leaving you test 2:
+
+```bash
+hew list --json --bodies --state all > issues.ndjson
+uv run --no-project <this skill's directory>/scripts/dedup_candidates.py plan.jsonl issues.ndjson \
+  [--reviewed-issue <n>]
+```
+
+It prints one object per plan line: `candidates` (read these; `same_paths` says whether the
+affected paths are unchanged) and `other_generation` (same key, different review target — never
+a reason to skip). It never queries hew.
+
 The part to hold on to is `--state all`. Every step of that order spans closed issues as well as
 open ones, and that is load-bearing rather than incidental: a dedup pass reading only open issues
 re-files every finding the moment its fix merges, which is the failure this whole scheme exists
@@ -93,10 +124,10 @@ Then act on what came back:
 
 | Match | Action |
 |---|---|
-| Open issue, same key | Already tracked — skip. If the scope widened (more files now affected), refresh the body with `hew set <n> --body-file <f>` rather than filing a second issue. |
-| Closed as completed, same key | The pattern came back. File a new issue with `--discovered-from <n>` — this is a regression, and it is the most valuable thing the key buys you. |
+| Open issue, same finding | Already tracked — skip. If the scope widened (more files now affected), refresh the body with `hew set <n> --body-file <f>` rather than filing a second issue. |
+| Closed as completed, same finding | The pattern came back. File a new issue with `--discovered-from <n>` — this is a regression, and it is the most valuable thing the key buys you. |
 | Closed as not-planned or duplicate | Suppress permanently. Re-filing something a human explicitly declined is the fastest way to get this pipeline muted. |
-| No key match | Before filing, check the open review issues for the same problem under a different slug, and reuse the existing issue if you find one. This is the backstop for vocabulary drift. |
+| No matching issue | Before filing, check the open review issues for the same problem under a different slug, and reuse the existing issue if you find one. This is the backstop for vocabulary drift. |
 
 ## Step 4 — Map onto hew fields
 
@@ -138,8 +169,8 @@ uv run --no-project <this skill's directory>/scripts/findings_to_plan.py <findin
 
 It derives the review keys and scopes mechanically, emits the plan shape below, stamps
 `review-of: #<n>` (the marker downstream merge-pass tooling greps for), and skips malformed
-findings with a count. Deduplication stays yours — run the Step 3 table against the emitted
-keys and delete suppressed lines before applying.
+findings with a count. Deduplication stays yours — run Step 3 against the emitted plan
+(`dedup_candidates.py` narrows the candidates) and delete suppressed lines before applying.
 
 Otherwise write every surviving finding to a JSONL plan (shape in REFERENCE.md) and apply it:
 

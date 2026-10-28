@@ -12,6 +12,11 @@ The review-key scheme in `skills/raise-issues/REFERENCE.md` is the load-bearing 
 skill: it is what lets a review re-run without re-filing. Changing the key format orphans every
 issue already filed under the old one, so treat it as a migration, not an edit.
 
+The key is a lookup index, not an identity: findings in one package legitimately share it, so
+a hit counts as already-filed only when the body describes the same finding and its `review-of:`
+names the same review target. That is how a finding about a fix stays distinct from the finding
+the fix was for, without growing the key. Keep that distinction out of the key format.
+
 `work-issue` rests on two properties of hew that are easy to undo by accident. Work ends at
 `hew pr`, never at `hew close` — close means wontfix or duplicate, so closing a delivered issue
 skips review and records the opposite of what happened. And `hew start`'s exit 3 on a claimed
