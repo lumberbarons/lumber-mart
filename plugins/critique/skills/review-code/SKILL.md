@@ -45,6 +45,8 @@ Handle the script's exit codes:
 
 A review that ran and found nothing, and a review that never ran, both end with zero findings and mean opposite things — so say which happened, in the report and in the findings file's `status`. A caller that cannot tell them apart reports a broken pipeline as a clean codebase.
 
+**Persistence and schema code is a lifecycle review.** When the scope includes persistence, migration, or schema code, review the module against the data that already exists, not just the diff's current state. Ask what an already-shipped instance does on upgrade: whether the create happens once, whether the change is forward-only, who owns each index, and what drops a legacy name. A diff that moves DDL is not a database that must upgrade; read the code that runs against existing data before calling it sound.
+
 The script returns paths language-blind. Filter to source files, dropping tests, vendored and generated code, and pure configuration.
 
 For five or more source files — or fewer large ones — fan out if delegation is available:
