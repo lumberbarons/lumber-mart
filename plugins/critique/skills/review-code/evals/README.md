@@ -61,8 +61,13 @@ every customer — and v1 went further, asserting it "correctly reuses one key a
 a false claim in the output rather than an omission.
 
 The shipped skill adds a short section telling the reviewer not to drop a correctness defect
-because the review is framed as design. That section is motivated by measurement but has not
-itself been measured; treat it as the hypothesis for the next iteration.
+because the review is framed as design. It has since been measured on `py-store-upgrade` and
+`py-store-upgrade-diff`, three runs each: the skill found the unguarded migration, the
+existing-database failure, and (diff-scoped) the unchanged `migrations.py` it depended on in
+every run. A further paragraph that spelled out upgrade-path checks (create-once, forward-only,
+index ownership) was tried on top and made no measurable difference, so it was dropped; the
+two fixtures stay as the regression guard. Both are small and carry docstrings that state the
+migration contract, so they show the section works, not where it stops working.
 
 ## Fixtures
 
@@ -72,6 +77,8 @@ itself been measured; treat it as the hypothesis for the next iteration.
 | `ts-api/` | User endpoints returning the whole row including `password_hash` and `reset_token`; `new Pool(...)` at module scope in three route files, which should collapse to one finding; `getUser`/`getOrder`/`getSession` returning null vs throwing vs `{ok, data}`; row interfaces exported as the wire type; `getSession`'s bare catch turning a database outage into a 401. Traps: `money.ts` is pure and total; the module-scope pool is P2, not a testability P1, because `vi.mock` is a seam |
 | `py-clean/` | Deliberately sound. Correct output is zero findings, or one P3, plus a stated verdict. Traps: a `MappingProxyType` constant that looks like shared state but is read-only and copied on construction; a `Protocol` with one implementation; `__init__` re-exports; a raise-not-return error idiom applied consistently |
 | `py-worker/` | An import-time `PaymentClient(os.environ[...])` singleton; `charge_customer` collapsing declines, outages and bugs into `None` while retrying all three; a fresh `uuid4()` key per call, so a batch re-run double-charges; `process_batch` reading + validating + charging + reporting + emailing; `PaymentClient.charge` doubling as a refund by passing a charge id where a customer id belongs; `handle_data`'s name and its `ValueError("bad input")`. Traps: `process_batch` is long and deeply nested, which belongs to a linter; `time.sleep` backoff is not a design defect; the singleton is P2, not P1 |
+| `py-store-upgrade/` | A migration run unconditionally on every open with no record that it ran, so the second start raises on `ADD COLUMN` and then on `CREATE INDEX`; a superseded index that `schema.init_db` recreates on every start and nothing drops. Traps: every statement in `schema.init_db` is guarded with `IF NOT EXISTS`, and `OrderRepo` is injected, parameterised and single-purpose |
+| `py-store-upgrade-diff/` | A git fixture (`setup.sh` builds it): `main` holds a sound versioned-migration store, and the branch redefines the `orders` table and its index in `schema.init_db` and updates `OrderRepo` to match, but adds no migration and leaves `LATEST` alone. The diff is consistent on its own; the failure (no such column on every already-shipped database) lives in the unchanged `migrations.py` and `app.py`. Traps: the new-database path is correct, and `OrderRepo` is a faithful update |
 
 ## Known limits of these assertions
 

@@ -87,7 +87,8 @@ them — in testing, unskilled reviews caught these and design-focused ones did 
 When you notice a defect like that, file it with the same named-consequence discipline as
 everything else. The reader does not care which review was supposed to catch it. This is not
 licence to file every bug you can find: it applies to what you noticed while reading for
-design, not to a hunt for logic errors, which is a different review.
+design, not to a hunt for logic errors, which is a different review. In a findings file,
+re-run, retry and upgrade-over-existing-data hazards take the `unsafe-state-transition` slug.
 
 ## Collapse patterns, then cap at ten
 
