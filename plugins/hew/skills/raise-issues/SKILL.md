@@ -53,7 +53,7 @@ priority, no location, or no fix, and count the skips in the final report rather
 The key is what makes a second run recognise its own earlier work:
 
 ```
-review-key: <skill>/<pattern>/<scope>
+review-key: <skill>/<pattern>/<scope>[#family:<reviewed-key>]
 ```
 
 - **`skill`** — `o11y`, `tests`, `docs`, `code`, or `portability`. Normalize the legacy
@@ -62,11 +62,21 @@ review-key: <skill>/<pattern>/<scope>
   passed through unchanged; re-spelling a slug here orphans every issue already filed under the
   original. Only when a finding arrives without one, pick from the vocabulary in the relevant
   critique skill's `REFERENCE.md`.
-- **`scope`** — **derive this mechanically**: the deepest directory that contains every
-  affected file, or the file path itself when there is exactly one. Do not choose it by
-  judgement. Two runs that anchor the same finding at `internal/http` and
-  `internal/http/handler` file it twice, and that single inconsistency is what turns a loop
-  into a duplicate factory.
+- **`scope`** — **derive this mechanically from the finding's own file set**: the file path
+  itself when there is one, otherwise the deepest common directory plus the sorted relative
+  paths in braces, e.g. `internal/store/{index.go,store.go}`. The file set is part of the
+  identity, so two findings in one package that touch different files get different keys. Do
+  not reduce a multi-file finding to just its common directory: the old package-wide scope
+  gave every multi-file finding in a package the same key, and the incident's four different
+  `internal/store` findings collided under one; the `family` component below separates
+  generations that reuse the same file. Two runs that anchor the same finding at
+  `internal/http` and `internal/http/handler` file it twice, and that single inconsistency is
+  what turns a loop into a duplicate factory.
+- **`family`** — present only when the finding came from reviewing an issue that is itself a
+  finding (its body carries a `review-key:`). Append `#family:<that key>` exactly as stored.
+  It says "generation 2 of this seam": without it the new finding's key can equal the finding
+  it reviews, and dedup would suppress it as already tracked instead of recognising a new
+  generation.
 
 Severity is deliberately **not** part of the key. It legitimately moves between runs — after a
 recalibration or a pattern collapse — and identity has to survive that.
@@ -83,6 +93,19 @@ and converter-produced plans, including old plans that still use `skills/`. Trea
 either prefix by the same table below. When refreshing an existing issue, preserve its stored
 review key. Before applying a surviving old plan, normalize its new-issue key to `portability/`.
 Do not bulk-rewrite stored keys or treat an identity spelling change as a regression.
+
+**Read legacy keys back.** An issue filed before file-set scopes carries the old
+`<skill>/<pattern>/<deepest common directory>` key; an issue filed before `family:` carries no
+generation component. When the exact key does not match, derive the legacy key — the deepest
+directory containing every affected file, or the single file — and search that too. If the
+finding's file set may have grown since the issue was filed, search the pattern prefix instead
+(`review-key: <skill>/<pattern>/`) and compare bodies; the new key is deliberately more specific
+than a renamed or widened file list. A legacy hit is a match only when its body describes this
+finding (the same affected paths and the same problem), not merely because the search string is
+a prefix of a newer key. If several old issues share one legacy key, that is the historical
+collision, not proof this finding was filed: report the candidates and do not file another copy
+automatically. A human adjudicates; an old issue is never orphaned, and a genuinely new finding
+is not suppressed by a coarse key.
 
 The part to hold on to is `--state all`. Every step of that order spans closed issues as well as
 open ones, and that is load-bearing rather than incidental: a dedup pass reading only open issues
@@ -133,13 +156,16 @@ uses — produce the plan with the converter rather than by hand:
 
 ```bash
 uv run --no-project <this skill's directory>/scripts/findings_to_plan.py <findings.json> \
-  [--parent <epic>] [--reviewed-issue <n>] [--reviewed-pr <n>] [--at-or-above Pn] --out plan.jsonl
+  [--parent <epic>] [--reviewed-issue <n>] [--reviewed-pr <n>] \
+  [--reviewed-key <key>] [--at-or-above Pn] --out plan.jsonl
 ```
 
 It derives the review keys and scopes mechanically, emits the plan shape below, stamps
 `review-of: #<n>` (the marker downstream merge-pass tooling greps for), and skips malformed
-findings with a count. Deduplication stays yours — run the Step 3 table against the emitted
-keys and delete suppressed lines before applying.
+findings with a count. Pass `--reviewed-key` with the reviewed issue's own `review-key:` value
+when it is itself a finding; every emitted key then carries `#family:<key>`. Deduplication stays
+yours — run the Step 3 table against the emitted keys and delete suppressed lines before
+applying.
 
 Otherwise write every surviving finding to a JSONL plan (shape in REFERENCE.md) and apply it:
 

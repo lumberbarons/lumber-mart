@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from findings_to_plan import convert
+from findings_to_plan import convert, derive_scope, derive_scope_legacy, review_key
 
 SCRIPT = Path(__file__).with_name("findings_to_plan.py")
 
@@ -22,6 +22,13 @@ def finding(priority="P2", **kw):
          "fix": "Split it.", "explanation": "Too much.", "done_when": "Split."}
     f.update(kw)
     return f
+
+
+def key_of(line):
+    for row in line["where"].splitlines():
+        if row.startswith("review-key: "):
+            return row[len("review-key: "):]
+    raise AssertionError("no review-key line")
 
 
 def cli(*args, findings=None, status="reviewed"):
@@ -59,10 +66,60 @@ class Convert(unittest.TestCase):
         line, _ = convert(finding("P0"), None, None, None, "bug", at_or_above=2)
         self.assertEqual(line["priority"], "P1")
 
-    def test_scope_is_common_directory(self):
-        f = finding(files=["internal/http/a.go", "internal/http/b/c.go"])
+    def test_single_file_scope_is_unchanged(self):
+        line, _ = convert(finding(), None, None, None, "bug")
+        self.assertEqual(key_of(line),
+                         "code/god-function/internal/http/a.go")
+
+    def test_scope_is_the_finding_file_set(self):
+        f = finding(files=["internal/store/store.go", "internal/store/index.go"])
         line, _ = convert(f, None, None, None, "bug")
-        self.assertIn("review-key: code/god-function/internal/http\n", line["where"] + "\n")
+        self.assertEqual(key_of(line),
+                         "code/god-function/internal/store/{index.go,store.go}")
+
+    def test_two_findings_in_one_package_get_different_keys(self):
+        one, _ = convert(finding(files=["internal/store/store.go",
+                                        "internal/store/index.go"]),
+                         None, None, None, "bug")
+        two, _ = convert(finding(files=["internal/store/store.go",
+                                        "internal/store/verify.go"]),
+                         None, None, None, "bug")
+        self.assertNotEqual(key_of(one), key_of(two))
+
+    def test_scope_crosses_directories_within_a_common_root(self):
+        f = finding(files=["internal/store/store.go",
+                           "internal/store/reconcile/apply.go"])
+        self.assertEqual(derive_scope(f["files"]),
+                         "internal/store/{reconcile/apply.go,store.go}")
+
+    def test_repo_root_scope_names_every_file(self):
+        f = finding(files=["cmd/api/main.go", "internal/worker/job.go"])
+        self.assertEqual(derive_scope(f["files"]),
+                         "./{cmd/api/main.go,internal/worker/job.go}")
+
+    def test_legacy_scope_is_the_old_common_directory(self):
+        files = ["internal/store/store.go", "internal/store/index.go"]
+        self.assertEqual(derive_scope_legacy(files), "internal/store")
+        self.assertEqual(derive_scope_legacy(["internal/http/a.go"]),
+                         "internal/http/a.go")
+
+    def test_family_names_the_reviewed_key(self):
+        line, _ = convert(
+            finding(), 12, 21, 34, "bug",
+            reviewed_key="code/leaky-abstraction/internal/store/store.go",
+        )
+        self.assertTrue(key_of(line).endswith(
+            "#family:code/leaky-abstraction/internal/store/store.go"))
+        self.assertIn("review-of: #21 (PR #34)", line["where"])
+
+    def test_family_is_not_added_for_a_product_issue(self):
+        line, _ = convert(finding(), 12, 21, 34, "bug")
+        self.assertNotIn("#family:", key_of(line))
+
+    def test_review_key_helper(self):
+        self.assertEqual(review_key("code", "p", "s"), "code/p/s")
+        self.assertEqual(review_key("code", "p", "s", "code/q/t"),
+                         "code/p/s#family:code/q/t")
 
     def test_missing_pattern_skipped(self):
         line, reason = convert(finding(pattern=None), None, None, None, "bug")
@@ -81,6 +138,20 @@ class Cli(unittest.TestCase):
 
     def test_missing_flag_value_is_usage_error(self):
         p = cli("--parent")
+        self.assertEqual(p.returncode, 2)
+        self.assertNotIn("Traceback", p.stderr)
+
+    def test_reviewed_key_reaches_the_plan(self):
+        p = cli("--reviewed-issue", "21", "--reviewed-pr", "34",
+                "--reviewed-key", "code/leaky-abstraction/internal/store/store.go",
+                findings=[finding()])
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("code/god-function/internal/http/a.go"
+                      "#family:code/leaky-abstraction/internal/store/store.go",
+                      json.loads(p.stdout)["where"])
+
+    def test_reviewed_key_rejects_whitespace(self):
+        p = cli("--reviewed-key", "two words", findings=[finding()])
         self.assertEqual(p.returncode, 2)
         self.assertNotIn("Traceback", p.stderr)
 

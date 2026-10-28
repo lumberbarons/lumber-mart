@@ -109,7 +109,7 @@ first casualty is the combined verification at the end of the run.
 Every issue this skill files carries a key in its `### Where` section:
 
 ```
-review-key: <skill>/<pattern>/<scope>
+review-key: <skill>/<pattern>/<scope>[#family:<reviewed-key>]
 ```
 
 The key is the identity of a *finding*, not of a line of code, which is what makes it survive
@@ -120,10 +120,20 @@ the two things that change constantly — line numbers and the model's phrasing 
   prefixes while preserving existing stored keys
 - `pattern` — the root-cause slug the review emitted, from the vocabulary each critique skill
   owns in its own `REFERENCE.md`, passed through unchanged
-- `scope` — the deepest directory containing every affected file, derived mechanically from the
-  file list rather than chosen, so two runs cannot anchor the same finding differently
+- `scope` — the finding's own file set, derived mechanically: the file itself when there is
+  one, otherwise the deepest common directory plus the sorted relative paths in braces
+  (`internal/store/{index.go,store.go}`). Two findings in one package that touch different
+  files get different keys, which is what the old package-wide scope could not do
+- `family` — present only when the reviewed issue is itself a finding: the reviewed issue's
+  stored key, exactly. It marks "generation 2 of this seam" so a finding born of a review is
+  not deduplicated onto the finding it reviews
 
 Severity is deliberately excluded: it moves between runs, and identity must not.
+
+Older issues carry the original scope (the deepest common directory, or the single file) and no
+family. Dedup still searches that legacy key and accepts a hit only when the issue's body
+describes the same finding; stored keys are never rewritten, and a legacy key shared by several
+issues is reported for adjudication rather than used to suppress a new finding.
 
 Dedup then follows hew's own read order — `hew search` first, `hew list --json --bodies --state
 all` when exhaustiveness matters, `hew show` only for a specific candidate — across open *and*

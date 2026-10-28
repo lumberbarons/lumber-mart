@@ -6,8 +6,8 @@ one plan line per fileable finding. Deduplication against the tracker stays
 with the raise-issues agent (Step 3); this script never queries hew.
 
   findings_to_plan.py <findings.json> [--parent <epic>] [--reviewed-issue <n>]
-                      [--reviewed-pr <n>] [--at-or-above P1..P4]
-                      [--type bug|task] [--out FILE]
+                      [--reviewed-pr <n>] [--reviewed-key <key>]
+                      [--at-or-above P1..P4] [--type bug|task] [--out FILE]
 
 Per finding, the emitted plan line carries:
 
@@ -18,15 +18,24 @@ Per finding, the emitted plan line carries:
   blocked-by    --reviewed-issue, when given (fixes wait for the PR to merge)
   discovered-from  --reviewed-issue, when given
   where         backticked locations, then blank, then the identity lines:
-                `review-key: <skill>/<pattern>/<scope>` and, when the finding
-                was raised against a PR review, `review-of: #<n>` — both bare,
-                both grep targets (pr_state.py greps the latter)
+                `review-key: <skill>/<pattern>/<scope>[#family:<reviewed-key>]`
+                and, when the finding was raised against a PR review,
+                `review-of: #<n>` — both bare, both grep targets (pr_state.py
+                greps the latter)
   problem       the explanation
   fix           the fix
   done-when     [done_when] as a one-item checklist
 
-Scope is derived mechanically per raise-issues: the deepest directory
-containing every file in `files`, or the single file itself.
+Scope is derived mechanically from the finding's own file set: the file itself
+when there is one, otherwise the deepest common directory plus the sorted
+relative paths in braces, e.g. `internal/store/{index.go,store.go}`. Two
+findings in one package that touch different files therefore get different
+keys, while a pattern-collapsed finding still names every file.
+
+`--reviewed-key` is the `review-key:` value of the issue being reviewed, when
+that issue is itself a finding. It appends `#family:<key>` to every emitted
+key, so generation 2 of a seam is distinguishable from the finding it reviews
+instead of deduplicating onto it.
 
 A finding is skipped (and counted on stderr) when it lacks priority, files,
 fix, or pattern — the pump files from critique findings files, which always
@@ -46,8 +55,8 @@ import sys
 
 USAGE = (
     "usage: findings_to_plan.py <findings.json> [--parent <epic>] "
-    "[--reviewed-issue <n>] [--reviewed-pr <n>] [--at-or-above P1..P4] "
-    "[--type bug|task] [--out FILE]"
+    "[--reviewed-issue <n>] [--reviewed-pr <n>] [--reviewed-key <key>] "
+    "[--at-or-above P1..P4] [--type bug|task] [--out FILE]"
 )
 
 
@@ -57,13 +66,52 @@ def fail(msg, code=1):
 
 
 def derive_scope(files):
-    """Deepest directory containing every file, or the single file itself."""
+    """Stable identity of the finding's own file set.
+
+    One file keeps its path, which is what the first key scheme used. Several
+    files become the deepest common directory plus the sorted relative paths
+    in braces, so a pattern-collapsed finding still names every affected file
+    and two findings in one package with different files get different keys.
+    """
+    files = sorted({f for f in files if f})
     if len(files) == 1:
         return files[0]
-    scope = os.path.commonpath(files) if files else ""
+    if not files:
+        return "."
+    try:
+        common = os.path.commonpath(files)
+    except ValueError:
+        common = "."
+    if common in ("", ".", "/"):
+        common = "."
+    common = common.replace(os.sep, "/")
+    rel = [os.path.relpath(f, common).replace(os.sep, "/") for f in files]
+    return f"{common}/{{{','.join(rel)}}}"
+
+
+def derive_scope_legacy(files):
+    """The scope the original key scheme used, for dedup against old issues.
+
+    Deepest directory containing every file, or the single file itself. This
+    is what an issue filed before file-set scopes carries in its body.
+    """
+    files = sorted({f for f in files if f})
+    if len(files) == 1:
+        return files[0]
+    try:
+        scope = os.path.commonpath(files) if files else ""
+    except ValueError:
+        scope = "."
     if scope in ("", ".", "/"):
         return "."
-    return scope
+    return scope.replace(os.sep, "/")
+
+
+def review_key(skill, pattern, scope, reviewed_key=None):
+    key = f"{skill}/{pattern}/{scope}"
+    if reviewed_key:
+        key += f"#family:{reviewed_key}"
+    return key
 
 
 def backtick(paths):
@@ -76,7 +124,7 @@ def priority_number(priority):
 
 
 def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
-            at_or_above=None):
+            at_or_above=None, reviewed_key=None):
     """One finding -> one plan line, or (None, reason) when not fileable."""
     priority = finding.get("priority")
     files = finding.get("files")
@@ -99,7 +147,7 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
     skill = finding.get('skill')
     if skill == 'skills':
         skill = 'portability'
-    key = f"{skill}/{pattern}/{scope}"
+    key = review_key(skill, pattern, scope, reviewed_key)
     where_lines = [
         backtick(finding.get("locations") or files),
         "",
@@ -130,7 +178,8 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
 
 def parse_args(args):
     opts = {"parent": None, "reviewed_issue": None, "reviewed_pr": None,
-            "type": "bug", "out": None, "at_or_above": None}
+            "reviewed_key": None, "type": "bug", "out": None,
+            "at_or_above": None}
     positional = []
 
     def value(flag):
@@ -152,6 +201,11 @@ def parse_args(args):
             opts["reviewed_issue"] = number(a)
         elif a == "--reviewed-pr":
             opts["reviewed_pr"] = number(a)
+        elif a == "--reviewed-key":
+            v = value(a).strip()
+            if not v or any(c.isspace() for c in v):
+                fail("--reviewed-key needs one review-key value", 2)
+            opts["reviewed_key"] = v
         elif a == "--at-or-above":
             v = value(a)
             if v not in ("P1", "P2", "P3", "P4"):
@@ -196,7 +250,7 @@ def main():
         converted = dict(finding, skill=data["skill"])
         line, reason = convert(
             converted, opts["parent"], opts["reviewed_issue"], opts["reviewed_pr"],
-            opts["type"], opts["at_or_above"],
+            opts["type"], opts["at_or_above"], opts["reviewed_key"],
         )
         if line is None:
             skipped += 1

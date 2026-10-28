@@ -10,7 +10,10 @@ Requires the `hew` binary on PATH, authenticated via `gh auth login`.
 
 The review-key scheme in `skills/raise-issues/REFERENCE.md` is the load-bearing part of that
 skill: it is what lets a review re-run without re-filing. Changing the key format orphans every
-issue already filed under the old one, so treat it as a migration, not an edit.
+issue already filed under the old one, so treat it as a migration, not an edit. The current
+format scopes a key to the finding's own file set and adds `#family:<reviewed-key>` when the
+reviewed issue is itself a finding; the old common-directory key is still searched and never
+rewritten, so a format change lands with its legacy lookup.
 
 `work-issue` rests on two properties of hew that are easy to undo by accident. Work ends at
 `hew pr`, never at `hew close` — close means wontfix or duplicate, so closing a delivered issue
