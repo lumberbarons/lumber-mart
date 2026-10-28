@@ -133,5 +133,6 @@ error-handling-strategy
 leaky-abstraction
 single-responsibility
 unclear-naming
+unsafe-state-transition
 untestable-seam
 ```

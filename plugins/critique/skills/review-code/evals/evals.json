@@ -94,6 +94,43 @@
         "Every finding carries a concrete 'done when' criterion verifiable by reading the diff",
         "Total findings do not exceed 10"
       ]
+    },
+    {
+      "id": 4,
+      "name": "py-store-upgrade-existing-state",
+      "prompt": "review the code in {FIXTURES}/py-store-upgrade",
+      "expected_output": "Finds that migrations.run executes on every open with no version tracking, so an already-upgraded database crashes on its second start (duplicate column, then duplicate index); notices that the superseded customer index is still created by schema.init_db on every start and never dropped; leaves the IF NOT EXISTS schema and OrderRepo alone.",
+      "files": [
+        "fixtures/py-store-upgrade"
+      ],
+      "assertions": [
+        "Flags migrations.run for running unconditionally on every open (app.open_database calls it each start) with nothing recording that it already ran, naming the consequence that the ALTER TABLE ADD COLUMN raises a duplicate-column error on the second start so an already-upgraded database cannot restart",
+        "Identifies the same re-run hazard for the unguarded CREATE INDEX idx_orders_customer_created (duplicate index error), either in the same finding or its own",
+        "Flags that the legacy idx_orders_customer is superseded by the composite index yet schema.init_db still creates it on every start and nothing drops it, so the table carries a redundant index that every write maintains",
+        "Frames the main finding as what happens to an existing database on upgrade or restart, not only as a missing migration framework in the abstract",
+        "Rates the restart-crash finding P1 or P2, not P3",
+        "Does not file a finding claiming schema.init_db's CREATE ... IF NOT EXISTS statements are unsafe to re-run, or flagging the audit_log table",
+        "Files no finding against OrderRepo's design (it is injected, parameterised and single-purpose)",
+        "Total findings do not exceed 10"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "py-store-upgrade-diff-unchanged-migrations",
+      "prompt": "run `{FIXTURES}/py-store-upgrade-diff/setup.sh <empty-dir>`, cd into that directory, and review the code on the current branch (no path argument, so the review scopes to the branch's diff against main)",
+      "expected_output": "Reads past the two changed files to the unchanged migrations.py and app.py, and finds that the change redefines the orders table (total -> total_cents) and its index only in schema.init_db, which runs for new databases, while no migration was added and LATEST was not bumped, so an already-shipped database keeps the old shape and OrderRepo fails on it; leaves the fresh-database path alone.",
+      "files": [
+        "fixtures/py-store-upgrade-diff"
+      ],
+      "assertions": [
+        "Flags that the change alters the orders table (total -> total_cents) only in schema.init_db, which returns early for an existing database, so an already-shipped database never gets the total_cents column and the updated OrderRepo fails with no such column on it",
+        "Identifies that migrations.py, which is not part of the diff, is how existing databases are changed and that this change adds no migration entry and does not advance LATEST/user_version",
+        "Notes that fresh and upgraded databases end up with different schemas, including the index: new databases get idx_orders_customer_created while existing ones keep idx_orders_customer and nothing drops it",
+        "Names the failing sequence from an existing database's point of view (an instance created by the old release upgrades to this branch), not only the end state of the diff",
+        "Rates the missing-migration finding P1 or P2, not P3",
+        "Does not file a finding that creating a brand-new database is broken by this change",
+        "Total findings do not exceed 10"
+      ]
     }
   ]
 }
