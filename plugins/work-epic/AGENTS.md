@@ -32,10 +32,11 @@ classifies a PR's mergeability — in the agent's head instead of running `resol
 must produce the same plan, and the scripts are what make that true. Changes to spawn or
 merge policy belong in the scripts, where they are testable, not in the skill prose.
 
-Orca is the execution layer, not a second planner. A **Run** scopes the pump; each child is a
-**Task** and a durable **worktree**; each attempt is a **Dispatch**. Orca Tasks record execution
-and do not replace hew's dependency graph. The child worktree is the unit: issue link, PR link,
-workspace status, comment marker, checkout, and the place review and reconciliation happen. A
+Orca is the execution layer, not a second planner. A **Run** scopes the pump; each child (or a
+review's finding batch) is a **Task** and a durable **worktree**; each attempt is a
+**Dispatch**. Orca Tasks record execution and do not replace hew's dependency graph. The child
+worktree is the unit: issue link, PR link, workspace status, comment marker, checkout, and the
+place review and reconciliation happen. A
 reviewer gets its own transient worktree on a named `review/<pr>-r<round>` branch so it never
 fights the child over its issue branch; a reconciler reuses the child's checkout when this Run
 still holds it, and otherwise gets a transient checkout.

@@ -1,15 +1,15 @@
 ---
 name: work-epic
-description: Pump a hew epic end to end with Orca-managed worktrees and supervised agents — resolve the epic's ready children, create one Orca worktree per child, start a supervised implementer running work-issue in it, review each delivered PR in a transient review worktree running review-code, file the findings as epic children, reconcile conflicts in the child's own worktree, and merge PRs once CI is green. Implementers and reviewers are chosen independently from an agent pool, so a PR can be implemented by one agent and reviewed by a different one. Autonomous mode (the default) merges on green; `--human-review` stops at drafts and leaves every merge to a human. Use whenever the user wants an epic worked by orchestrating agents — "work on this epic", "drain epic 12", "orchestrate #42", "fan out this epic to workers", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
-argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --max-open-prs N (default 2 × workers), --implementers <list> (default opencode; all = opencode,claude,codex), --reviewers <list|auto> (default auto: implementer pool minus the implementer; all = opencode,claude,codex), --reconciler <id|auto> (default auto: the child's implementer), --dry-run, --no-review, --allow-no-checks, --resolve-conflicts, --resume"
+description: Pump a hew epic end to end with Orca-managed worktrees and supervised agents — resolve the epic's ready children, create an Orca worktree for each child (a review's findings share one batch card), start a supervised implementer running work-issue in it, review each delivered PR in a transient review worktree running review-code, file the findings as epic children, reconcile conflicts in the child's own worktree, and merge PRs once CI is green. Implementers and reviewers are chosen independently from an agent pool, so a PR can be implemented by one agent and reviewed by a different one. Autonomous mode (the default) merges on green; `--human-review` stops at drafts and leaves every merge to a human. Use whenever the user wants an epic worked by orchestrating agents — "work on this epic", "drain epic 12", "orchestrate #42", "fan out this epic to workers", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
+argument-hint: "Epic number. Flags: --human-review, --block-on P1|P2|none (default P1), --merge-method squash|merge|rebase (default squash), --workers N (default 2), --max-open-prs N (default 2 × workers), --finding-depth N (default 1), --implementers <list> (default opencode; all = opencode,claude,codex), --reviewers <list|auto> (default auto: implementer pool minus the implementer; all = opencode,claude,codex), --reconciler <id|auto> (default auto: the child's implementer), --dry-run, --no-review, --allow-no-checks, --resolve-conflicts, --resume"
 ---
 
 # Work Epic
 
-One epic, pumped: resolve its ready children, create an Orca worktree per child, start one
-supervised implementer in it, review each delivered PR from its own transient worktree, file
-the findings, merge on green, and re-pump. This skill orchestrates; it never implements or
-reviews by hand.
+One epic, pumped: resolve its ready children, create an Orca worktree per child (or one batch
+worktree for a review's findings), start one supervised implementer in it, review each delivered
+PR from its own transient worktree, file the findings, merge on green, and re-pump. This skill
+orchestrates; it never implements or reviews by hand.
 
 **The roles are separate agents.** The implementer runs `work-issue`; the reviewer runs
 `review-code`; the reconciler resolves a conflict; the coordinator is the agent running this
@@ -125,6 +125,11 @@ Strip flags; what remains is the epic number.
   and lets the merge pass drain. Every open PR drifts further behind main with each merge, so
   this bounds how stale the backlog gets. Held and conflicted PRs count — a backlog that
   cannot merge is the one not to grow.
+- **`--finding-depth N`** — how many generations of review findings the pump may work
+  automatically, default 1. A generation-1 finding reviews product code; a generation-2 finding
+  reviews a finding. Deeper findings are parked as `finding_depth` for human triage. Findings
+  are a backlog, not a queue: raise this only when you deliberately want the pump to chase a
+  known chain.
 - **`--implementers <list>`** — comma-separated implementer pool for `work-issue`, default
   `opencode`; `all` expands to `opencode,claude,codex`. Child `n` gets
   `implementers[n % len(implementers)]`.
@@ -217,7 +222,8 @@ Step 6's plan.
 ## Step 1 — Resolve the fan-out plan
 
 ```bash
-uv run --no-project "$RESOLVE" <epic-n> --max-open-prs <max-open-prs> [--resume]
+uv run --no-project "$RESOLVE" <epic-n> --max-open-prs <max-open-prs> \
+  --finding-depth <finding-depth> [--resume]
 # add --repo owner/name only if the user said so
 ```
 
@@ -232,6 +238,14 @@ uv run --no-project "$RESOLVE" <epic-n> --max-open-prs <max-open-prs> [--resume]
 An `eligible` child with `large: true` exceeds work-issue's sizing rule. Spawn it as usual, but
 name it in the report as large, so a human can see why it ran long or stalled.
 
+**Findings are a backlog, not a queue.** An open child whose body carries `review-of: #<n>` is
+itself a review finding. The pump works generation-1 findings — a review finding about real
+product code — and parks deeper generations as `finding_depth`: a finding that reviews a
+finding is not spawnable work, however many times the review cycle repeats. `--finding-depth`
+is the deliberate way to lift that bound; the resolver reports each parked child with its
+generation and the issue it reviews, and `counts.finding_depth` makes the backlog visible
+without pretending it is an empty queue.
+
 `mainCheckout` is the fetch/fast-forward/integration anchor, not the spawn cwd: Orca creates
 each child worktree from `origin/<default>` explicitly, so the human's main checkout may be on
 any branch. The resolver already keeps out what this pump has touched: a child with an open PR
@@ -239,9 +253,9 @@ is `in_review`, one whose worker failed (branch pushed, no PR) is `stalled`, and
 you with neither is `claimed` unless `--resume` was given. Spawn only from `eligible`.
 
 An empty `eligible` is meaningful either way: all-blocked, all-untriaged, all-claimed,
-all-in-review, or a finished epic. Say which, from `counts`, and — for a finished epic where
-every child is closed — escalate that a human should close it, exactly as `work-issue`
-requires. Do not close it here.
+all-in-review, all-parked-as-findings, or a finished epic. Say which, from `counts`, and — for
+a finished epic where every child is closed — escalate that a human should close it, exactly
+as `work-issue` requires. Do not close it here.
 
 ## Step 2 — Capacity and existing worktrees
 
@@ -258,6 +272,13 @@ whose Dispatch is still live. Reviewers (`wr-`) don't count. A Task left `dispat
 minus live writers and the resolver's `spawnBudget`. If reaping hasn't freed a slot, wait on
 the live set (Step 4); if the budget is zero, spawn nothing and go to the merge pass (Step 6) —
 the backlog drains before it grows.
+
+**A live batch is one writer but several PRs.** The resolver sees the batch's owner (a claim, or
+its open PR) but not the followers. For the PR budget, count one more pending PR for each
+follower in the live batch that has neither an open PR nor a settled outcome; never spawn a
+follower separately while its batch is live. Subtract those followers from what the resolver
+returned, because the owner is already counted. Start a batch only when the remaining
+`spawnBudget` covers the whole group.
 
 Before creating anything, ask Orca whether this child already has a worktree:
 
@@ -348,6 +369,13 @@ Record `{task, dispatch, worktree, path, branch, implementer, state: "running"}`
 way — it is never predicted, because removal leaves it behind
 ([REFERENCE.md](REFERENCE.md#lifecycle-and-cleanup)).
 
+A batch group (Step 8) uses the same call once, for the group's first child: `--name "we-<first>"`,
+the batch worker prompt in place of the single-issue one, and `batch: [<first>, ...]` added to
+that child's state entry. The other findings are not spawned separately and get no worktree;
+their own PRs arrive in the one outcome file. While a batch is live, every follower in its
+`batch:` list is claimed by that writer: skip it in the spawn loop even when the resolver lists
+it eligible.
+
 The worker runs `work-issue` in its own checkout; `work-issue` may create its conventional issue
 branch (`fix/<n>-…`) inside the Orca worktree, which is then the child's home for the rest of
 its life. The outcome file is written only at the end, after the commit and push, into
@@ -404,6 +432,17 @@ terminal output. Then:
 | `failed` | report; leave the issue claimed; do **not** respawn it — its pushed branch makes it `stalled` on every later resolver pass. Keep the worktree, mark it `--unread`, state `failed: <reason>`; release the worker |
 | `no_ready_work` / `not_eligible` | report verbatim, with the skipped counts — a queue of issues claimed by a dead agent reads as drained and hides the stall; release the worker and remove the clean, workless worktree |
 | `error` | **halt the pump**: finish reaping what's live, spawn nothing new, escalate — un-auth or dirty trees are an outage, not an empty queue. Keep the worktree, mark it unread, state `error: <reason>`, release the worker |
+
+A batch worker's outcome is a `work-issue` file with an `issues` array, one entry per finding.
+Reap it as one worker: archive the whole file, release once, and record each entry's `number`,
+`outcome`, `branch`, and `pr` on that child's `state.json` entry (a follower's entry also carries
+`batchOf: <first>` and no worktree). The first child's worktree is the batch's card; followers
+have no worktree of their own. A delivered follower's PR is reviewed and merged like any other
+(its branch carries its own `Fixes #<n>`); a failed follower is reported, stays claimed, and
+blocks nothing else. If some entries are delivered and one failed, treat the file as delivered
+for the worktree's transition and report the failure by child number — do not remove the batch
+card while a delivered PR is still open. An entry outside the recorded `batch:` means the worker
+left the batch's boundary: report it as an escalation and do not absorb it as a follower.
 
 Release a settled worker with:
 
@@ -482,8 +521,11 @@ ORCA worktree set --worktree "id:<review-worktree-id>" \
 
 The prompt checks out the PR head onto the local branch `review/<pr>-r<round>`. That branch is
 not the child's issue branch, so the two worktrees never fight over a checkout, and
-`review-code`'s default branch-vs-default scope is exactly the PR's diff. A re-review uses a new
-round suffix and a new transient worktree.
+`review-code`'s default branch-vs-default scope is exactly the PR's diff. When that diff
+touches persistence, migration, or schema code, the prompt scopes `review-code` to the owning
+package instead: a diff that moves DDL is not a database that must upgrade, and the reviewer
+must say what an already-shipped instance does on that upgrade. A re-review uses a new round
+suffix and a new transient worktree.
 
 Reap reviewers exactly like workers — same `check --wait` batch, same `agentWait` gate — and
 release the reviewer as soon as its file is read. Archive the file to
@@ -521,9 +563,11 @@ only exists once the filing has run. So, in autonomous mode:
    `findings_to_plan.py --parent <epic> --reviewed-issue <n> --reviewed-pr <pr> --at-or-above P2`,
    dry-run, then `hew apply` (flow and dedup rules:
    [REFERENCE.md](REFERENCE.md#findings-filing-autonomous-mode)). Always through the converter —
-   hand-composed bodies lose the `review-of:` marker the merge pass keys holds off. P3s are not
-   filed; the round comment carries them. A filing that fails is an escalation — post no round
-   comment over it.
+   hand-composed bodies lose the `review-of:` marker the merge pass keys holds off. If the
+   reviewed issue is itself a finding, pass its stored `review-key:` as `--reviewed-key`; the
+   emitted keys then carry `#family:<key>`, which keeps generation 2 from deduplicating onto
+   the finding it reviews. P3s are not filed; the round comment carries them. A filing that
+   fails is an escalation — post no round comment over it.
 2. **Post the round comment**, with the filed children's numbers.
 3. **Decide readiness** from the filed findings:
 
@@ -533,6 +577,14 @@ only exists once the filing has run. So, in autonomous mode:
 - **Anything at or above `--block-on`** — the PR stays draft, the child worktree is marked
   `--unread` with state `HOLD: <severity> finding #<child> (reviewer <reviewer>)`, and the human
   is notified. The open finding child holds it (the round comment is the hold's public reason).
+
+**A review's findings are one batch, not a queue.** The children filed from this review are a single
+unit of work: keep them together in the child's `findings` entry, and at Step 8 dispatch them
+as one implementer running `work-issue --batch` rather than one worker per finding. That is the
+default; spawn separate workers only when a human explicitly asks for them. The batch does not
+compress the PRs — `work-issue` still gives each finding its own branch and draft PR, and each
+PR still gets its own review round. What it buys is one implementer that sees the whole
+findings set, and `work-issue`'s integration check across the fixes before they are reviewed.
 
 Record the reviewer, round, verdict (`clean`, `hold`, or `escalated`), and findings children in
 the child's state entry. In `--human-review` mode nothing is filed or merged: the round comment
@@ -579,6 +631,10 @@ and [REFERENCE.md](REFERENCE.md#merge-pass-commands)):
 | `protected` | notify; unread, state `PROTECTED: <what branch protection wants>` (typically an approving review) |
 | `wait` | nothing; it rolls into the CI-wait loop |
 
+A batch follower has no worktree of its own: every per-PR gate (`hold`, `conflict`, `escalate`,
+`protected`) marks the batch card and names the follower, so the human still sees which child
+owns the gate.
+
 **The merge queue.** At most one PR moves toward main per pass — the planner's `queueHead`,
 the only PR that gets `merge` or `update_branch`. Every merge puts every other open PR behind
 again, so updating them side by side spends a CI run each on a result the next merge throws
@@ -601,6 +657,11 @@ remote delete. A failure in branch cleanup after a successful merge is reported,
 escalation. A worktree already removed, or a PR from another run with no child worktree here,
 needs only the PR-branch deletes.
 
+A batch card outlives the first of its PRs: finish each finding's own state entry as its PR
+merges, but keep the shared worktree until every PR in `batch:` is merged or parked. Remove it
+once, under the same clean-tree rule, after the last one; a held or failed follower keeps the
+card with that child named.
+
 **Resolving conflicts (`--resolve-conflicts`).** The planner emits at most one `reconcile` —
 its `reconcileHead` — and only while `queueHead` is `null`: a merge landing mid-reconciliation
 would re-conflict it. Pick the reconciler by the formula in
@@ -615,7 +676,7 @@ state file. Then resolve the child from the PR's `issue` in `$OUTDIR/state.json`
   `origin/$DEFAULT`, reconciles, gates, and pushes. No second checkout, no branch lock, and the
   setup the worker already paid for is still there. Check the child worktree is clean
   (`git status --porcelain`) first; a dirty checkout is an escalation, not a stash.
-- **No child worktree (PR from an earlier run or another orchestrator)** — start a transient
+- **No child worktree (PR from an earlier run, another orchestrator, or a batch follower)** — start a transient
   reconciler worktree named `wc-<pr>-a<attempt>` (`<attempt>` is the planner's
   `reconcileFailures` plus one; call in
   [REFERENCE.md](REFERENCE.md#worktree-conventions)) and link the card with `--pr <pr>
@@ -699,7 +760,32 @@ actually ships, instead of on a replica.
 After each settled worker and each merge pass, return to Step 1 — the resolver re-reads the
 tracker, merges unblock children between visits, and findings filed as children enter
 `eligible` as their blockers clear (a finding's child is blocked by the PR's issue until the
-merge closes it).
+merge closes it). A finding whose reviewed issue is itself a finding does not enter `eligible`
+once its blocker clears: the resolver parks it as `finding_depth` until a human raises
+`--finding-depth`. That parked backlog is a deliberate stop, not a drained queue — say so in
+the report and leave it for triage.
+
+**Batch a review's findings into one dispatch.** A run of two or more consecutive
+`eligible` children with the same non-null `reviewOf` were filed from reviews of the same issue;
+work them as one implementer dispatch running `work-issue --batch`, not one worker per finding,
+unless a human explicitly asked for separate workers. The run's first child owns the worktree
+and card (`we-<first>`); the group is recorded in its state entry as `batch: [...]`. The batch
+consumes one worker slot and `len(batch)` units of `spawnBudget` — one PR per finding — so start
+it only when the budget can take the whole group, and count the followers as claimed while it
+runs (Step 2). If the budget cannot take the group, work the first finding singly this pass and
+batch the remainder when the backlog drains. The prompt (batch worker variant in
+[REFERENCE.md](REFERENCE.md#worker--opencode-or-claude)) names every finding and is bounded to
+that list: if the ready queue offers work outside it, the worker stops the batch there and the
+next pass batches what remains. The batch's findings are the only work it may take.
+
+`work-issue --batch` still gives each finding its own branch and draft PR — one `Fixes #<n>` per
+PR, so each closes only its own child — and its integration branch is a local check, never
+pushed and never a PR. No batch PR closes several children, and none of the findings lose their
+individual issue linkage. Followers have no worktree of their own: their PRs and states live on
+their own `state.json` entries, and a hold, failure, or merge on a follower is reported against
+the batch card by child number. A single finding, or a group split by higher-priority work, is
+worked normally. Do not merge findings from different reviewed issues into one batch to save a
+dispatch; the reviewed issue is the boundary.
 
 Before spawning, run the resume-and-orphan sweep
 ([REFERENCE.md](REFERENCE.md#resume-and-orphan-sweep)): every worktree whose comment carries
@@ -731,9 +817,10 @@ ORCA orchestration worker-list --run "<run-id>" --terminal-state reclaimable --j
 Release or explicitly retain every settled terminal before reporting. A `wait` still inside its
 budget is still moving; keep polling it rather than stopping around it. A stop with eligible
 children and a zero budget is a full backlog of parked PRs — say so; it clears only when a
-human unparks them. Under `--human-review`, a reviewed draft awaiting the human is parked by
-definition — the skipped merge pass is the gate — and the integration pass is the last
-automated step.
+human unparks them. A stop with `counts.finding_depth` above zero is a parked findings backlog:
+name the generations and the issues they review, and do not describe the epic as drained.
+Under `--human-review`, a reviewed draft awaiting the human is parked by definition — the
+skipped merge pass is the gate — and the integration pass is the last automated step.
 
 Leave the worktree board honest: every kept child worktree carries its gate in the comment and
 `--unread` if it needs a human; every removed one is gone from the board. Then set the
@@ -747,8 +834,8 @@ ORCA worktree set --worktree "id:<coord-worktree-id>" \
 ```
 
 Report in the format in [REFERENCE.md](REFERENCE.md#report-format). Always include: Run id and
-the agent policies used; per child, the implementer, outcome, PR, worktree (kept or removed)
-and "large" when flagged; per PR, **implementer → reviewer(s)** by round (or "same-agent
+the agent policies used; per child or batch, the implementer, outcome, PR, worktree (kept or
+removed) and "large" when flagged; per PR, **implementer → reviewer(s)** by round (or "same-agent
 review"); each reconciler's gate result and new head; each merge-pass action; each skip with
 its reason; `hew epic status <epic>`; the remaining `eligible` count, `spawnBudget`, and
 open-PR count, so "stopped" is distinguishable from "drained" and a full backlog from an empty
@@ -764,6 +851,8 @@ improvising:
   state, instead of executing the scripts' output
 - Spawning for a child the resolver skipped — the claim is the authority; let exit 3 arbitrate,
   never `--force`
+- Working a child the resolver parked as `finding_depth`, or raising `--finding-depth` just to
+  clear a report — the bound is the stopping rule, and a finding on a finding is a human's call
 - Treating a settled worker as a delivered issue without reading its outcome file, or a
   findings file whose `status` is not `reviewed` as a clean review
 - Using one agent for both roles when the pool has several, or silently substituting a

@@ -96,7 +96,7 @@ a different point of view, and the human chose the pool.
 | **Run** | A durable namespace and mailbox, bound to the coordinator | One per pump invocation (or the bound previous Run under `--resume`); scopes every Task and every `check` |
 | **Task** | A unit of work with a status | One per worker (title prefix `we-`), reviewer (`wr-`), or reconciler (`wc-`); Tasks are execution records, not a second epic plan |
 | **Dispatch** | One authoritative attempt at a Task | The id used for `worker-show`, `worker-read`, `worker-release`, and recovery; never address a worker by terminal title |
-| **Worktree** | A tracked checkout with metadata, terminals, and a board card | The durable unit per child: issue link, PR link, status, comment, checkout, and the place review/reconciliation happens |
+| **Worktree** | A tracked checkout with metadata, terminals, and a board card | The durable unit per child — or per batch of a review's findings: issue link(s), PR link(s), status, comment, checkout, and the place review/reconciliation happens |
 | **Terminal** | A PTY or chat surface owned by a Dispatch | Never driven directly by the pump; `worker-read`, `worker-show`, and `worker-release` cover both terminals and chats |
 
 The pump never uses `agent launch`, `worktree create --agent`, or `orchestration dispatch` to
@@ -160,6 +160,26 @@ Write it after every transition:
       "reviewer": "claude",
       "round": 1,
       "findings": [41]
+    },
+    "41": {
+      "batch": [41, 43, 44],
+      "worktree": "repo-id::/abs/we-41",
+      "path": "/abs/we-41",
+      "branch": "lumberbarons/we-41",
+      "implementer": "opencode",
+      "state": "delivered",
+      "pr": 50,
+      "review": "clean",
+      "reviewer": "claude",
+      "round": 1
+    },
+    "43": {
+      "batchOf": 41,
+      "state": "delivered",
+      "pr": 51,
+      "review": "pending",
+      "reviewer": "codex",
+      "round": 1
     }
   },
   "reviewers": {
@@ -190,6 +210,13 @@ Outcome files (`.work-epic/we-<n>.json`, `wr-<pr>.json`, `wc-<pr>.json`) live in
 worktree that produced them. Step 0 lists `.work-epic/` in the repository's shared
 `info/exclude` (local, never committed), so they stay out of every worktree's `git status`.
 
+A batch's first child owns the worktree and carries `batch: [...]`; the followers carry
+`batchOf: <first>` and their own `pr`, `review`, `reviewer`, and `round`, but no worktree or
+branch of their own. The batch outcome file's `issues` array supplies every follower's PR. A
+follower's review is a normal per-PR review round, recorded on its own entry. When a follower's
+PR merges, finish its entry; the shared worktree is removed only after the last PR in the batch
+is merged or parked.
+
 The worktree comment is the durable fallback if `$OUTDIR` is lost; the issue link is the
 durable selector (`ORCA worktree show --worktree "issue:<n>" --json`).
 
@@ -200,11 +227,15 @@ durable selector (`ORCA worktree show --worktree "issue:<n>" --json`).
 - **Child worktree** — `--name "we-<n>"`, display name `#<n> <short title> · <implementer>`.
   The worktree id (the full `<repo-id>::<path>`) is the identity; the display name is for
   humans. Never use a display name as a key.
+- **Batch card** — a review's findings share the first child's `we-<first>` worktree,
+  display name `#<first> +<k-1> more · <implementer>`. The role key stays `we-<first>`;
+  the followers are recorded as `batchOf` entries in `$OUTDIR/state.json`, not as worktrees.
 - **Reviewer worktree** — `--name "wr-<pr>-r<round>"`, display name
   `Review PR #<pr> · <reviewer> (round <round>)`. Transient; one per review round.
 - **Reconciler** — no new worktree when the Run holds the child; it runs in
   `--worktree "id:<child-id>"` with task title `wc-<pr> · <reconciler>`. A PR from another
-  run/coordinator gets a transient worktree named `wc-<pr>-a<attempt>` (`<attempt>` is
+  run/coordinator, or a batch follower with no issue-linked worktree, gets a transient
+  worktree named `wc-<pr>-a<attempt>` (`<attempt>` is
   `reconcileFailures` plus one, so a tree kept from a failed attempt never collides with the
   next), display name `Reconcile PR #<pr> · <reconciler> (attempt <attempt>)`.
 - **Task titles** — start with the role prefix and carry the chosen agent:
@@ -351,7 +382,7 @@ report it; do not adopt, release, or remove it.
 ## Resolver output
 
 One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--resume]
-[--max-open-prs N]`:
+[--max-open-prs N] [--finding-depth N]`:
 
 ```json
 {
@@ -361,16 +392,19 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
   "defaultBranch": "main",
   "eligible": [
     { "number": 21, "title": "child b", "priority": "P1", "type": "task",
-      "where": 2, "doneWhen": 3, "large": false, "resume": false }
+      "where": 2, "doneWhen": 3, "large": false, "resume": false,
+      "reviewOf": null }
   ],
   "skipped": [
     { "number": 22, "title": "child c", "reason": "blocked", "detail": "blocked by #35" },
     { "number": 23, "title": "child d", "reason": "in_review", "detail": "PR #40 open" },
     { "number": 24, "title": "child e", "reason": "claimed", "own": true,
-      "detail": "in progress @you — pass --resume to pick it up" }
+      "detail": "in progress @you — pass --resume to pick it up" },
+    { "number": 25, "title": "finding at depth 2", "reason": "finding_depth",
+      "detail": "generation 2 finding reviews #24, itself a review finding; --finding-depth 1 parks it for human triage" }
   ],
   "counts": { "eligible": 1, "blocked": 1, "untriaged": 0, "claimed": 1,
-              "in_review": 1, "stalled": 0, "closed": 4 },
+              "in_review": 1, "stalled": 0, "finding_depth": 1, "closed": 4 },
   "spawnBudget": 2
 }
 ```
@@ -387,10 +421,16 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
   surfaced so the report can say why a large child might be worth a `--workers 1` moment.
   Only `- ` bullets are counted, so a prose `### Where` reads `where: 0` and `large` can
   under-report; an absent flag is not proof the child is small (tracked in #31).
-  `resume` is true only for a child `--resume` brought back.
+  `resume` is true only for a child `--resume` brought back. `reviewOf` is the issue named by
+  the body's `review-of: #<n>` marker, or `null`; the pump groups findings from reviews of the
+  same issue by it for batch dispatch.
 - `skipped` — open children left behind, `reason` one of:
   - `in_review` — an open PR's head branch carries the child's number. Delivered; the merge
     pass owns it now, whoever holds the claim.
+  - `finding_depth` — the child is a review finding whose reviewed issue is itself a review
+    finding, and its generation is above `--finding-depth`. `detail` names the generation and
+    the issue it reviews. This is the stopping rule for a review spiral: findings are a backlog,
+    not a queue, so generation 1 is worked and deeper generations wait for a human.
   - `blocked` — open blockers.
   - `untriaged` — missing priority or type.
   - `claimed` — in progress by someone else, or by you with neither PR nor pushed branch
@@ -400,10 +440,23 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
 
   "You" is the current `gh api user` login; when it cannot be determined every in-progress
   child is treated as claimed by someone else (fail-safe).
+- `counts` sums every skip reason plus `eligible` and `closed`. `finding_depth` is the parked
+  findings backlog: report it separately, because it is neither a drained queue nor a blocked
+  PR. The bound is computed from the epic's own child bodies, which `hew list --epic --bodies
+  --state all` supplies; a reviewed issue the listing omits (typically a closed finding) is
+  fetched with `hew show` so the chain stays visible. An unreadable target is treated as
+  generation 1.
 - `spawnBudget` — `--max-open-prs` minus the epic's open PRs (`in_review`) minus your own bare
   claims (`claimed` with `own: true` — workers in flight, each a PR on its way), floored at
   zero; `null` without the flag. Parked PRs count. A crashed run's leftover claims count too
-  until `--resume` picks them up — the fail-safe direction, spawning less.
+  until `--resume` picks them up — the fail-safe direction, spawning less. A live batch's
+  followers are not visible to the resolver (they are not claimed yet); the pump counts each
+  follower that has neither an open PR nor a settled outcome as one more pending PR, on top of
+  the owner the resolver already sees.
+- `--finding-depth N` — the generation bound, default 1. Generation 1 reviews product code;
+  generation 2 reviews a finding. A child at `generation > N` is `finding_depth`; a child at or
+  below it is eligible as usual. The flag only raises the bound; it never forces a child that
+  is blocked, claimed, or in review.
 - The PR and branch reads fail the whole run rather than degrade: without them a delivered or
   failed child would read as eligible.
 - Exit codes: `0` success (eligible may be empty), `1` runtime error, `2` usage error or
@@ -529,6 +582,39 @@ if the file's status is delivered, otherwise failed, and --report-path
 '.work-epic/we-<n>.json'.
 ```
 
+### Worker — batch of one review's findings (opencode or claude)
+
+One implementer works every finding from reviews of the same issue, in the first child's
+worktree:
+
+```text
+Use the work-issue skill. Run `work-issue #<first> --batch <k> --non-interactive
+--json '.work-epic/we-<first>.json'` to work these findings from the same reviewed issue:
+#<a>, #<b>, #<c>. Start at #<first>. They are the only issues this batch may take — if
+`hew ready` offers anything outside that list, stop the batch there and report the
+remainder. Each finding still gets its own branch and draft PR; never fold two findings
+into one PR. When it finishes, create `.work-epic/` if needed and write that file; do not
+commit it. Then send the worker_done message the orchestration preamble specifies, with
+--outcome succeeded only if every issue taken is delivered, otherwise failed, and
+--report-path '.work-epic/we-<first>.json'. Do not ask questions and do not interact with
+the user.
+```
+
+### Worker — batch of one review's findings (codex)
+
+Same contract, loaded from disk:
+
+```text
+Read <work-issue dir>/SKILL.md and its REFERENCE.md. Follow them exactly for these findings
+from the same reviewed issue by running `work-issue #<first> --batch <k> --non-interactive
+--json '.work-epic/we-<first>.json'`: #<a>, #<b>, #<c>. Start at #<first>. They are the only
+issues this batch may take; stop if the ready queue offers anything outside the list. Each
+finding still gets its own branch and draft PR. Write the file, do not commit it, then send
+the worker_done message the orchestration preamble specifies, with --outcome succeeded only
+if every issue taken is delivered, otherwise failed, and --report-path
+'.work-epic/we-<first>.json'.
+```
+
 ### Reviewer — opencode or claude
 
 ```text
@@ -536,11 +622,17 @@ Check out PR #<pr>'s head in this worktree:
 `gh pr checkout <pr> --branch review/<pr>-r<round>` (fallback:
 `git fetch origin pull/<pr>/head && git switch -c review/<pr>-r<round> FETCH_HEAD`).
 Then use the review-code skill with flags --non-interactive --json
-'.work-epic/wr-<pr>.json' — its default branch-vs-default scope is exactly this PR's diff.
-Do not modify code. When it finishes, create `.work-epic/` if needed and write that file;
-do not commit it. Then send the worker_done message the orchestration preamble specifies,
-with --outcome succeeded only if the file's status is reviewed, otherwise failed, and
---report-path '.work-epic/wr-<pr>.json'. Do not interact with the user.
+'.work-epic/wr-<pr>.json'. Its default branch-vs-default scope is this PR's diff. If
+`git diff --name-only origin/<default>...HEAD` names persistence, migration, or schema code,
+review the package that owns it instead of the diff alone: run review-code against that
+package directory, and when several packages are involved merge their findings into the one
+JSON file. Whether the scope is the diff or the module, state in the findings what an
+already-shipped instance does on upgrade — whether the create happens once, whether the change
+is forward-only, who owns each index, and what drops a legacy name. Do not report the same
+consequence twice. Do not modify code. When it finishes, create `.work-epic/` if needed and
+write that file; do not commit it. Then send the worker_done message the orchestration preamble
+specifies, with --outcome succeeded only if the file's status is reviewed, otherwise failed,
+and --report-path '.work-epic/wr-<pr>.json'. Do not interact with the user.
 ```
 
 ### Reviewer — codex
@@ -549,9 +641,13 @@ with --outcome succeeded only if the file's status is reviewed, otherwise failed
 gh pr checkout <pr> --branch review/<pr>-r<round> (fallback: git fetch origin
 pull/<pr>/head && git switch -c review/<pr>-r<round> FETCH_HEAD). Then read
 <review-code dir>/SKILL.md and its REFERENCE.md and run it with --non-interactive
---json '.work-epic/wr-<pr>.json'. Do not modify code. Write the file, do not commit it,
-then send the worker_done message the orchestration preamble specifies, with --outcome
-succeeded only if the file's status is reviewed, otherwise failed, and --report-path
+--json '.work-epic/wr-<pr>.json'. Its default scope is the PR's diff; if
+`git diff --name-only origin/<default>...HEAD` names persistence, migration, or schema code,
+review the package that owns it instead (one run per package, findings merged into the one
+JSON file). State what an already-shipped instance does on upgrade: create-once, forward-only,
+index ownership, and what drops a legacy name. Do not modify code. Write the file, do not
+commit it, then send the worker_done message the orchestration preamble specifies, with
+--outcome succeeded only if the file's status is reviewed, otherwise failed, and --report-path
 '.work-epic/wr-<pr>.json'.
 ```
 
@@ -679,20 +775,38 @@ before the review-round comment is posted, so a failure here leaves the PR unrev
 mergeable with its blocker missing:
 
 ```bash
+REVIEWED_KEY="$(hew show <n> --json | jq -r '.body' | sed -n 's/^review-key: //p' | head -1)"
+REVIEWED_ARGS=()
+[ -n "$REVIEWED_KEY" ] && REVIEWED_ARGS=(--reviewed-key "$REVIEWED_KEY")
 uv run --no-project <raise-issues skill dir>/scripts/findings_to_plan.py \
   "$OUTDIR/outcomes/wr-<pr>.json" --parent <epic> --reviewed-issue <n> --reviewed-pr <pr> \
+  "${REVIEWED_ARGS[@]}" \
   --at-or-above P2 --out "$OUTDIR/wr-<pr>.plan.jsonl"
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl" --dry-run
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 ```
 
-The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically,
-stamps `review-of: #<n> (PR #<pr>)` into `where`, and — with `--at-or-above P2` — leaves P3s
-to the round comment. Exit 3 means the file's status is not `reviewed`; Step 5 has already
-escalated that case, so it should never reach here. Before applying, apply raise-issues' Step 3
-dedup table against the emitted keys — `hew search "review-key: <key>"` spans open and closed,
-so a finding whose fix merged before is re-filed as a regression (`--discovered-from`), and one
-a human declined stays suppressed. Drop suppressed lines from the plan before `hew apply`.
+The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically from
+the finding's own file set, stamps `review-of: #<n> (PR #<pr>)` into `where`, and — with
+`--at-or-above P2` — leaves P3s to the round comment. `REVIEWED_KEY` is the reviewed issue's
+own stored key when it is a finding; passing it appends `#family:<key>` to every new key, so a
+generation-2 finding does not deduplicate onto the finding it reviews. Exit 3 means the file's
+status is not `reviewed`; Step 5 has already escalated that case, so it should never reach here.
+Before applying, apply raise-issues' Step 3 dedup table against the emitted keys —
+`hew search "review-key: <key>"` spans open and closed, so a finding whose fix merged before is
+re-filed as a regression (`--discovered-from`), and one a human declined stays suppressed. The
+new key is more specific than the old package-wide one; also search the legacy key (deepest
+common directory, or the single file) and accept a legacy hit only when its body describes the
+same finding. Drop suppressed lines from the plan before `hew apply`.
+
+The children filed from one review share `review-of: #<n> (PR #<pr>)` and are worked as one
+batch. When their blocker clears, Step 8 groups the consecutive eligible children with the same
+`reviewOf` and starts one implementer with the batch prompt. The batch produces one branch and
+PR per finding — each PR's `Fixes #<n>` closes only its own child, and the local
+`integration/batch-...` branch is a check that is never pushed and closes nothing. The first
+child owns the card; the rest are recorded as `batchOf` entries with their own PRs. The batch
+is bounded to that reviewed issue's findings, so do not add an unrelated ready issue to fill
+the ceiling.
 
 Each findings child is filed `blocked-by` the reviewed issue, so a below-`--block-on` finding's
 fix unblocks exactly when the PR merges and the defect exists on main. An at-or-above
@@ -815,17 +929,21 @@ reconciler auto, 2 workers, max 4 open PRs, block-on P1, squash, resolve-conflic
     main ff'd; worktree removed
   #22 we-22 (claude): delivered → PR #35; P2 finding filed as #41 (blocked by #22);
     reviewed by codex; worktree <id> in-review
+  #41+#43+#44 we-41 (opencode): review batch of 3 → PRs #50/#51/#52; #50 merged, #51 clean
+    review, #52 held on #45; batch card <id> in-review
   #23 skipped: blocked (blocked by #35)
   #24 we-24 (opencode): delivered → PR #36; P1 finding #44 filed — PR held, worktree <id> unread,
     reviewed by claude
   #26 skipped: stalled (branch fix/26-retry-budget pushed, no open PR)
+  #27 skipped: finding_depth (generation 2 finding reviews #24; --finding-depth 1)
   PR #34 wr-34-r1 (claude): clean (reviewed-head 9f2c…); reviewer worktree removed
   PR #36 wc-36 (opencode): reconciled vs origin/main in child worktree (gate: go test ./... —
     passed) — re-drafted, reviewer claude spawned
   PR #38 wc-38 (opencode): irreconcilable (pkg/api rename vs #33's call sites) — coupling filed
     #46, PR parked, worktree <id> retained
   merge pass: 2 merged, 1 update_branch, 1 conflict (PR #37, filed #45), 1 held
-  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1
+  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1,
+    finding_depth 1
   epic progress: 5/8 children closed — 0 eligible remain, spawn budget 2; pump stopped, not drained
   retained worktrees: #24 <id> (held); #38 <id> (conflict); 0 reclaimable terminals
   escalations: we-25 <worktree-id> (claude) blocked on a permission dialog (unread)
@@ -839,10 +957,11 @@ instead of a mixed rotation. A run that names an explicit reviewer list prints i
 "0 eligible remain" without "stopped, not drained" reads as a finished epic; the resolver's
 `counts` is what keeps the two apart, which is the same distinction work-issue's
 `no_ready_work` vs `not_eligible` protects. Likewise "N eligible remain, spawn budget 0" is a
-full backlog, not an empty queue. PRs set aside on a spent CI budget when the pump stops are
-listed so the next run — or the human — knows what is still in flight. A retained worktree with
-no reason is an omission: every one is either held, conflicted, failed, blocked, or kept for a
-human's inspection.
+full backlog, not an empty queue. A non-zero `finding_depth` is a parked findings backlog: name
+the generations and the issues they review, and do not call the epic drained. PRs set aside on
+a spent CI budget when the pump stops are listed so the next run — or the human — knows what is
+still in flight. A retained worktree with no reason is an omission: every one is either held,
+conflicted, failed, blocked, or kept for a human's inspection.
 
 ## Script tests
 
@@ -855,7 +974,9 @@ python3 -m unittest discover <this skill's directory>/scripts
 ```
 
 A change to a decision table, a skip reason, or a parser lands with the test case that pins it,
-before the pump that depends on it is trusted.
+before the pump that depends on it is trusted. The findings bound is pinned in
+`test_resolve_ready.py`: generation 1 eligible, generation 2 parked, the flag raising the
+bound, and `counts.finding_depth`.
 
 ## Worktree reliability notes
 

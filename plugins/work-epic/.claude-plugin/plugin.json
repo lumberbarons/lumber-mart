@@ -1,7 +1,7 @@
 {
   "name": "work-epic",
-  "description": "Skill for orchestrating a hew epic across Orca-managed worktrees and supervised agents. Resolves the epic's ready children deterministically, creates one Orca worktree per child, starts an implementer running work-issue, reviews each delivered PR with a review agent chosen independently of the implementer (a different agent whenever the pool allows), files the findings as epic children, and — by default — merges PRs once CI is green and fast-forwards main. With --resolve-conflicts a reconciler agent merges the default branch into a conflicted PR in the child's worktree and reconciles both sides' intent; its new head is re-reviewed before any merge. --human-review stops at drafts and leaves every merge to the human.",
-  "version": "3.0.0",
+  "description": "Skill for orchestrating a hew epic across Orca-managed worktrees and supervised agents. Resolves the epic's ready children deterministically, creates Orca worktrees for its children (a review's findings share one batch card), starts an implementer running work-issue, reviews each delivered PR with a review agent chosen independently of the implementer (a different agent whenever the pool allows), files the findings as epic children, and — by default — merges PRs once CI is green and fast-forwards main. With --resolve-conflicts a reconciler agent merges the default branch into a conflicted PR in the child's worktree and reconciles both sides' intent; its new head is re-reviewed before any merge. --human-review stops at drafts and leaves every merge to the human.",
+  "version": "3.1.0",
   "author": {
     "name": "lumberbarons"
   }
