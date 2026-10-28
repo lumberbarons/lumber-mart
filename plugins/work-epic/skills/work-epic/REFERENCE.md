@@ -351,7 +351,7 @@ report it; do not adopt, release, or remove it.
 ## Resolver output
 
 One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--resume]
-[--max-open-prs N]`:
+[--max-open-prs N] [--finding-depth N]`:
 
 ```json
 {
@@ -367,10 +367,12 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
     { "number": 22, "title": "child c", "reason": "blocked", "detail": "blocked by #35" },
     { "number": 23, "title": "child d", "reason": "in_review", "detail": "PR #40 open" },
     { "number": 24, "title": "child e", "reason": "claimed", "own": true,
-      "detail": "in progress @you — pass --resume to pick it up" }
+      "detail": "in progress @you — pass --resume to pick it up" },
+    { "number": 25, "title": "finding at depth 2", "reason": "finding_depth",
+      "detail": "generation 2 finding reviews #24, itself a review finding; --finding-depth 1 parks it for human triage" }
   ],
   "counts": { "eligible": 1, "blocked": 1, "untriaged": 0, "claimed": 1,
-              "in_review": 1, "stalled": 0, "closed": 4 },
+              "in_review": 1, "stalled": 0, "finding_depth": 1, "closed": 4 },
   "spawnBudget": 2
 }
 ```
@@ -391,6 +393,11 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
 - `skipped` — open children left behind, `reason` one of:
   - `in_review` — an open PR's head branch carries the child's number. Delivered; the merge
     pass owns it now, whoever holds the claim.
+  - `finding_depth` — the child is a review finding whose reviewed issue is itself a review
+    finding, and its generation is above `--finding-depth`. `detail` names the generation and
+    the issue it reviews. This is the stopping rule for a review spiral: findings are a backlog,
+    not a queue, so generation 1 is worked and deeper generations — or a chain that cannot be
+    read — wait for a human.
   - `blocked` — open blockers.
   - `untriaged` — missing priority or type.
   - `claimed` — in progress by someone else, or by you with neither PR nor pushed branch
@@ -400,10 +407,21 @@ One JSON object from `scripts/resolve_ready.py <epic> [--repo owner/name] [--res
 
   "You" is the current `gh api user` login; when it cannot be determined every in-progress
   child is treated as claimed by someone else (fail-safe).
+- `counts` sums every skip reason plus `eligible` and `closed`. `finding_depth` is the parked
+  findings backlog: report it separately, because it is neither a drained queue nor a blocked
+  PR. The bound is computed from the epic's own child bodies, which `hew list --epic --bodies
+  --state all` supplies; a reviewed issue the listing omits (typically a closed finding) is
+  fetched with `hew show`, following the chain to its root. A target that cannot be read parks
+  the finding as `finding_depth` rather than reading as product code: a lookup that failed must
+  not let a review chain run on.
 - `spawnBudget` — `--max-open-prs` minus the epic's open PRs (`in_review`) minus your own bare
   claims (`claimed` with `own: true` — workers in flight, each a PR on its way), floored at
   zero; `null` without the flag. Parked PRs count. A crashed run's leftover claims count too
   until `--resume` picks them up — the fail-safe direction, spawning less.
+- `--finding-depth N` — the generation bound, default 1. Generation 1 reviews product code;
+  generation 2 reviews a finding. A child at `generation > N` is `finding_depth`; a child at or
+  below it is eligible as usual. The flag only raises the bound; it never forces a child that
+  is blocked, claimed, or in review.
 - The PR and branch reads fail the whole run rather than degrade: without them a delivered or
   failed child would read as eligible.
 - Exit codes: `0` success (eligible may be empty), `1` runtime error, `2` usage error or
@@ -682,17 +700,24 @@ mergeable with its blocker missing:
 uv run --no-project <raise-issues skill dir>/scripts/findings_to_plan.py \
   "$OUTDIR/outcomes/wr-<pr>.json" --parent <epic> --reviewed-issue <n> --reviewed-pr <pr> \
   --at-or-above P2 --out "$OUTDIR/wr-<pr>.plan.jsonl"
+hew list --json --bodies --state all > "$OUTDIR/issues.ndjson"
+uv run --no-project <raise-issues skill dir>/scripts/dedup_candidates.py \
+  "$OUTDIR/wr-<pr>.plan.jsonl" "$OUTDIR/issues.ndjson" --reviewed-issue <n>
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl" --dry-run
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 ```
 
 The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically,
-stamps `review-of: #<n> (PR #<pr>)` into `where`, and — with `--at-or-above P2` — leaves P3s
-to the round comment. Exit 3 means the file's status is not `reviewed`; Step 5 has already
-escalated that case, so it should never reach here. Before applying, apply raise-issues' Step 3
-dedup table against the emitted keys — `hew search "review-key: <key>"` spans open and closed,
-so a finding whose fix merged before is re-filed as a regression (`--discovered-from`), and one
-a human declined stays suppressed. Drop suppressed lines from the plan before `hew apply`.
+stamps `review-of: #<n> (PR #<pr>)` into `where`, and — with
+`--at-or-above P2` — leaves P3s to the round comment. Exit 3 means the file's status is not
+`reviewed`; Step 5 has already escalated that case, so it should never reach here.
+`dedup_candidates.py` lists, per plan line, the issues that already carry the same key and were
+raised against this reviewed issue; a hit on the reviewed issue itself, or on a finding raised
+against another issue, comes back under `other_generation` and is never a reason to skip. For
+each candidate, apply raise-issues' Step 3 table: read the body, and skip the line only if it
+describes the same finding. The scan spans open and closed, so a finding whose fix merged before
+is re-filed as a regression (`--discovered-from`), and one a human declined stays suppressed.
+Drop suppressed lines from the plan before `hew apply`.
 
 Each findings child is filed `blocked-by` the reviewed issue, so a below-`--block-on` finding's
 fix unblocks exactly when the PR merges and the defect exists on main. An at-or-above
@@ -819,13 +844,15 @@ reconciler auto, 2 workers, max 4 open PRs, block-on P1, squash, resolve-conflic
   #24 we-24 (opencode): delivered → PR #36; P1 finding #44 filed — PR held, worktree <id> unread,
     reviewed by claude
   #26 skipped: stalled (branch fix/26-retry-budget pushed, no open PR)
+  #27 skipped: finding_depth (generation 2 finding reviews #24; --finding-depth 1)
   PR #34 wr-34-r1 (claude): clean (reviewed-head 9f2c…); reviewer worktree removed
   PR #36 wc-36 (opencode): reconciled vs origin/main in child worktree (gate: go test ./... —
     passed) — re-drafted, reviewer claude spawned
   PR #38 wc-38 (opencode): irreconcilable (pkg/api rename vs #33's call sites) — coupling filed
     #46, PR parked, worktree <id> retained
   merge pass: 2 merged, 1 update_branch, 1 conflict (PR #37, filed #45), 1 held
-  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1
+  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1,
+    finding_depth 1
   epic progress: 5/8 children closed — 0 eligible remain, spawn budget 2; pump stopped, not drained
   retained worktrees: #24 <id> (held); #38 <id> (conflict); 0 reclaimable terminals
   escalations: we-25 <worktree-id> (claude) blocked on a permission dialog (unread)
@@ -839,10 +866,11 @@ instead of a mixed rotation. A run that names an explicit reviewer list prints i
 "0 eligible remain" without "stopped, not drained" reads as a finished epic; the resolver's
 `counts` is what keeps the two apart, which is the same distinction work-issue's
 `no_ready_work` vs `not_eligible` protects. Likewise "N eligible remain, spawn budget 0" is a
-full backlog, not an empty queue. PRs set aside on a spent CI budget when the pump stops are
-listed so the next run — or the human — knows what is still in flight. A retained worktree with
-no reason is an omission: every one is either held, conflicted, failed, blocked, or kept for a
-human's inspection.
+full backlog, not an empty queue. A non-zero `finding_depth` is a parked findings backlog: name
+the generations and the issues they review, and do not call the epic drained. PRs set aside on
+a spent CI budget when the pump stops are listed so the next run — or the human — knows what is
+still in flight. A retained worktree with no reason is an omission: every one is either held,
+conflicted, failed, blocked, or kept for a human's inspection.
 
 ## Script tests
 
@@ -855,7 +883,9 @@ python3 -m unittest discover <this skill's directory>/scripts
 ```
 
 A change to a decision table, a skip reason, or a parser lands with the test case that pins it,
-before the pump that depends on it is trusted.
+before the pump that depends on it is trusted. The findings bound is pinned in
+`test_resolve_ready.py`: generation 1 eligible, generation 2 parked, the flag raising the
+bound, and `counts.finding_depth`.
 
 ## Worktree reliability notes
 

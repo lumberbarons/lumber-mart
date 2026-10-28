@@ -84,7 +84,8 @@ mechanically (scope per the table below) and appending `review-of: #<n> (PR #<pr
 pass greps to attribute an open finding child to the PR it holds — treat it like
 `review-key:`: bare, exact, never re-rendered. Priority passes straight through, clamped to
 `P1..P4` (a P0 finding files as P1 — P0 is a human's declaration). Dedup is *not* the
-converter's job: run the Step 3 table against the emitted keys yourself before `hew apply`.
+converter's job: run Step 3 against the emitted plan yourself before `hew apply`, with
+`dedup_candidates.py` (below) narrowing the candidates.
 The converter emits `portability/` for both `portability` and legacy `skills` input; deduplication
 must still search for already-filed `skills/` keys.
 
@@ -95,6 +96,23 @@ for callers (the work-epic pump) that relay those elsewhere rather than track th
 threshold compares the finding's own priority, so a P0 still passes and files as P1. The whole file is rejected when `skill` is missing, and a
 file whose `status` is `no_scope` or `error` exits 3 — nothing was reviewed, which is a
 different outcome from "reviewed, nothing found" (exit 0, empty plan).
+
+## Dedup candidates script
+
+`scripts/dedup_candidates.py` applies the mechanical half of Step 3 to a plan:
+
+```bash
+dedup_candidates.py <plan.jsonl> <issues.ndjson> [--reviewed-issue <n>] [--out FILE]
+```
+
+`issues.ndjson` is `hew list --json --bodies --state all`. Per plan line it prints
+`{line, key, candidates, other_generation}`. A candidate is an issue whose stored `review-key:`
+line equals the plan line's key exactly (the `portability/` and legacy `skills/` spellings count
+as one) and, when `--reviewed-issue` is given, whose `review-of:` names that issue. Each carries
+`same_paths`, true when its affected paths — line numbers ignored — are the same set as the plan
+line's; a false value is information (the finding may have widened), not a filter. Issues with
+the same key raised against any other review target are listed in `other_generation` and never
+suppress the finding. Whether a candidate describes the same problem stays with the agent.
 
 ## Deriving scope
 
@@ -129,6 +147,19 @@ $ hew show 96          # closed how?
 The first is skipped — already tracked. The second is a regression: the pattern came back after
 a fix shipped, so it is filed fresh with `"discovered-from": 96` linking the history, not
 silently re-raised as if it were new.
+
+A finding about a fix works the other way. Suppose #118 was filed from a review of product code
+and its fix PR is now reviewed; the review reports the same pattern in the same directory.
+
+```
+$ dedup_candidates.py plan.jsonl issues.ndjson --reviewed-issue 118
+{"line": 1, "key": "o11y/credential-in-log/internal/http/middleware", "candidates": [], "other_generation": [118]}
+```
+
+#118 carries the same key but no `review-of: #118`, so it is the finding the PR fixed, not this
+one. The new finding is filed (with `blocked-by` and `discovered-from` pointing at #118, as the
+converter already emits). Re-running that review later lists the new issue under `candidates`,
+because it carries `review-of: #118`, and the finding is skipped.
 
 Had #96 been closed as not-planned, the finding would be suppressed instead — permanently. A
 declined issue is a decision, and re-filing it every cycle is how a review pipeline gets muted.
