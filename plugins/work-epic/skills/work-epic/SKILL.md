@@ -1,6 +1,6 @@
 ---
 name: work-epic
-description: Burn through a hew epic or a set of issues end to end with Orca-managed worktrees and supervised agents — a driver script resolves the ready issues, creates one Orca worktree per issue, starts a supervised implementer running work-issue in it, has a different agent review each delivered PR and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make. Use whenever the user wants issues worked by orchestrating agents — "work on this epic", "drain epic 12", "work issues 21 22 25", "fix all the bugs in the parser", "orchestrate #42", "pump the epic and merge it". Not for a single issue (that goes to work-issue) and never for closing issues or the epic itself.
+description: Burn through a hew epic or a set of issues end to end with Orca-managed worktrees and supervised agents — a driver script resolves the ready issues, creates one Orca worktree per issue, starts a supervised implementer running work-issue in it, has a different agent review each delivered PR and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make. Use whenever the user wants issues worked by orchestrating agents — "work on this epic", "drain epic 12", "work issues 21 22 25", "fix all the bugs in the parser", "orchestrate #42", "pump the epic and merge it". A single issue goes to work-issue unless the user explicitly wants the review-and-merge pipeline around it; never for closing issues or the epic itself.
 argument-hint: "Issue numbers, an epic number, or a description of the work (e.g. 'fix all the bugs in the importer'). Flags: --workers N (default 2), --dry-run, --resume"
 ---
 
@@ -22,7 +22,9 @@ re-implement the loop by hand; if the driver cannot do something, stop and say s
 reviewer is a **different** agent from the implementer — a second point of view — and the fix
 happens in the session that found the problem, so nothing is re-reviewed: a PR is reviewed once.
 The agents are one block in [scripts/pump.py](scripts/pump.py) (`IMPLEMENTER`, `REVIEWER`,
-`REPAIRER`); edit them there.
+`REPAIRER`). Changing one is a source edit in a checkout of this plugin: an installed copy is a
+cache that updates overwrite, so if the user asks for different agents, say that instead of
+patching the cache.
 
 > [!IMPORTANT]
 > [REFERENCE.md](REFERENCE.md) carries the driver's module map, state file, card states, the
@@ -80,10 +82,13 @@ uv run --no-project "<this skill's directory>/scripts/work_epic.py" <scope> [--w
 There are no other flags. Merges are squash, conflicts and red CI are repaired, and a P1 the
 reviewer could not fix holds its PR — these are the policy, not options.
 
-Run it in the foreground in the coordinator's terminal and let it run: a scope can take hours, and
-it logs what it starts, parks, and merges as it goes. Do not interrupt it to poll; do not start a
-second driver over the same issues (two pumps on one `gh` login only meet at `hew start`'s claim
-lock).
+Run it in the coordinator's terminal and let it run to its exit: a scope can take hours, and it
+logs what it starts, parks, and merges as it goes. Many harnesses cap how long one command may run
+(ten minutes is common), and a driver killed by that cap leaves workers settling with nobody to
+reap them. So start it the way your harness runs a long command to completion — a background or
+detached run that reports its exit — and wait for that exit instead of polling its output. If it
+was cut off anyway, tell the user; `--resume` is theirs to ask for. Do not start a second driver
+over the same issues (two pumps on one `gh` login only meet at `hew start`'s claim lock).
 
 ### 3. Relay the report
 
