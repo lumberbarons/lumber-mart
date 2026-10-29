@@ -301,9 +301,20 @@ Three checks, in this order, before anything is pushed:
    issue named that you never touched means you solved a different problem than the one filed,
    or the issue's scope was wrong. Either way, stop and explain the gap rather than shipping
    past it.
-3. **The repo's quality gate.** Detect it from the changed files — the language-to-command table
-   is in [REFERENCE.md](REFERENCE.md). Run every gate that applies; a change touching Go and
-   Terraform runs both.
+3. **Every check the project gates on.** Not just the tests: linters, formatters in check mode,
+   type checkers, builds, and anything else the project has set up to hold quality. Find them by
+   reading what the project itself runs — CI workflows, `Makefile`/`justfile`/`Taskfile` targets,
+   `package.json` scripts, pre-commit config, and the repo's agent instructions or contributing
+   guide — and run what CI would run on this branch. The language-to-command table in
+   [REFERENCE.md](REFERENCE.md) is the floor for a project that defines nothing, never the
+   ceiling. Narrow a check to the changed module while iterating, but the final run is the one
+   the project runs, at the scope the project runs it.
+
+The work is not done until all of them pass. A check you could not run (tool missing, needs
+credentials or network) is not a pass: name it in the outcome's `gate` and in the PR's
+`--testing` instead of leaving it out. A check that also fails on the default branch is not this
+change's doing — confirm that by running it there, record it in `gate`, and carry on rather than
+failing the issue over it.
 
 A failure here is not something to work around. Fix it inside the issue's scope and re-run. If
 it cannot be fixed inside that scope, that is a `failed` outcome: commit and push the branch so

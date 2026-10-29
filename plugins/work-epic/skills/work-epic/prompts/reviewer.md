@@ -13,7 +13,8 @@ Then:
 4. For each finding at P0, P1, or P2, in order, try to fix it:
    - make the smallest change that resolves it, inside the files this PR already changes or
      their direct tests;
-   - run the quality gate the changed files select (the table in ${work_issue_dir}/REFERENCE.md);
+   - run every check the project gates on — tests, linters, type checks, builds — as step 6 of
+     ${work_issue_dir}/SKILL.md describes; its REFERENCE.md table is only the floor;
    - if the gate passes, commit it as `fix: <finding title>` and set "fixed": true and
      "fixedIn": "<short sha>" on that finding in the file;
    - otherwise undo the change entirely (`git restore --staged --worktree .`) and set

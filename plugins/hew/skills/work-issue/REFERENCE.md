@@ -61,8 +61,12 @@ coupled, and only a human reading the pair resolves that.
 
 ## Quality gates
 
-Detect from the files the branch changed (`git diff <default-branch>...HEAD --name-only`), then
-run every gate that applies — a change touching Go and Terraform runs both.
+Step 6 runs every check the project defines — tests, linters, formatters, type checkers, builds —
+found in its CI workflows, task runner targets, package scripts, pre-commit config and contributing
+docs. This table is the floor: what to run for a language when the project names nothing, and the
+minimum even when it does. Detect from the files the branch changed
+(`git diff <default-branch>...HEAD --name-only`) and run every row that applies — a change touching
+Go and Terraform runs both.
 
 | Changed | Gate |
 |---|---|
@@ -76,10 +80,11 @@ run every gate that applies — a change touching Go and Terraform runs both.
 | `*.swift` | `swift test` |
 | `*.php` | `./vendor/bin/phpunit` |
 | `*.tf` `*.tfvars` | `terraform validate` in the module directory |
-| Shell, config, docs only | No automated gate — the `### Done when` items are the verification |
+| Shell, config, docs only | Nothing from this table — the `### Done when` items are the verification, plus whatever the project checks such files with (shellcheck, a markdown or link lint, a schema validator) |
 
-Prefer whatever the repo actually runs in CI over this table when the two disagree; a Makefile
-target or a CI workflow naming the real command is better evidence than a language guess.
+When the repo's own command for a row differs from the table, run the repo's: a Makefile target or
+a CI workflow naming the real command is better evidence than a language guess. The table never
+excuses skipping a check the project defines because no row mentions it.
 
 Step 8 runs the same table against the *union* of the files the batch changed, which can pull in
 a gate no single issue triggered — three Go-only fixes plus one touching Terraform means the
