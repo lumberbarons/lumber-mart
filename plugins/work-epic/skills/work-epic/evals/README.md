@@ -16,7 +16,7 @@ shows are already covered where they are made.
 ## What is tested
 
 The policy layer: `resolve_ready.py` (which children, in what order) and `pr_state.py` (which
-PRs merge, reconcile, update, hold, or escalate), plus `repo_state.py`'s parsers. `test_*.py`
+PRs merge, repair, update, or hold), plus `repo_state.py`'s parsers. `test_*.py`
 pins every decision, skip reason, and parser case. Run them from the repo root:
 
     python3 -m unittest discover -s plugins/work-epic/skills/work-epic/scripts
@@ -58,10 +58,15 @@ Do not use `--runs-per-query 3`, `--num-workers 10`, or `--max-iterations 5`. Ex
 session. A trigger check says nothing about whether the pump works; it only says whether the
 description was selected for one phrasing.
 
-## What a real harness would take
+## The simulated harness, and what is still unproven
 
-The same shape as `work-issue`'s hew stub, extended: executable stubs for `orca`, `hew`, and
-`gh` on `PATH`; a fixture repo and epic; `--dry-run` for the planner path and a recorded
-dispatch lifecycle for the worker path; assertions over the command log (spawn order, one
-worktree per child, reviewer on a review branch, no merge without a current review). That is a
-feature, not a fixture. Until it exists, the planner tests are the honest coverage.
+`scripts/test_pump.py` is the harness this section used to ask for: the real pump loop, the real
+decision tables, and a simulated Orca, GitHub, and tracker (`World`), with scenarios for the happy
+path, review and fix, holds, repairs, halts, stalls, resume, and the mailbox, asserting over the
+command log (one worktree per issue, the reviewer in that same worktree, no merge without a review
+round, every Delivery acknowledged). It runs in CI like the other tests.
+
+What it cannot prove is that Orca behaves as the fake does. `test_orca_api.py` pins the shapes
+captured from a live Orca 1.4.x, but the `worker-start` receipt and the settlement of real agents
+come from past runs, not from exercising this code. The first real epic is the live test; run it with
+`--workers 1` on a small, low-risk scope and watch the log.

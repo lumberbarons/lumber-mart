@@ -29,6 +29,52 @@ def run(cmd):
     return p.stdout
 
 
+def parse_scope(tokens):
+    """Issue numbers from positional args: `12`, `#12`, and `12,13` all work.
+
+    Returns None when any token is not a number, so each script can print
+    its own usage line. Order is kept and duplicates dropped.
+    """
+    numbers = []
+    for token in tokens:
+        for part in token.split(","):
+            part = part.strip().lstrip("#")
+            if not part.isdigit():
+                return None
+            if int(part) not in numbers:
+                numbers.append(int(part))
+    return numbers or None
+
+
+def scope_issues(numbers, repo=None):
+    """The hew rows a run covers: each issue itself, an epic as its children.
+
+    `hew show` and `hew list` share one row schema, so the rows are
+    interchangeable. An issue named twice (directly and through its epic)
+    appears once, at its first position.
+    """
+    suffix = ["--repo", repo] if repo else []
+    rows, seen = [], set()
+    for n in numbers:
+        shown = json.loads(run(["hew", "show", str(n), "--json", *suffix]))
+        if shown.get("epic"):
+            found = [
+                json.loads(line)
+                for line in run(
+                    ["hew", "list", "--epic", str(n), "--json", "--bodies",
+                     "--state", "all", *suffix]
+                ).splitlines()
+                if line.strip()
+            ]
+        else:
+            found = [shown]
+        for row in found:
+            if row["number"] not in seen:
+                seen.add(row["number"])
+                rows.append(row)
+    return rows
+
+
 def branch_issue(name):
     """The issue number a conventional branch name carries, or None."""
     m = BRANCH_ISSUE_RE.match(name or "")
@@ -40,9 +86,8 @@ def main_checkout():
 
     `git worktree list --porcelain` lists the main worktree first; that is
     the checkout every other worktree hangs off, so it is where the pump
-    fetches, fast-forwards the default branch, and creates the throwaway
-    integration worktree. Orca child worktrees are based on
-    origin/<default> explicitly, not on this checkout's HEAD.
+    fetches and fast-forwards the default branch. Orca child worktrees are
+    based on origin/<default> explicitly, not on this checkout's HEAD.
     """
     p = subprocess.run(
         ["git", "worktree", "list", "--porcelain"], capture_output=True, text=True
