@@ -12,6 +12,10 @@ and every open PR is parked on a decision only a human can make.
 State is `state.json` in the coordinator's scratch directory: the agents it
 started, the issues' PR/review phases, and the decisions parked. Everything
 else is re-read from Orca, hew, and GitHub each tick, so a restart loses nothing.
+
+On a local tracker (`Config.local`) there is no GitHub: a delivery is a committed
+branch whose id is its issue number, "merged" is a squash into the local default
+branch, and local_state.py supplies the two planners. The loop is the same.
 """
 
 import json
@@ -87,10 +91,10 @@ class State:
 
 class Config:
     def __init__(self, *, scope, coord, outdir, work_issue_dir, workers=2, repo=None,
-                 resume=False, main=None, default="main"):
+                 resume=False, main=None, default="main", local=False):
         self.scope, self.workers, self.repo, self.resume = scope, workers, repo, resume
         self.coord, self.outdir, self.work_issue_dir = coord, outdir, work_issue_dir
-        self.main, self.default = main, default
+        self.main, self.default, self.local = main, default, local
 
 
 class Pump:
@@ -117,6 +121,10 @@ class Pump:
     def _gh(self, *args, input=None):
         suffix = ["-R", self.cfg.repo] if self.cfg.repo else []
         return self._sh("gh", *args, *suffix, input=input)
+
+    def label(self, pr):
+        """How a delivery reads in a card or a decision: a PR, or on a local tracker its branch."""
+        return f"#{pr}'s branch" if self.cfg.local else f"PR #{pr}"
 
     def marker(self, key, agent, text):
         return f"work-epic · {self.run_id} · {key} · {agent} · {text}"
@@ -206,7 +214,7 @@ class Pump:
     def sync_main(self):
         """Fetch, and fast-forward the human's checkout only while it sits on the default branch."""
         main = self.cfg.main
-        if not main:
+        if not main or self.cfg.local:  # a local tracker has no origin to follow
             return
         self.sh(["git", "-C", main, "fetch", "origin"])
         head = self.sh(["git", "-C", main, "symbolic-ref", "--short", "HEAD"])
@@ -371,7 +379,7 @@ class Pump:
                 "we", str(n), n, spec=render("worker", n=n), title=f"{name} · {IMPLEMENTER}",
                 agent=IMPLEMENTER, worktree="new-child", wid=None, path=None,
                 repo=f"id:{self.cfg.coord['repoId']}", name=name,
-                display_name=f"#{n} {title[:50]}", base_branch=f"origin/{self.cfg.default}",
+                display_name=f"#{n} {title[:50]}", base_branch=self.cfg.default if self.cfg.local else f"origin/{self.cfg.default}",
                 comment=self.marker(name, IMPLEMENTER, "worker started"), setup="inherit")
         except OrcaError as e:
             return self.unscheduled(n, e)
@@ -380,6 +388,7 @@ class Pump:
         self.state["agents"][rec.dispatch].update(worktree=wid, path=path)
         iss = self.state.issue(n)
         iss.update(state="implementing", worktree=wid, path=path, large=e.get("large", False),
+                   title=title,
                    orca_branch=(row.get("branch") or "").removeprefix("refs/heads/") or None)
         self.orca.worktree_set(wid, issue=n, status="in-progress")
         self.log(f"started {name} ({IMPLEMENTER}) in {path}")
@@ -404,6 +413,8 @@ class Pump:
         if status == "delivered":
             entry = (out.get("issues") or [{}])[0]
             pr, branch = entry.get("pr"), entry.get("branch")
+            if self.cfg.local:
+                return self.delivered_locally(n, branch)
             if not pr and branch:
                 found = self._gh("pr", "list", "--head", branch, "--json", "number", "--jq", ".[0].number")
                 pr = int(found.out.strip()) if found.rc == 0 and found.out.strip().isdigit() else None
@@ -425,6 +436,28 @@ class Pump:
                       card=f"error: {out.get('reason', status)}"[:140])
             self.halt(f"worker for #{n} errored: {out.get('reason', status)}")
 
+    def delivered_locally(self, n, branch):
+        """A local delivery is a committed branch, and its id is the issue number."""
+        iss = self.state.issue(n)
+        if not branch or self.branch_head(iss["path"], branch) is None:
+            return self.halt(f"#{n} reported delivered without a branch that exists")
+        iss.update(state="delivered", pr=n, branch=branch)
+        self.card(n, "branch delivered; review pending", status="in-review")
+
+    def branch_head(self, path, branch):
+        """The commit a local branch points at, as seen from a worktree, or None."""
+        proc = self.sh(["git", "-C", path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"])
+        return (proc.out.strip() or None) if proc.rc == 0 else None
+
+    def verify(self, n, claimed):
+        """Record the head the gate passed on, when the agent's claim is the branch's actual head."""
+        iss = self.state.issue(n)
+        actual = self.branch_head(iss["path"], iss["branch"])
+        if actual and claimed and len(claimed) >= 7 and actual.startswith(claimed):
+            iss["verified_head"] = actual
+            return True
+        return False
+
     # --- reviewers ------------------------------------------------------------------
 
     def reviewer_live(self, pr):
@@ -439,9 +472,10 @@ class Pump:
         pr = iss["pr"]
         if not self.clean(iss["path"]):
             iss["state"] = "review_failed"
-            return self.park(f"review-{pr}", f"PR #{pr}: the worktree is dirty, so it was not reviewed",
+            return self.park(f"review-{pr}", f"{self.label(pr)}: the worktree is dirty, so it was not reviewed",
                              issue=n, pr=pr, card="DIRTY: not reviewed")
-        spec = render("reviewer", n=n, pr=pr, branch=iss["branch"], default=self.cfg.default,
+        spec = render("reviewer_local" if self.cfg.local else "reviewer", n=n, pr=pr,
+                      branch=iss["branch"], default=self.cfg.default,
                       work_issue_dir=self.cfg.work_issue_dir)
         try:
             self.start_agent("wr", str(pr), n, spec=spec, title=f"wr-{pr} · {REVIEWER}",
@@ -449,7 +483,7 @@ class Pump:
                              path=iss["path"], pr=pr)
         except OrcaError as e:
             iss["state"] = "review_failed"
-            return self.park(f"review-{pr}", f"PR #{pr}: the reviewer could not start — {e}",
+            return self.park(f"review-{pr}", f"{self.label(pr)}: the reviewer could not start — {e}",
                              issue=n, pr=pr, card="REVIEW FAILED: reviewer did not start")
         iss["state"] = "reviewing"
         self.card(n, f"reviewing by {REVIEWER}", status="in-review")
@@ -460,23 +494,32 @@ class Pump:
         iss = self.state.issue(n)
         if out.get("status") != "reviewed":
             iss["state"] = "review_failed"
-            return self.park(f"review-{pr}", f"PR #{pr}: the review did not run — "
+            return self.park(f"review-{pr}", f"{self.label(pr)}: the review did not run — "
                              f"{out.get('reason', out.get('status'))}", issue=n, pr=pr,
                              card="REVIEW FAILED: not reviewed")
         try:
-            records = self.filer.file(pr=pr, issue=n, outcome_path=a["archived"])
+            records = self.filer.file(pr=None if self.cfg.local else pr, issue=n,
+                                      outcome_path=a["archived"])
         except findings.FilingError as e:
             iss["state"] = "review_failed"
-            return self.park(f"review-{pr}", f"PR #{pr}: filing the findings failed — {e}",
+            return self.park(f"review-{pr}", f"{self.label(pr)}: filing the findings failed — {e}",
                              issue=n, pr=pr, card="FILING FAILED: not reviewed")
         body = findings.round_comment(records, out.get("gate"))
-        posted = self._gh("pr", "comment", str(pr), "--body-file", "-", input=body)
-        if posted.rc != 0:
-            iss["state"] = "review_failed"
-            return self.park(f"review-{pr}", f"PR #{pr}: posting the round comment failed",
-                             issue=n, pr=pr, card="COMMENT FAILED: not reviewed")
+        if self.cfg.local:  # no PR to comment on; keep the round beside the outcomes
+            rounds = os.path.join(self.cfg.outdir, "rounds")
+            os.makedirs(rounds, exist_ok=True)
+            with open(os.path.join(rounds, f"wr-{pr}.md"), "w") as f:
+                f.write(body)
+        else:
+            posted = self._gh("pr", "comment", str(pr), "--body-file", "-", input=body)
+            if posted.rc != 0:
+                iss["state"] = "review_failed"
+                return self.park(f"review-{pr}", f"PR #{pr}: posting the round comment failed",
+                                 issue=n, pr=pr, card="COMMENT FAILED: not reviewed")
         fixed = sum(1 for r in records if r.get("fixed"))
         iss.update(state="reviewed", findings=[r["number"] for r in records if r.get("number")])
+        if self.cfg.local:  # the reviewer ran the gate on the head it reports; no CI will
+            self.verify(n, out.get("head"))
         blocker = findings.unfixed_blocker(records)
         if blocker:
             self.card(n, f"HOLD: {blocker.get('priority')} finding #{blocker.get('number')} not fixed "
@@ -526,7 +569,7 @@ class Pump:
         p["parked"] = action in GATE_ACTIONS
         if p.get("budgetSpent"):
             p["parked"] = True
-            self.park(key, f"PR #{pr}: no progress for {CI_BUDGET_S // 60} minutes "
+            self.park(key, f"{self.label(pr)}: no progress for {CI_BUDGET_S // 60} minutes "
                       f"({p.get('note')})", issue=n, pr=pr, kind="gate", card="STALLED: " + str(p.get("note")))
         if action == "merge":
             return self.merge(p)
@@ -534,12 +577,15 @@ class Pump:
             return self.simple(p, "ready" if action == "mark_ready" else "update-branch")
         if action == "repair":
             return self.start_repairer(p)
+        label, thing = self.label(pr), "the branch" if self.cfg.local else "the PR"
         gate_text = {
-            "hold": f"PR #{pr}: an open {p.get('worstOpenFinding')} finding the reviewer could not fix "
-                    "holds it; close the finding to release the PR",
-            "conflict": f"PR #{pr}: conflicts with the default branch and cannot be repaired automatically",
-            "ci_failed": f"PR #{pr}: checks are failing and repair attempts are spent",
-            "protected": f"PR #{pr}: branch protection wants something the pump cannot give "
+            "hold": f"{label}: an open {p.get('worstOpenFinding')} finding the reviewer could not fix "
+                    f"holds it; close the finding to release {thing}",
+            "conflict": f"{label}: conflicts with the default branch and cannot be repaired automatically",
+            "ci_failed": f"{label}: could not be brought up to date and gated, and repair attempts "
+                         "are spent" if self.cfg.local
+                         else f"PR #{pr}: checks are failing and repair attempts are spent",
+            "protected": f"{label}: branch protection wants something the pump cannot give "
                          "(typically an approving review)",
         }
         if action in gate_text:
@@ -565,18 +611,71 @@ class Pump:
         return False
 
     def merge(self, p):
+        if self.cfg.local:
+            return self.merge_local(p)
         pr, n = p["number"], p["issue"]
         done = self._gh("pr", "merge", str(pr), "--squash")
         if done.rc != 0:
-            fails = self.state["merge_failures"] = self.state.get("merge_failures", {})
-            fails[str(pr)] = fails.get(str(pr), 0) + 1
-            if fails[str(pr)] >= 2:
-                p["parked"] = True
-                self.park(f"pr{pr}:merge", f"PR #{pr}: merge failed twice — {done.err.strip()[:160]}",
-                          issue=n, pr=pr, kind="gate", card="MERGE FAILED")
-            return False
+            return self.merge_failed(p, done.err)
         self.state["merged"].append({"pr": pr, "issue": n})
         self.finish(n, p["branch"])
+        return True
+
+    def merge_failed(self, p, err):
+        """Count a failed merge; the second in a row parks the delivery."""
+        pr, n = p["number"], p["issue"]
+        fails = self.state["merge_failures"] = self.state.get("merge_failures", {})
+        fails[str(pr)] = fails.get(str(pr), 0) + 1
+        if fails[str(pr)] >= 2:
+            p["parked"] = True
+            self.park(f"pr{pr}:merge", f"{self.label(pr)}: merge failed twice — {err.strip()[:160]}",
+                      issue=n, pr=pr, kind="gate", card="MERGE FAILED")
+        return False
+
+    def main_blocker(self):
+        """Why the main checkout cannot take a merge now, or None.
+
+        The default branch is checked out there, so that is where it moves: on the default
+        branch and clean, the same bar sync_main sets for a fast-forward.
+        """
+        main = self.cfg.main
+        if not main:
+            return "no main checkout was found"
+        head = self.sh(["git", "-C", main, "symbolic-ref", "--short", "HEAD"])
+        if head.rc != 0 or head.out.strip() != self.cfg.default:
+            return f"the main checkout is not on {self.cfg.default}"
+        if not self.clean(main):
+            return "the main checkout has uncommitted changes"
+        return None
+
+    def merge_local(self, p):
+        """Squash the verified head into the default branch, then close the issue it delivers."""
+        pr = n = p["number"]
+        blocker = self.main_blocker()
+        if blocker:
+            p["parked"] = True
+            self.park(f"pr{pr}:merge", f"{self.label(pr)} is ready to merge but {blocker}",
+                      issue=n, pr=pr, kind="gate", card=f"MERGE BLOCKED: {blocker}"[:140])
+            return False
+        main, branch = self.cfg.main, p["branch"]
+        prefix = branch.split("/")[0] if branch.split("/")[0] in ("fix", "feat", "chore") else "chore"
+        title = self.state.issue(n).get("title") or f"issue #{n}"
+        # the exact head the planner verified, not whatever the branch name points at by now
+        done = self.sh(["git", "-C", main, "merge", "--squash", p["head"]])
+        if done.rc == 0:
+            done = self.sh(["git", "-C", main, "commit", "-m", f"{prefix}: {title} (#{n})\n\nCloses #{n}\n"])
+        if done.rc != 0:
+            self.sh(["git", "-C", main, "reset", "--merge"])
+            return self.merge_failed(p, done.err or done.out)
+        sha = self.sh(["git", "-C", main, "rev-parse", "HEAD"]).out.strip()
+        self.state["merged"].append({"pr": pr, "issue": n, "sha": sha})
+        # a merge is what closes the issue; there is no `Fixes #n` for a tracker to act on
+        closed = self._sh("hew", "close", str(n), "--completed", "--reason",
+                          f"Squash-merged {sha[:7]} into {self.cfg.default}")
+        if closed.rc != 0:
+            self.park(f"issue-{n}", f"#{n}: merged as {sha[:7]} but `hew close` failed — "
+                      f"{closed.err.strip()[:160]}", issue=n)
+        self.finish(n, branch)
         return True
 
     def finish(self, n, branch):
@@ -585,7 +684,8 @@ class Pump:
         iss["state"] = "merged"
         self.card(n, "merged", status="completed")
         removed = self.remove_worktree(iss.get("worktree"), iss.get("path"))
-        self._sh("gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{branch}")
+        if not self.cfg.local:  # a local branch has no remote ref
+            self._sh("gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{branch}")
         main = self.cfg.main
         if main and removed:
             self.sh(["git", "-C", main, "branch", "-D", branch])
@@ -619,35 +719,40 @@ class Pump:
         if not iss.get("worktree") or not iss.get("path"):
             # a PR this Run holds no worktree for is reported, never edited
             p["parked"] = True
-            self.park(key, f"PR #{pr}: needs a repair but this run holds no worktree for it",
+            self.park(key, f"{self.label(pr)}: needs a repair but this run holds no worktree for it",
                       issue=n, pr=pr, kind="gate")
             return False
         if self.writers() >= self.cfg.workers:
             return False  # waits for a free writer slot
         if not self.clean(iss["path"]):
             p["parked"] = True
-            self.park(key, f"PR #{pr}: needs a repair but its worktree is dirty",
+            self.park(key, f"{self.label(pr)}: needs a repair but its worktree is dirty",
                       issue=n, pr=pr, kind="gate", card="DIRTY: not repaired")
             return False
-        spec = render("repairer", n=n, pr=pr, branch=p["branch"], default=self.cfg.default,
-                      work_issue_dir=self.cfg.work_issue_dir)
+        spec = render("repairer_local" if self.cfg.local else "repairer", n=n, pr=pr,
+                      branch=p["branch"], default=self.cfg.default,
+                      work_issue_dir=self.cfg.work_issue_dir, why=p.get("note") or "")
         try:
             self.start_agent("wc", str(pr), n, spec=spec, title=f"wc-{pr} · {REPAIRER}",
                              agent=REPAIRER, worktree=f"id:{iss['worktree']}", wid=iss["worktree"],
                              path=iss["path"], pr=pr)
         except OrcaError as e:
             p["parked"] = True
-            self.park(key, f"PR #{pr}: the repairer could not start — {e}", issue=n, pr=pr,
+            self.park(key, f"{self.label(pr)}: the repairer could not start — {e}", issue=n, pr=pr,
                       kind="gate", card="REPAIR FAILED: repairer did not start")
             return False
-        self.card(n, f"repairing PR #{pr} ({REPAIRER})", status="in-review")
+        self.card(n, f"repairing {self.label(pr)} ({REPAIRER})", status="in-review")
         self.log(f"started wc-{pr} ({REPAIRER}): {p.get('note')}")
         return True
 
     def on_repair(self, a, out):
         n, pr = a["issue"], int(a["key"])
         status = out.get("status")
-        if status == "resolved":
+        if status == "resolved" and self.cfg.local:
+            if self.verify(n, out.get("head")):  # the repairer ran the gate on the merged result
+                return self.card(n, f"repaired {self.label(pr)}; ready to merge", status="in-review")
+            out = {"status": "error", "reason": "the outcome's head is not the branch's head"}
+        elif status == "resolved":
             head = self._gh("pr", "view", str(pr), "--json", "headRefOid", "--jq", ".headRefOid").out.strip()
             if head and head.startswith((out.get("head") or "\0")):
                 self._gh("pr", "comment", str(pr), "--body-file", "-", input=(
@@ -657,11 +762,15 @@ class Pump:
                 return self.card(n, f"repaired PR #{pr}; checking CI", status="in-review")
             out = {"status": "error", "reason": "the outcome's head is not the PR's head"}
         reason = out.get("reason") or f"repairer reported {status}"
-        self._gh("pr", "comment", str(pr), "--body-file", "-", input=(
-            f"{REPAIR_FAIL_MARKER}:\n\n{reason}\n\nattempt-head: {out.get('head', 'unknown')}\n"))
+        if self.cfg.local:  # no comment to count, so the pump counts the attempt itself
+            iss = self.state.issue(n)
+            iss["repair_failures"] = iss.get("repair_failures", 0) + 1
+        else:
+            self._gh("pr", "comment", str(pr), "--body-file", "-", input=(
+                f"{REPAIR_FAIL_MARKER}:\n\n{reason}\n\nattempt-head: {out.get('head', 'unknown')}\n"))
         self.card(n, f"repair failed: {reason}"[:140], status="in-review")
         if status not in ("blocked",):
-            self.halt(f"repairer for PR #{pr} errored: {reason}")
+            self.halt(f"repairer for {self.label(pr)} errored: {reason}")
 
     # --- finishing --------------------------------------------------------------------------
 
@@ -692,6 +801,7 @@ class Pump:
         parked = self.state["parked"]
         status = ("halted" if self.halted else "stopped" if parked or open_left else "drained")
         return {"status": status, "run": self.run_id, "scope": list(self.cfg.scope),
+                "local": self.cfg.local,
                 "issues": self.state["issues"], "merged": self.state["merged"],
                 "parked": parked, "notes": self.state["notes"], "counts": counts,
                 "spawnBudget": self.last_resolve.get("spawnBudget"),
@@ -711,7 +821,7 @@ def render_report(s):
     lines = [f"Run {s['run']} over {' '.join('#%d' % n for n in s['scope'])}: {s['status'].upper()}"]
     for n, iss in sorted(s["issues"].items(), key=lambda kv: int(kv[0])):
         bits = [iss.get("state", "?")]
-        if iss.get("pr"):
+        if iss.get("pr") and not s.get("local"):
             bits.append(f"PR #{iss['pr']}")
         if iss.get("large"):
             bits.append("large")
@@ -719,7 +829,8 @@ def render_report(s):
             bits.append("findings " + ", ".join(f"#{f}" for f in iss["findings"]))
         lines.append(f"  #{n}: " + "; ".join(bits))
     if s["merged"]:
-        lines.append("  merged: " + ", ".join(f"PR #{m['pr']}" for m in s["merged"]))
+        lines.append("  merged: " + ", ".join(
+            f"#{m['issue']}" if s.get("local") else f"PR #{m['pr']}" for m in s["merged"]))
     c = s["counts"]
     if c:
         lines.append("  resolver: " + ", ".join(f"{k} {v}" for k, v in c.items()))

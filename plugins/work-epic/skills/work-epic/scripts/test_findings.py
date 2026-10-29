@@ -121,6 +121,27 @@ class Filing(unittest.TestCase):
         closed = [c[2] for c in tools.calls if c[:2] == ["hew", "close"]]
         self.assertEqual(closed, ["41"])
 
+    def test_without_a_pr_findings_are_marked_by_the_review_target_alone(self):
+        marker = "review-of: #21"
+        tracker = [
+            {"number": 41, "state": "open", "title": "Leaky handler",
+             "body": f"review-key: code/p/a.go\n{marker}\nfixed-in: 9f2c1ab\n"},
+            {"number": 42, "state": "open", "title": "Dead branch",
+             "body": f"review-key: code/p/a.go\n{marker}\n"},
+            # issue #210's finding shares the digits, not the review target
+            {"number": 60, "state": "open", "title": "Leaky handler",
+             "body": "review-of: #210\nfixed-in: abc1234\n"},
+        ]
+        tools = FakeTools(self.tmp.name, self.outcome, tracker=tracker)
+        records = self.filer(tools).file(pr=None, issue=21, outcome_path=self.path)
+        self.assertEqual([(r["title"], r["number"]) for r in records],
+                         [("Leaky handler", 41), ("Dead branch", 42), ("Naming", None)])
+        (convert,) = [c for c in tools.calls if c[:1] == ["uv"] and "findings_to_plan.py" in c[3]]
+        self.assertNotIn("--reviewed-pr", convert)
+        closes = [c for c in tools.calls if c[:2] == ["hew", "close"]]
+        self.assertEqual([c[2] for c in closes], ["41"])
+        self.assertEqual(closes[0][closes[0].index("--reason") + 1], "Fixed in 9f2c1ab before merge")
+
     def test_converter_failure_is_a_filing_error(self):
         tools = FakeTools(self.tmp.name, self.outcome, converter_rc=3)
         with self.assertRaises(FilingError):

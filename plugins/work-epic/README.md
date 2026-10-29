@@ -23,6 +23,9 @@ only a human can make.
 - **The paper trail is kept.** Every finding at P2 or above is filed as an issue, deduplicated by
   review key. The ones the reviewer fixed are closed with the fixing commit; the ones it could not
   fix stay open as backlog.
+- **Works without GitHub.** On a local hew tracker (`hew init --local`) each issue's branch is
+  reviewed, gated, and squashed into the local default branch, and the merge closes the issue. The
+  driver detects this itself; see the skill's *Local trackers* section for what changes.
 - **Few reasons to stop.** An unfixed P1, a repair that failed twice, an outage, a review that did
   not run, or branch protection it cannot satisfy. Each parks the item and the rest keeps draining;
   the final report lists every decision needed.
@@ -55,7 +58,8 @@ costs only that issue; the pump reports it and never silently swaps in another a
 - The target repository registered in Orca (`orca repo list --json`), with CI. A PR with no checks
   reads as "CI has not reported yet" and is never merged.
 - [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`, plus `gh`
-  and `uv`.
+  and `uv`. A local tracker needs neither authentication nor `gh`, and no remote or CI; it does need
+  the main checkout on the default branch and clean whenever a merge lands.
 - The [`hew`](../hew) plugin — implementers run `work-issue`; findings are filed through
   raise-issues' converter script.
 - The [`critique`](../critique) plugin — reviewers run `review-code`.

@@ -16,14 +16,56 @@ the loop; everything it does is covered by `test_pump.py` against a simulated Or
 | `findings.py` | Filing a reviewer's findings, the deterministic dedup rule, closing the fixed ones, the round comment |
 | `resolve_ready.py` | Which issues spawn, and in what order (read-only planner) |
 | `pr_state.py` | Which PRs merge, repair, update, or hold (read-only planner) |
+| `local_state.py` | The same two decisions for a local tracker: spawn, and merge/repair/hold over delivered branches |
 | `repo_state.py` | Scope resolution and the git/gh probes both planners share |
-| `prompts/` | What each agent is told: `worker.md`, `reviewer.md`, `repairer.md` (`${name}` placeholders) |
+| `prompts/` | What each agent is told: `worker.md`, `reviewer.md`, `repairer.md` (`${name}` placeholders), and `reviewer_local.md`, `repairer_local.md` for a local tracker |
 
 One tick: reap settled agents, start a reviewer for each delivered PR, run the merge pass, spawn
 into free slots. Between ticks the driver waits on the Run's mailbox with `check --wait`, which is
 also the CI-poll clock (~2 minutes). It acknowledges each Delivery on its next wait, records
 `question` and `escalation` messages in the report, and never answers them. It stops when no agent is
 live, nothing can spawn, and every open PR is parked.
+
+## Local tracker mode
+
+`repo_state.local_tracker()` is true when no `--repo` was given and the main checkout's
+`.hew/config.json` names the `local` backend — hew's own rule, read without running a hew command
+because every one that reports it also writes. It sets `Config.local`; the loop is unchanged and the
+differences are these.
+
+| | GitHub | Local |
+|---|---|---|
+| Delivery | a PR, id = PR number | a committed, unpushed branch, **id = issue number** |
+| Delivery id in keys | `wr-<pr>.json`, `pr<pr>:hold`, `--reviewing`/`--repairing` | the same keys, with the issue number |
+| Spawn planner | `resolve_ready.resolve` (gh user, open PRs, remote branches) | `local_state.resolve`: claims are the pump's own exactly when `state.json` tracks the issue; delivered branches count as `in_review` |
+| Merge planner | `pr_state.plan` | `local_state.plan` over the issues the pump holds in `delivered`, `reviewing`, `reviewed`, or `review_failed` |
+| Worktree base | `origin/<default>` | `<default>` |
+| Review state | the round comment's marker | `state.json`: `reviewed` |
+| Repair attempts | the repair-failure comments | `state.json`: `repair_failures` |
+| "CI passed" | the check rollup | `state.json`: `verified_head` equals the branch head |
+| Merge | `gh pr merge --squash` | `git merge --squash <verified sha>` and a commit in the main checkout, then `hew close --completed` |
+| Cleanup | remote ref, local branches, worktree | local branches, worktree |
+| Round comment | posted on the PR | `<outdir>/rounds/wr-<id>.md` |
+
+A branch is `verified` when the head the reviewer (or a repairer) reports as gated is the head the
+branch has now. `local_state.plan_branch` is the decision table, in order: `wait` (issue closed,
+reviewer live, branch unreadable, or no review round yet); `repair` or `conflict` when
+`git merge-tree` says merging would conflict; `hold` on an open P1 or above; `repair` or
+`ci_failed` when the branch is behind the default branch or its head is unverified; else `merge`.
+`pr_state.schedule` then applies the same queue as for PRs: at most one branch moves toward the
+default branch per pass, and a live repairer freezes the rest. Every merge moves the default branch,
+so every later branch is behind and takes one repairer run — merge the default branch in, run the
+quality gate, report the new head — before its turn. The repairer prompt doubles as that
+"verify" step and is told why it was started.
+
+The merge writes into the human's main checkout, so `Pump.main_blocker()` requires it to be on the
+default branch with a clean tree, and parks the merge as a gate (`pr<id>:merge`) until it is. A
+squash that fails is undone with `git reset --merge` and counted like any failed merge. If the
+squash lands but `hew close` fails, the merge stands: the pump parks `issue-<n>` asking for the
+close and does not merge again.
+
+`--resume` does not re-offer bare claims here: a local tracker names claimants per worktree
+(`<user>-<worktree>-<hash>`), so no assignee ever equals the coordinator's name.
 
 ## Agents and prompts
 

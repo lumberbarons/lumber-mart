@@ -18,6 +18,8 @@ fixes it.
 
 - [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`
 - Run from a checkout of the target repository (`--repo owner/name` overrides detection)
+- A repository that keeps its issues in a local `.hew` (`hew init --local`) needs no GitHub, no
+  remote, and no `gh`; see [Local trackers](#local-trackers)
 - `hew init` once per repo, to create the convention labels
 
 ## Session hooks
@@ -76,6 +78,14 @@ in hew — a human deciding no work was needed.
 **`hew start` is a lock.** It refuses a claimed issue with exit 3, so two agents cannot take the
 same issue and the loser simply moves down the queue. That is what makes an unattended run safe
 to point at a shared backlog.
+
+### Local trackers
+
+With a local tracker there is no PR, so the workflow ends one step earlier: `hew ready` →
+`hew start` → branch from the local default branch → tests → commit. The committed, unpushed
+branch is the delivery, doing the job the draft PR does on GitHub. `work-issue` neither merges it
+nor closes the issue: whoever merges (a person, or [work-epic](../work-epic)) closes with
+`hew close --completed` afterwards, so the review gate still sits between delivered and done.
 
 The `### Done when` checklist is what makes the test-first part more than ceremony: the
 acceptance criteria already exist, written by whoever filed the issue and checked by whoever

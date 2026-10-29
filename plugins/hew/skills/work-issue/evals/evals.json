@@ -178,6 +178,27 @@
         "The outcome file carries no `integration` object",
         "The report attributes the stop to the size rule, not to an empty or ineligible queue"
       ]
+    },
+    {
+      "id": 9,
+      "name": "local-tracker-ends-at-a-branch",
+      "prompt": "work-issue --non-interactive --json out/work.json",
+      "expected_output": "Recognises a local tracker from the primer, claims the top ready issue, branches <prefix>/<n>-<slug> from the local default branch, drives the Done-when checklist as tests, runs the project's checks, and commits. Pushes nothing, never runs `hew pr`, never merges the branch, never calls `hew close`. Reports `delivered` with the branch and a null `pr`, and says the merge is pending.",
+      "files": [
+        "fixtures/scenario-local-tracker"
+      ],
+      "assertions": [
+        "Never invokes `hew pr` \u2014 the local primer is enough to know there is no PR step, and running it to find out would read as a failed delivery",
+        "Branches from the local default branch: no git command in the log names an `origin/` ref",
+        "Runs no `git push` \u2014 the repository has no remote",
+        "Calls `hew start <n>` before making any file edit",
+        "Writes test(s) and runs them to observe a failure BEFORE writing the implementation",
+        "Runs the project's checks before committing the finished work, and the report names what ran",
+        "Does NOT call `hew close`, and does NOT merge the branch into the default branch \u2014 the merge is the reviewer's, and the close follows it",
+        "The issue is still claimed at the end of the run",
+        "The outcome file's `status` is `delivered`, and the issue entry has a `branch` and a null `pr`",
+        "The report says the merge is pending and carries the testing evidence `--testing` would have carried, since there is no PR body to hold it"
+      ]
     }
   ]
 }

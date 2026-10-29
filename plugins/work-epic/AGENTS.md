@@ -12,6 +12,7 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 | `skills/work-epic/REFERENCE.md` | The scripts' schemas, the Run/Task/worktree lifecycle, the agents and their prompts, review-round and repair comments, filing flow, budgets, report format | Changing what the pump tells its agents or how it reads them back |
 | `skills/work-epic/scripts/resolve_ready.py` | The deterministic spawn planner | Changing which issues get worked or in what order |
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, repair, update, or hold |
+| `skills/work-epic/scripts/local_state.py` | The local-tracker twins of both planners: spawn over the pump's own claims, and the merge/repair/hold table over delivered branches, reusing `pr_state`'s queue | Changing how a local (no GitHub) run spawns, gates, or merges |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh/hew probes both planners share, including scope resolution | Changing how PRs, branches, the default branch, or the scope are read |
 | `skills/work-epic/scripts/test_*.py` | stdlib `unittest`: both decision tables, the scope parser, the Orca shapes, filing, and the whole pump against a simulated world (`test_pump.py`) | Changing any decision, skip reason, parser, or the loop — add the pinning case |
 | `skills/work-epic/evals/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
@@ -86,8 +87,19 @@ installed/available agent list (`agent-context` and `account list` are not one),
 the operator's declaration; a failed `worker-start` names the agent that could not launch, and the
 pump reports it rather than silently substituting another agent.
 
-The pump keeps the human gates by design: it never closes an issue or epic (the one exception is a
-finding it filed and the reviewer fixed), never `--force`s a claim, never answers a worker's
+**Local mode is a second delivery backend, not a second pump.** When hew keeps the issues in a local
+`.hew`, a delivery is a committed branch whose id is its issue number, so every key the pump builds
+for a PR still works. `local_state.py` adapts what git and `state.json` know into the records
+`pr_state.schedule` already queues; the decision table is its own because there is no draft, no
+GitHub mergeability, and no CI. The stand-in for CI is the quality gate, run by the repairer on the
+merged result, because nothing else will see it before it lands in the human's checkout. The mode is
+detected, not flagged, and `--repo` always means GitHub, as it does in hew. Resist growing it into
+its own pipeline: a change to a decision belongs in `plan_branch`, and a change to an effect belongs
+behind `Config.local` in `pump.py`, with a scenario in `LocalMode`.
+
+The pump keeps the human gates by design: it never closes an issue or epic (the exceptions are a
+finding it filed and the reviewer fixed, and, on a local tracker, the issue its own merge
+delivers — there is no `Fixes #n` to do it), never `--force`s a claim, never answers a worker's
 permission dialog or question, and never edits code itself. Autonomous merging is bounded to the
 scope's PRs, CI green on a head current with main, a review round, and no open finding at P1 or
 above: P1 holds, repairs that fail twice, and outages all land on the human. Removing any of those

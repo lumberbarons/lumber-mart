@@ -1,6 +1,6 @@
 ---
 name: work-epic
-description: Burn through a hew epic or a set of issues end to end with Orca-managed worktrees and supervised agents — a driver script resolves the ready issues, creates one Orca worktree per issue, starts a supervised implementer running work-issue in it, has a different agent review each delivered PR and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make. Use whenever the user wants issues worked by orchestrating agents — "work on this epic", "drain epic 12", "work issues 21 22 25", "fix all the bugs in the parser", "orchestrate #42", "pump the epic and merge it". A single issue goes to work-issue unless the user explicitly wants the review-and-merge pipeline around it; never for closing issues or the epic itself.
+description: Burn through a hew epic or a set of issues end to end with Orca-managed worktrees and supervised agents — a driver script resolves the ready issues, creates one Orca worktree per issue, starts a supervised implementer running work-issue in it, has a different agent review each delivered PR (or, on a local hew tracker, branch) and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges once CI is green (on a local tracker, once the quality gate passes). Runs unattended and stops only for a decision a human has to make. Use whenever the user wants issues worked by orchestrating agents — "work on this epic", "drain epic 12", "work issues 21 22 25", "fix all the bugs in the parser", "orchestrate #42", "pump the epic and merge it". A single issue goes to work-issue unless the user explicitly wants the review-and-merge pipeline around it; never for closing issues or the epic itself.
 argument-hint: "Issue numbers, an epic number, or a description of the work (e.g. 'fix all the bugs in the importer'). Flags: --workers N (default 2), --dry-run, --resume"
 ---
 
@@ -41,6 +41,8 @@ something fails to start.
   scratch directory and its status card there. The repository must be registered in Orca.
 - `hew` on PATH and authenticated (`gh auth login`); `uv`; `gh`. The repository needs CI: a PR
   with no checks reads as "CI has not reported yet" and is never merged.
+- On a **local hew tracker** (`hew init --local`, no `--repo`) none of GitHub applies: no `gh`, no
+  remote, no CI. The driver detects this itself; see [Local trackers](#local-trackers).
 - The `work-issue` skill (hew plugin) installed for the implementer and `review-code` (critique
   plugin) for the reviewer. The driver finds the work-issue and raise-issues skill directories in
   the repo layout or the plugin cache; set `WORK_EPIC_WORK_ISSUE_DIR` or
@@ -106,6 +108,26 @@ decisions needed first. Exit codes:
 A parked item is a decision, not a failure: its worktree card is marked unread with the gate in the
 comment, and the pump kept draining everything independent of it.
 
+## Local trackers
+
+When hew keeps the issues in a local `.hew`, the driver runs the same loop without GitHub. There is
+no flag; hew's own backend rule picks the mode, and `--repo` always means GitHub.
+
+- A delivery is a committed, unpushed branch, not a PR. The reviewer reviews and fixes it in the
+  issue's worktree, and findings are filed as issues exactly as before.
+- There is no CI, so the quality gate is the check. The reviewer's gate covers a branch that is
+  current with the default branch. After any merge, every other branch is behind, and the repairer
+  merges the default branch in and runs the gate on the result before that branch's turn. That
+  costs one agent run per merge after the first; nothing merges on a gate that has not seen the
+  current default branch.
+- The merge is a squash into the local default branch **in the main checkout**, so the pump needs
+  that checkout on the default branch with a clean tree, and parks the merge as a decision until it
+  is. It writes into your checkout: do not leave work uncommitted there while a run is merging.
+- The merge closes the issue (`hew close --completed`), which is what a `Fixes #n` does on GitHub
+  and what unblocks dependents.
+- `--resume` rebinds the Run and adopts its state as before, but does not re-offer a bare claim: a
+  local tracker names claimants per worktree, so the pump knows its own claims only from its state.
+
 ## What stops the pump
 
 The driver halts for a human only when one of these is true, and says which in the report:
@@ -127,8 +149,8 @@ permission dialog or a question only a human can answer is also reported and **n
 
 ## Hard gates
 
-The driver never closes an issue or an epic (the one exception: it closes a review finding it filed
-after the reviewer fixed it), never force-claims, never answers a worker's dialog or question,
+The driver never closes an issue or an epic (the exceptions: a review finding it filed after the
+reviewer fixed it, and, on a local tracker, the issue a merge delivers), never force-claims, never answers a worker's dialog or question,
 never edits code itself, never merges a PR outside the scope it was given, never passes `--admin`,
 and never force-pushes. Autonomous mode moved the *merge* off the human's list, not the judgement.
 

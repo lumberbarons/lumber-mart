@@ -113,7 +113,13 @@ def delivery_index(prs, branches):
     return pr_by_issue, branch_by_issue
 
 
-def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False):
+def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False, mine=()):
+    """Sort the scope into eligible and skipped.
+
+    `mine` names issues whose claim is the caller's whatever the assignee reads — a
+    local tracker tells claimants apart per worktree, so a worker's claim never
+    matches the coordinator's name and the pump vouches for its own instead.
+    """
     pr_by_issue = pr_by_issue or {}
     branch_by_issue = branch_by_issue or {}
     eligible, skipped, closed = [], [], 0
@@ -144,7 +150,7 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False)
         is_resume = False
         if c.get("inProgress"):
             assignees = c.get("assignees") or []
-            if me is None or me not in assignees:
+            if n not in mine and (me is None or me not in assignees):
                 skip(c, "claimed",
                      "in progress " + (", ".join("@" + a for a in assignees) or "unassigned"))
                 continue
@@ -228,27 +234,29 @@ def parse_args(args):
     return scope, repo, resume, workers
 
 
-def resolve(scope, repo, resume, workers=DEFAULT_WORKERS):
-    children = scope_issues(scope, repo)
+def assemble(scope, children, default, workers, **classification):
+    """The resolver's output over `children`; `classification` goes to `classify`."""
     raw_by_number = {c["number"]: c for c in children}
-    # fail closed: without these reads a delivered or failed child looks eligible
-    pr_by_issue, branch_by_issue = delivery_index(
-        open_prs("number,headRefName", repo), remote_branches(repo)
-    )
-    me = current_user()
-    eligible, skipped, closed = classify(
-        children, me, pr_by_issue, branch_by_issue, resume
-    )
-
+    eligible, skipped, closed = classify(children, **classification)
     return {
         "scope": list(scope),
         "mainCheckout": main_checkout(),
-        "defaultBranch": default_branch(repo),
+        "defaultBranch": default,
         "eligible": sort_eligible(eligible, raw_by_number),
         "skipped": sorted(skipped, key=lambda s: s["number"]),
         "counts": count_by_reason(eligible, skipped, closed),
         "spawnBudget": spawn_budget(skipped, workers),
     }
+
+
+def resolve(scope, repo, resume, workers=DEFAULT_WORKERS):
+    children = scope_issues(scope, repo)
+    # fail closed: without these reads a delivered or failed child looks eligible
+    pr_by_issue, branch_by_issue = delivery_index(
+        open_prs("number,headRefName", repo), remote_branches(repo)
+    )
+    return assemble(scope, children, default_branch(repo), workers, me=current_user(),
+                    pr_by_issue=pr_by_issue, branch_by_issue=branch_by_issue, resume=resume)
 
 
 def main():
