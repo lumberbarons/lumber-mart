@@ -82,7 +82,9 @@ Per finding it emits the plan shape above, deriving `review-key: <skill>/<patter
 mechanically (scope per the table below) and appending `review-of: #<n> (PR #<pr>)` to
 `where` when `--reviewed-issue` is given. The `review-of:` marker is what the work-epic merge
 pass greps to attribute an open finding child to the PR it holds — treat it like
-`review-key:`: bare, exact, never re-rendered. Priority passes straight through, clamped to
+`review-key:`: bare, exact, never re-rendered. A finding that carries `fixedIn: <sha>` (the
+work-epic reviewer fixes what it can in the session that found it) also gets a bare
+`fixed-in: <sha>` line, which the pump greps to close the filed issue as completed. Priority passes straight through, clamped to
 `P1..P4` (a P0 finding files as P1 — P0 is a human's declaration). Dedup is *not* the
 converter's job: run Step 3 against the emitted plan yourself before `hew apply`, with
 `dedup_candidates.py` (below) narrowing the candidates.

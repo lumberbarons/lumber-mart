@@ -16,7 +16,7 @@ shows are already covered where they are made.
 ## What is tested
 
 The policy layer: `resolve_ready.py` (which children, in what order) and `pr_state.py` (which
-PRs merge, reconcile, update, hold, or escalate), plus `repo_state.py`'s parsers. `test_*.py`
+PRs merge, repair, update, or hold), plus `repo_state.py`'s parsers. `test_*.py`
 pins every decision, skip reason, and parser case. Run them from the repo root:
 
     python3 -m unittest discover -s plugins/work-epic/skills/work-epic/scripts
@@ -63,5 +63,5 @@ description was selected for one phrasing.
 The same shape as `work-issue`'s hew stub, extended: executable stubs for `orca`, `hew`, and
 `gh` on `PATH`; a fixture repo and epic; `--dry-run` for the planner path and a recorded
 dispatch lifecycle for the worker path; assertions over the command log (spawn order, one
-worktree per child, reviewer on a review branch, no merge without a current review). That is a
+worktree per issue, the reviewer in that same worktree, no merge without a review round). That is a
 feature, not a fixture. Until it exists, the planner tests are the honest coverage.

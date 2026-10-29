@@ -48,6 +48,14 @@ class Convert(unittest.TestCase):
         self.assertIn("review-key: code/god-function/internal/http/a.go", line["where"])
         self.assertIn("review-of: #21 (PR #34)", line["where"])
 
+    def test_fixed_finding_carries_its_commit(self):
+        line, _ = convert(finding(fixedIn="9f2c1ab"), None, 21, 34, "bug")
+        self.assertTrue(line["where"].endswith("fixed-in: 9f2c1ab"))
+
+    def test_unfixed_finding_has_no_fixed_in_line(self):
+        line, _ = convert(finding(), None, 21, 34, "bug")
+        self.assertNotIn("fixed-in:", line["where"])
+
     def test_p0_files_as_p1(self):
         line, _ = convert(finding("P0"), None, None, None, "bug")
         self.assertEqual(line["priority"], "P1")

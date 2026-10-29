@@ -5,11 +5,9 @@ Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/script
 branch indexes.
 """
 
-import json
 import unittest
 from unittest.mock import patch
 
-from repo_state import CommandError
 from resolve_ready import (
     classify,
     count_by_reason,
@@ -33,23 +31,9 @@ def mine(n):
     return child(n, inProgress=True, assignees=[ME])
 
 
-def finding(n, reviewed, **kw):
-    """A raise-issues finding at generation 1 unless reviewed is a finding."""
-    body = (
-        "### Where\n\n`internal/store/store.go`\n\n"
-        "review-key: code/leaky-abstraction/internal/store/store.go\n\n"
-        f"review-of: #{reviewed}"
-    )
-    return child(n, body=body, **kw)
-
-
-def reasons(children, prs=(), branches=(), resume=False, me=ME,
-            finding_depth=1, bodies=None):
+def reasons(children, prs=(), branches=(), resume=False, me=ME):
     pr_by_issue, branch_by_issue = delivery_index(list(prs), list(branches))
-    eligible, skipped, _ = classify(
-        children, me, pr_by_issue, branch_by_issue, resume,
-        finding_depth=finding_depth, bodies=bodies,
-    )
+    eligible, skipped, _ = classify(children, me, pr_by_issue, branch_by_issue, resume)
     out = {e["number"]: "eligible" for e in eligible}
     out.update({s["number"]: s["reason"] for s in skipped})
     return out
@@ -93,151 +77,33 @@ class Basics(unittest.TestCase):
         got = reasons([child(21)], branches=["main", "worktree-fix+x", "fix/210-other"])
         self.assertEqual(got, {21: "eligible"})
 
-
-class FindingDepth(unittest.TestCase):
-    def test_generation_one_finding_is_eligible(self):
-        got = reasons([child(20), finding(30, 20)])
-        self.assertEqual(got, {20: "eligible", 30: "eligible"})
-
-    def test_generation_two_finding_is_parked(self):
-        got = reasons([child(20), finding(30, 20), finding(31, 30)])
-        self.assertEqual(got[31], "finding_depth")
-
-    def test_parked_detail_names_the_generation_and_target(self):
-        pr_by_issue, branch_by_issue = delivery_index([], [])
-        _, skipped, _ = classify([child(20), finding(30, 20), finding(31, 30)],
-                                 ME, pr_by_issue, branch_by_issue)
-        entry = next(s for s in skipped if s["number"] == 31)
-        self.assertIn("generation 2", entry["detail"])
-        self.assertIn("#30", entry["detail"])
-
-    def test_flag_raises_the_bound(self):
-        children = [child(20), finding(30, 20), finding(31, 30)]
-        self.assertEqual(reasons(children, finding_depth=2)[31], "eligible")
-
-    def test_generation_three_needs_depth_three(self):
-        children = [child(20), finding(30, 20), finding(31, 30), finding(32, 31)]
-        self.assertEqual(reasons(children, finding_depth=2)[32], "finding_depth")
-        self.assertEqual(reasons(children, finding_depth=3)[32], "eligible")
-
-    def test_a_finding_without_review_of_is_generation_one(self):
-        body = "review-key: code/god-function/internal/http/a.go"
+    def test_a_review_finding_is_just_an_issue(self):
+        # findings are fixed in the review session; one that reaches the
+        # resolver (an explicit scope, an old epic child) is ordinary work
+        body = "review-key: code/god-function/a.go\n\nreview-of: #20"
         self.assertEqual(reasons([child(30, body=body)]), {30: "eligible"})
 
-    def test_a_reviewed_issue_we_cannot_read_is_parked_not_assumed_shallow(self):
+    def test_counts(self):
         pr_by_issue, branch_by_issue = delivery_index([], [])
-        eligible, skipped, _ = classify([finding(30, 99)], ME,
-                                        pr_by_issue, branch_by_issue)
-        self.assertEqual(eligible, [])
-        self.assertEqual(skipped[0]["reason"], "finding_depth")
-        self.assertIn("#99", skipped[0]["detail"])
-        self.assertIn("could not be read", skipped[0]["detail"])
-
-    def test_counts_include_finding_depth(self):
-        children = [child(20), finding(30, 20), finding(31, 30)]
-        pr_by_issue, branch_by_issue = delivery_index([], [])
-        eligible, skipped, closed = classify(children, ME, pr_by_issue, branch_by_issue)
+        eligible, skipped, closed = classify(
+            [child(20), child(21, state="closed"), child(22, openBlockers=[20])],
+            ME, pr_by_issue, branch_by_issue)
         counts = count_by_reason(eligible, skipped, closed)
-        self.assertEqual(counts["finding_depth"], 1)
-        self.assertEqual(counts["eligible"], 2)
-        self.assertEqual(set(counts), {
-            "eligible", "blocked", "untriaged", "claimed", "in_review",
-            "stalled", "finding_depth", "closed",
-        })
-
-    def test_flag_parses(self):
-        self.assertEqual(parse_args(["12", "--finding-depth", "2"]),
-                         ("12", None, False, None, 2))
-
-    def test_flag_rejects_zero(self):
-        with self.assertRaises(SystemExit) as raised:
-            parse_args(["12", "--finding-depth", "0"])
-        self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(counts, {"closed": 1, "blocked": 1, "untriaged": 0,
+                                  "claimed": 0, "in_review": 0, "stalled": 0,
+                                  "eligible": 1})
 
 
-class FindingDepthResolution(unittest.TestCase):
-    """resolve() wires the depth policy to the tracker reads."""
-
-    def test_closed_reviewed_finding_is_fetched_and_parks_the_next_generation(self):
-        open_child = finding(31, 30)
-        closed_body = (
-            "### Where\n\n`internal/store/store.go`\n\n"
-            "review-key: code/leaky-abstraction/internal/store/store.go\n\n"
-            "review-of: #20"
-        )
-        calls = []
-
-        def fake_run(argv):
-            calls.append(argv)
-            if argv[:2] == ["hew", "show"] and str(argv[2]) == "12":
-                return json.dumps({"epic": True, "title": "E"})
-            if argv[:2] == ["hew", "list"]:
-                return json.dumps(open_child) + "\n"
-            if argv[:2] == ["hew", "show"] and str(argv[2]) == "30":
-                return json.dumps({"body": closed_body})
-            if argv[:2] == ["hew", "show"] and str(argv[2]) == "20":
-                return json.dumps({"body": "### Where\n\n`a.go`"})
-            raise AssertionError(f"unexpected command {argv}")
-
-        with patch("resolve_ready.run", side_effect=fake_run), \
-             patch("resolve_ready.open_prs", return_value=[]), \
-             patch("resolve_ready.remote_branches", return_value=[]), \
-             patch("resolve_ready.main_checkout", return_value="/tmp/repo"), \
-             patch("resolve_ready.default_branch", return_value="main"), \
-             patch("resolve_ready.current_user", return_value=ME):
-            out = resolve(12, None, False)
-
-        self.assertEqual(out["counts"]["finding_depth"], 1)
-        self.assertEqual(out["eligible"], [])
-        self.assertIn("--state", next(c for c in calls if c[:2] == ["hew", "list"]))
-        self.assertTrue(any(c[:3] == ["hew", "show", "30"] for c in calls))
-
-    def _resolve(self, listing, show, finding_depth=1):
-        def fake_run(argv):
-            if argv[:2] == ["hew", "show"] and str(argv[2]) == "12":
-                return json.dumps({"epic": True, "title": "E"})
-            if argv[:2] == ["hew", "list"]:
-                return "".join(json.dumps(c) + "\n" for c in listing)
-            if argv[:2] == ["hew", "show"]:
-                result = show[int(argv[2])]
-                if result is None:
-                    raise CommandError("hew show failed")
-                return json.dumps({"body": result})
-            raise AssertionError(f"unexpected command {argv}")
-
-        with patch("resolve_ready.run", side_effect=fake_run), \
-             patch("resolve_ready.open_prs", return_value=[]), \
-             patch("resolve_ready.remote_branches", return_value=[]), \
-             patch("resolve_ready.main_checkout", return_value="/tmp/repo"), \
-             patch("resolve_ready.default_branch", return_value="main"), \
-             patch("resolve_ready.current_user", return_value=ME):
-            return resolve(12, None, False, finding_depth=finding_depth)
-
-    def test_a_chain_running_past_the_listing_is_followed_to_its_root(self):
-        # 32 (open) reviews 31 (closed) reviews 30 (closed) reviews 20 (product):
-        # generation 3, so --finding-depth 2 must park it.
-        def body(target):
-            return f"review-key: code/p/x\n\nreview-of: #{target}"
-        show = {31: body(30), 30: body(20), 20: "### Where\n\n`a.go`"}
-        out = self._resolve([finding(32, 31)], show, finding_depth=2)
-        self.assertEqual(out["counts"]["finding_depth"], 1)
-        self.assertEqual(out["eligible"], [])
-
-    def test_a_failed_lookup_parks_the_finding_and_does_not_halt_the_run(self):
-        out = self._resolve([finding(32, 31), child(40)], {31: None})
-        self.assertEqual([e["number"] for e in out["eligible"]], [40])
-        self.assertEqual(out["counts"]["finding_depth"], 1)
-
-
-def budget(children, prs=(), cap=4, resume=False):
+def budget(children, prs=(), workers=2, resume=False):
     pr_by_issue, branch_by_issue = delivery_index(list(prs), [])
     _, skipped, _ = classify(children, ME, pr_by_issue, branch_by_issue, resume)
-    return spawn_budget(skipped, cap)
+    return spawn_budget(skipped, workers)
 
 
 class SpawnBudget(unittest.TestCase):
-    def test_uncapped_without_flag(self):
-        self.assertIsNone(budget([child(21)], cap=None))
+    def test_backlog_is_twice_the_workers(self):
+        self.assertEqual(budget([child(21)], workers=2), 4)
+        self.assertEqual(budget([child(21)], workers=3), 6)
 
     def test_open_prs_and_own_in_flight_claims_count(self):
         prs = [{"number": 34, "headRefName": "fix/21-a"}]
@@ -254,9 +120,54 @@ class SpawnBudget(unittest.TestCase):
         prs = [{"number": 30 + n, "headRefName": f"fix/{n}-x"} for n in range(21, 27)]
         self.assertEqual(budget([child(n) for n in range(21, 27)], prs=prs), 0)
 
-    def test_flag_parses(self):
-        self.assertEqual(parse_args(["12", "--max-open-prs", "3"]),
-                         ("12", None, False, 3, 1))
+
+class Args(unittest.TestCase):
+    def test_defaults(self):
+        self.assertEqual(parse_args(["12"]), ([12], None, False, 2))
+
+    def test_a_set_of_issues(self):
+        self.assertEqual(parse_args(["12", "13,14", "#15"])[0], [12, 13, 14, 15])
+
+    def test_workers_and_resume_parse(self):
+        self.assertEqual(parse_args(["12", "--workers", "3", "--resume"]),
+                         ([12], None, True, 3))
+
+    def test_workers_rejects_zero(self):
+        with self.assertRaises(SystemExit) as raised:
+            parse_args(["12", "--workers", "0"])
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_no_scope_is_a_usage_error(self):
+        with self.assertRaises(SystemExit) as raised:
+            parse_args(["--resume"])
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_removed_flags_are_usage_errors(self):
+        for flag in ("--finding-depth", "--max-open-prs"):
+            with self.assertRaises(SystemExit) as raised:
+                parse_args(["12", flag, "2"])
+            self.assertEqual(raised.exception.code, 2)
+
+
+class Resolve(unittest.TestCase):
+    """resolve() wires scope, delivery reads, and the budget together."""
+
+    def test_scope_flows_through_to_the_plan(self):
+        rows = [child(21, createdAt="2026-01-02"), child(22, createdAt="2026-01-01"),
+                child(23, openBlockers=[21])]
+        with patch("resolve_ready.scope_issues", return_value=rows) as scope, \
+             patch("resolve_ready.open_prs", return_value=[]), \
+             patch("resolve_ready.remote_branches", return_value=[]), \
+             patch("resolve_ready.main_checkout", return_value="/tmp/repo"), \
+             patch("resolve_ready.default_branch", return_value="main"), \
+             patch("resolve_ready.current_user", return_value=ME):
+            out = resolve([12, 22], None, False, workers=3)
+        scope.assert_called_once_with([12, 22], None)
+        self.assertEqual(out["scope"], [12, 22])
+        # same priority: the oldest child goes first
+        self.assertEqual([e["number"] for e in out["eligible"]], [22, 21])
+        self.assertEqual(out["counts"]["blocked"], 1)
+        self.assertEqual(out["spawnBudget"], 6)
 
 
 if __name__ == "__main__":

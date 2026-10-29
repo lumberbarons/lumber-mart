@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Resolve a hew epic's ready children into a deterministic fan-out plan.
+"""Resolve the issues a run covers into a deterministic fan-out plan.
 
-Read-only: runs `hew show`, `hew list --epic --json --bodies --state all`,
-`gh pr list`, the remote branch list, and two local git reads (primary
-worktree, default branch); never writes. Prints one JSON object to stdout:
+Read-only: runs `hew show` (and `hew list --epic` for an epic), `gh pr list`,
+the remote branch list, and two local git reads (primary worktree, default
+branch); never writes. The scope is one or more issue numbers; an epic number
+stands for its children. Prints one JSON object to stdout:
 
   {
-    "epic": <n>, "title": "...",
+    "scope": [<n>, ...],                 # the numbers as given
     "mainCheckout": "/abs/path",         # primary worktree: spawn/branch-update home
     "defaultBranch": "main",             # origin's default branch, when determinable
     "eligible": [ {"number", "title", "priority", "type", "where", "doneWhen",
@@ -14,41 +15,31 @@ worktree, default branch); never writes. Prints one JSON object to stdout:
                                          # priority-sorted, oldest tie-break
     "skipped":  [ {"number", "title", "reason", "detail", "own"?} ... ],
     "counts":   {"eligible": n, "blocked": n, "untriaged": n, "claimed": n,
-                 "in_review": n, "stalled": n, "finding_depth": n, "closed": n},
-    "spawnBudget": n | null              # null without --max-open-prs
+                 "in_review": n, "stalled": n, "closed": n},
+    "spawnBudget": n
   }
 
-Skip reasons: in_review (an open PR carries the child's number), finding_depth
-(a review finding that reviews another review finding past --finding-depth, or whose
-chain cannot be read),
-blocked (open blockers), untriaged (no priority/type), claimed (in progress —
-by someone else, or by you without --resume), stalled (in progress by you, a
-branch pushed, no open PR: a worker failed or its PR was closed). Closed
-children are counted, not listed.
+Skip reasons: in_review (an open PR carries the issue's number), blocked (open
+blockers), untriaged (no priority/type), claimed (in progress — by someone
+else, or by you without --resume), stalled (in progress by you, a branch
+pushed, no open PR: a worker failed or its PR was closed). Closed issues are
+counted, not listed.
 
-Review findings come in generations. A generation-1 finding reviews product
-code; a generation-2 finding reviews a finding. `review-of: #<n>` marks the
-reviewed issue, and a reviewed issue carrying its own `review-key:` (or
-`review-of:`) is itself a finding. The pump works generation-1 findings and
-parks deeper ones for human triage: findings are a backlog, not a queue.
---finding-depth N (default 1) raises that bound deliberately.
-
-Children in progress by you are the pump's own claims: in flight, delivered,
-or failed. They are never eligible by default — respawning one duplicates or
+Issues in progress by you are the pump's own claims: in flight, delivered, or
+failed. They are never eligible by default — respawning one duplicates or
 repeats work. --resume opts the ones with neither a PR nor a pushed branch
 back in (`resume: true`), for deliberately picking up a crashed run. Those
 bare claims of yours are marked `own: true` in `skipped`.
 
---max-open-prs N caps the epic's PR backlog: `spawnBudget` is N minus the
-epic's open PRs (in_review) minus your own bare claims (workers in flight —
-each is a PR on its way), floored at zero. Worker slots bound how many agents
-run at once; this bounds how many PRs wait to merge, which is what goes stale
-while main moves. Parked PRs (held, conflicted) count: a backlog that cannot
-merge is exactly the one not to grow.
+`spawnBudget` is twice --workers minus the scope's open PRs (in_review) minus
+your own bare claims (workers in flight — each is a PR on its way), floored at
+zero. Worker slots bound how many agents run at once; this bounds how many PRs
+wait to merge, which is what goes stale while main moves. Parked PRs (held,
+conflicted) count: a backlog that cannot merge is exactly the one not to grow.
 
-Usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume]
-                        [--max-open-prs N] [--finding-depth N]
-Exit: 0 ok (eligible may be empty) · 1 runtime error · 2 not an epic/usage
+Usage: resolve_ready.py <issue-number>... [--repo owner/name] [--resume]
+                        [--workers N]
+Exit: 0 ok (eligible may be empty) · 1 runtime error · 2 usage error
 """
 
 import json
@@ -62,23 +53,19 @@ from repo_state import (
     default_branch,
     main_checkout,
     open_prs,
+    parse_scope,
     remote_branches,
-    run,
+    scope_issues,
 )
 
 PRIORITY_RE = re.compile(r"^P(\d+)$")
-REVIEW_KEY_RE = re.compile(r"(?m)^review-key:\s*(\S+)")
-REVIEW_OF_RE = re.compile(r"(?m)^review-of:\s*#(\d+)")
 WHERE_MAX = 3  # more than three paths -> large (work-issue's sizing rule)
 DONE_WHEN_MAX = 5  # more than five done-when items -> large
-SKIP_REASONS = (
-    "blocked",
-    "untriaged",
-    "claimed",
-    "in_review",
-    "stalled",
-    "finding_depth",
-)
+BACKLOG_PER_WORKER = 2  # open PRs plus workers in flight never exceed this x workers
+DEFAULT_WORKERS = 2
+SKIP_REASONS = ("blocked", "untriaged", "claimed", "in_review", "stalled")
+USAGE = ("usage: resolve_ready.py <issue-number>... [--repo owner/name] "
+         "[--resume] [--workers N]")
 
 
 def fail(msg, code=1):
@@ -112,58 +99,6 @@ def section_items(body, heading):
     return items
 
 
-def is_review_finding(body):
-    """True when a body carries a raise-issues finding's identity marker.
-
-    `review-key:` is what raise-issues stamps on every finding it files;
-    `review-of:` alone is enough for a hand-filed review finding.
-    """
-    body = body or ""
-    return bool(REVIEW_KEY_RE.search(body) or REVIEW_OF_RE.search(body))
-
-
-def reviewed_issue(body):
-    """Issue number named by `review-of: #<n>`, or None."""
-    m = REVIEW_OF_RE.search(body or "")
-    return int(m.group(1)) if m else None
-
-
-class UnreadableTarget(Exception):
-    """A review chain names an issue whose body we could not read."""
-
-    def __init__(self, number):
-        super().__init__(number)
-        self.number = number
-
-
-def review_generation(body, bodies, number, seen=None):
-    """How deep in a review chain a finding sits: 0 is not a finding.
-
-    A generation-1 finding reviews product code; a generation-2 finding
-    reviews a finding. A reviewed issue missing from `bodies` raises
-    UnreadableTarget: the chain's depth is unknown, and reading it as product
-    code would let a review spiral through any lookup that failed. A malformed
-    cycle (a finding that reviews its own descendant) is reported past any
-    sane bound rather than recursing.
-    """
-    if not is_review_finding(body):
-        return 0
-    target = reviewed_issue(body)
-    if target is None:
-        return 1
-    seen = set() if seen is None else seen
-    if target == number or target in seen:
-        return len(bodies) + 2
-    target_body = bodies.get(target)
-    if target_body is None:
-        raise UnreadableTarget(target)
-    if not is_review_finding(target_body):
-        return 1
-    return 1 + review_generation(
-        target_body, bodies, target, seen | {number}
-    )
-
-
 def delivery_index(prs, branches):
     """Map issue -> open PR number, and issue -> pushed branch name."""
     pr_by_issue, branch_by_issue = {}, {}
@@ -178,13 +113,9 @@ def delivery_index(prs, branches):
     return pr_by_issue, branch_by_issue
 
 
-def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False,
-             finding_depth=1, bodies=None):
+def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False):
     pr_by_issue = pr_by_issue or {}
     branch_by_issue = branch_by_issue or {}
-    bodies = bodies if bodies is not None else {
-        c["number"]: c.get("body") or "" for c in children
-    }
     eligible, skipped, closed = [], [], 0
 
     def skip(c, reason, detail, own=False):
@@ -202,20 +133,6 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False,
         # an open PR means delivered and in review, whoever holds the claim
         if n in pr_by_issue:
             skip(c, "in_review", f"PR #{pr_by_issue[n]} open")
-            continue
-        body = c.get("body") or ""
-        try:
-            generation = review_generation(body, bodies, n)
-        except UnreadableTarget as e:
-            skip(c, "finding_depth",
-                 f"reviews #{e.number}, which could not be read, so its generation "
-                 "is unknown; parked for human triage")
-            continue
-        if generation > finding_depth:
-            target = reviewed_issue(body)
-            skip(c, "finding_depth",
-                 f"generation {generation} finding reviews #{target}, itself a review "
-                 f"finding; --finding-depth {finding_depth} parks it for human triage")
             continue
         blockers = c.get("openBlockers") or []
         if blockers:
@@ -240,6 +157,7 @@ def classify(children, me, pr_by_issue=None, branch_by_issue=None, resume=False,
                      own=True)
                 continue
             is_resume = True
+        body = c.get("body") or ""
         where = section_items(body, "where")
         done_when = section_items(body, "done when")
         eligible.append(
@@ -266,15 +184,13 @@ def count_by_reason(eligible, skipped, closed):
     return counts
 
 
-def spawn_budget(skipped, max_open_prs):
-    """How many more workers the PR backlog cap allows, or None uncapped."""
-    if max_open_prs is None:
-        return None
+def spawn_budget(skipped, workers):
+    """How many more workers the PR backlog cap allows."""
     pending = sum(
         1 for s in skipped
         if s["reason"] == "in_review" or (s["reason"] == "claimed" and s.get("own"))
     )
-    return max(0, max_open_prs - pending)
+    return max(0, BACKLOG_PER_WORKER * workers - pending)
 
 
 def sort_eligible(children_eligible, raw_by_number):
@@ -291,7 +207,7 @@ def sort_eligible(children_eligible, raw_by_number):
 
 def parse_args(args):
     args = list(args)
-    repo, resume, max_open_prs, finding_depth, positional = None, False, None, 1, []
+    repo, resume, workers, positional = None, False, DEFAULT_WORKERS, []
     while args:
         a = args.pop(0)
         if a == "--repo":
@@ -300,87 +216,45 @@ def parse_args(args):
             repo = args.pop(0)
         elif a == "--resume":
             resume = True
-        elif a == "--max-open-prs":
+        elif a == "--workers":
             if not args or not args[0].isdigit() or int(args[0]) < 1:
-                fail("--max-open-prs needs a positive integer", 2)
-            max_open_prs = int(args.pop(0))
-        elif a == "--finding-depth":
-            if not args or not args[0].isdigit() or int(args[0]) < 1:
-                fail("--finding-depth needs a positive integer", 2)
-            finding_depth = int(args.pop(0))
+                fail("--workers needs a positive integer", 2)
+            workers = int(args.pop(0))
         else:
             positional.append(a)
-    if len(positional) != 1 or not positional[0].isdigit():
-        fail("usage: resolve_ready.py <epic-number> [--repo owner/name] [--resume] "
-             "[--max-open-prs N] [--finding-depth N]", 2)
-    return positional[0], repo, resume, max_open_prs, finding_depth
+    scope = parse_scope(positional)
+    if scope is None:
+        fail(USAGE, 2)
+    return scope, repo, resume, workers
 
 
-def resolve(epic_n, repo, resume, max_open_prs=None, finding_depth=1):
-    suffix = ["--repo", repo] if repo else []
-
-    show = json.loads(run(["hew", "show", epic_n, "--json", *suffix]))
-    if not show.get("epic"):
-        fail(f"#{epic_n} is not an epic — hand it to work-issue instead", 2)
-
-    children = [
-        json.loads(line)
-        for line in run(
-            ["hew", "list", "--epic", epic_n, "--json", "--bodies",
-             "--state", "all", *suffix]
-        ).splitlines()
-        if line.strip()
-    ]
+def resolve(scope, repo, resume, workers=DEFAULT_WORKERS):
+    children = scope_issues(scope, repo)
     raw_by_number = {c["number"]: c for c in children}
-    bodies = {c["number"]: c.get("body") or "" for c in children}
-    # A reviewed finding can be closed by the time its finding is filed, and a
-    # chain can run past the epic, so follow each review-of target the listing
-    # did not supply. A target that cannot be read stays absent from `bodies`,
-    # and review_generation then parks the finding rather than guessing a depth.
-    pending = [
-        t for t in (reviewed_issue(c.get("body")) for c in children
-                    if c.get("state") == "open") if t
-    ]
-    while pending:
-        target = pending.pop()
-        if target in bodies:
-            continue
-        try:
-            bodies[target] = json.loads(
-                run(["hew", "show", str(target), "--json", *suffix])
-            ).get("body") or ""
-        except CommandError:
-            continue
-        nxt = reviewed_issue(bodies[target])
-        if nxt:
-            pending.append(nxt)
     # fail closed: without these reads a delivered or failed child looks eligible
     pr_by_issue, branch_by_issue = delivery_index(
         open_prs("number,headRefName", repo), remote_branches(repo)
     )
     me = current_user()
     eligible, skipped, closed = classify(
-        children, me, pr_by_issue, branch_by_issue, resume,
-        finding_depth=finding_depth, bodies=bodies,
+        children, me, pr_by_issue, branch_by_issue, resume
     )
-    counts = count_by_reason(eligible, skipped, closed)
 
     return {
-        "epic": int(epic_n),
-        "title": show.get("title", ""),
+        "scope": list(scope),
         "mainCheckout": main_checkout(),
         "defaultBranch": default_branch(repo),
         "eligible": sort_eligible(eligible, raw_by_number),
         "skipped": sorted(skipped, key=lambda s: s["number"]),
-        "counts": counts,
-        "spawnBudget": spawn_budget(skipped, max_open_prs),
+        "counts": count_by_reason(eligible, skipped, closed),
+        "spawnBudget": spawn_budget(skipped, workers),
     }
 
 
 def main():
-    epic_n, repo, resume, max_open_prs, finding_depth = parse_args(sys.argv[1:])
+    scope, repo, resume, workers = parse_args(sys.argv[1:])
     try:
-        out = resolve(epic_n, repo, resume, max_open_prs, finding_depth)
+        out = resolve(scope, repo, resume, workers)
     except CommandError as e:
         fail(str(e))
     print(json.dumps(out, indent=2))

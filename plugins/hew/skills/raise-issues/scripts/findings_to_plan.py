@@ -19,8 +19,10 @@ Per finding, the emitted plan line carries:
   discovered-from  --reviewed-issue, when given
   where         backticked locations, then blank, then the identity lines:
                 `review-key: <skill>/<pattern>/<scope>` and, when the finding
-                was raised against a PR review, `review-of: #<n>` — both bare,
-                both grep targets (pr_state.py greps the latter)
+                was raised against a PR review, `review-of: #<n>`, and, when
+                the finding carries `fixedIn`, `fixed-in: <sha>` — all bare,
+                all grep targets (pr_state.py greps `review-of:`, the pump
+                closes issues carrying `fixed-in:`)
   problem       the explanation
   fix           the fix
   done-when     [done_when] as a one-item checklist
@@ -110,6 +112,8 @@ def convert(finding, parent, reviewed_issue, reviewed_pr, forced_type,
         if reviewed_pr is not None:
             marker += f" (PR #{reviewed_pr})"
         where_lines.append(marker)
+    if finding.get("fixedIn"):
+        where_lines.append(f"fixed-in: {finding['fixedIn']}")
 
     line = {
         "title": finding.get("title") or f"{pattern} in {scope}",

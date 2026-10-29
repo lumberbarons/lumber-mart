@@ -20,7 +20,10 @@ the fix was for, without growing the key. Keep that distinction out of the key f
 
 `work-issue` rests on two properties of hew that are easy to undo by accident. Work ends at
 `hew pr`, never at `hew close` — close means wontfix or duplicate, so closing a delivered issue
-skips review and records the opposite of what happened. And `hew start`'s exit 3 on a claimed
+skips review and records the opposite of what happened. The one carve-out is a review finding the
+work-epic reviewer fixed in the session that found it: it is filed for the paper trail and closed
+`--completed` with the fixing commit, because no PR of its own will ever carry a `Fixes` line for
+it. And `hew start`'s exit 3 on a claimed
 issue is the concurrency lock that makes unattended runs safe; anything that routes around it
 with `--force` removes the only thing keeping two agents off the same issue.
 
