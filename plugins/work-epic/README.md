@@ -8,6 +8,10 @@ only a human can make.
 
 ## Overview
 
+- **The coordinator is a script.** `scripts/work_epic.py` runs the whole loop — resolve, spawn, reap,
+  review, repair, merge — and is tested end to end against a simulated Orca, GitHub, and tracker. The
+  skill's own job is the part that needs a person: settle the scope, launch the driver, relay the
+  report.
 - **One golden path.** It resolves the ready issues with a deterministic script, creates one Orca
   worktree per issue, starts a supervised implementer in it (`work-issue`), has a *different* agent
   review the delivered PR (`review-code`) and fix what it finds in that same session, repairs
@@ -34,7 +38,7 @@ The orchestrator never implements, reviews, fixes, or closes the epic itself.
 | Repairer | the repair contract (conflict or red CI), in the same worktree | `opencode` |
 | Coordinator | this skill: plans, spawns, reaps, merges | whichever agent you started |
 
-The agents are a single block in `skills/work-epic/SKILL.md`; change them there. The reviewer is
+The agents are a single block in `skills/work-epic/scripts/pump.py`; change them there. The reviewer is
 deliberately not the implementer — a second point of view is the point. Install `work-issue` for
 the implementer and `review-code` for the reviewer, and make the work-issue skill directory
 readable on the host: the reviewer's fixes and the repairer read its quality-gate table.
@@ -50,7 +54,8 @@ costs only that issue; the pump reports it and never silently swaps in another a
   stops if it cannot see the coordinator worktree.
 - The target repository registered in Orca (`orca repo list --json`), with CI. A PR with no checks
   reads as "CI has not reported yet" and is never merged.
-- [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`.
+- [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`, plus `gh`
+  and `uv`.
 - The [`hew`](../hew) plugin — implementers run `work-issue`; findings are filed through
   raise-issues' converter script.
 - The [`critique`](../critique) plugin — reviewers run `review-code`.
@@ -64,6 +69,7 @@ its comment and workspace status, and as the pump's final report.
 ## Usage
 
 ```
+# from an agent, via the skill:
 /work-epic:work-epic 12                         # an epic: its children
 /work-epic:work-epic 21 22 25                   # a set of issues
 /work-epic:work-epic fix all the bugs in the importer
@@ -73,6 +79,10 @@ its comment and workspace status, and as the pump's final report.
 /work-epic:work-epic 12 --dry-run               # resolver + merge plans only
 /work-epic:work-epic 12 --resume                # pick up your own claims a crashed run left
 ```
+
+The skill runs `uv run --no-project skills/work-epic/scripts/work_epic.py <scope> [flags]`, which you
+can also run yourself from an Orca-managed terminal. Exit codes: `0` drained, `10` stopped with
+decisions parked, `3` halted on an outage, `1` could not start, `2` usage.
 
 There are no other flags. Merges are squash, conflicts and red CI are repaired, and a P1 the
 reviewer could not fix holds its PR; these are the policy.
@@ -84,7 +94,7 @@ human's checkout never determines what a worker branches from.
 
 ## How it works
 
-**The plans come from scripts.** `resolve_ready.py` reads the scope and emits a JSON fan-out plan —
+**The plans come from scripts, and the loop does too.** `resolve_ready.py` reads the scope and emits a JSON fan-out plan —
 eligible issues in priority-sorted, oldest-tie-break order, every open issue left behind with its
 skip reason (including issues already in review and issues whose worker failed, so the pump never
 respawns its own work), plus the main checkout and default branch. `pr_state.py` reads the scope's

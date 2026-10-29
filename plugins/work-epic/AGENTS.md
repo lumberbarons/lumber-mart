@@ -3,12 +3,17 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 
 | Directory | What | When to read |
 |-----------|------|--------------|
-| `skills/work-epic/` | Pumps a scope: implementer, reviewer-and-fixer, repairer, findings filing, merge pass | Changing how the pump resolves, spawns, reaps, files, merges, or reports |
+| `skills/work-epic/` | The skill: settles the scope, launches the driver, relays the report | Changing what the skill tells an agent to do around the driver |
+| `skills/work-epic/scripts/work_epic.py` | The driver's CLI: preflight, skill-directory discovery, `--dry-run`, report, exit codes | Changing arguments, startup checks, or the exit-code contract |
+| `skills/work-epic/scripts/pump.py` | The coordinator as code: the loop, reaping, review and repair lifecycles, merge pass, parking, the agents block | Changing how the pump behaves, spawns, reaps, merges, or stops |
+| `skills/work-epic/scripts/orca_api.py` | The Orca CLI as typed calls, with the shapes captured from a live Orca | Changing which Orca commands the pump uses or how it reads them |
+| `skills/work-epic/scripts/findings.py` | Filing findings, the dedup rule, closing the fixed, the round comment | Changing how a review becomes issues and a PR comment |
+| `skills/work-epic/prompts/` | What the implementer, reviewer, and repairer are told | Changing an agent's contract |
 | `skills/work-epic/REFERENCE.md` | The scripts' schemas, the Run/Task/worktree lifecycle, the agents and their prompts, review-round and repair comments, filing flow, budgets, report format | Changing what the pump tells its agents or how it reads them back |
 | `skills/work-epic/scripts/resolve_ready.py` | The deterministic spawn planner | Changing which issues get worked or in what order |
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, repair, update, or hold |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh/hew probes both planners share, including scope resolution | Changing how PRs, branches, the default branch, or the scope are read |
-| `skills/work-epic/scripts/test_*.py` | stdlib `unittest` over both decision tables and the scope parser | Changing any decision, skip reason, or parser — add the pinning case |
+| `skills/work-epic/scripts/test_*.py` | stdlib `unittest`: both decision tables, the scope parser, the Orca shapes, filing, and the whole pump against a simulated world (`test_pump.py`) | Changing any decision, skip reason, parser, or the loop — add the pinning case |
 | `skills/work-epic/evals/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
 | `README.md` | Plugin overview, the agents, and how a run works | Understanding what work-epic does |
 
@@ -25,7 +30,7 @@ the skill. `skills/work-epic/evals/README.md` has the numbers, why the score is 
 the one-session bounded check.
 
 This is a lean software factory with one golden path. The skill takes few flags on purpose: the
-agents are a single block in SKILL.md, the merge method is squash, conflicts and red CI are
+agents are a single block in `pump.py`, the merge method is squash, conflicts and red CI are
 repaired, and a P1 the reviewer could not fix holds its PR. Resist adding a flag for a policy; a
 flag is a mode the next editor has to keep working, and the modes that were removed (human-review,
 agent pools, block-on, finding-depth, no-review) each carried their own prose, tests, and bugs.
@@ -35,6 +40,22 @@ classifies a PR's mergeability — in the agent's head instead of running `resol
 `pr_state.py` makes the pump un-reasonable-about from its logs: two runs on the same scope must
 produce the same plan, and the scripts are what make that true. Changes to spawn or merge policy
 belong in the scripts, where they are testable, not in the skill prose.
+
+**The coordinator is code, not prose.** The loop used to be instructions an agent re-interpreted on
+every run; it is now `pump.py`, and `test_pump.py` runs the real loop against a simulated Orca, GitHub,
+and tracker (`World`), so a change to how it spawns, reaps, reviews, repairs, merges, parks, stops, or
+recovers lands with a scenario. Every effect goes through an injected collaborator (`sh`, `orca`, the
+two planners, the filer, the clock), which is what makes that possible; keep new effects behind one.
+The prompts live in `prompts/`, not in the docs, because they are the contract the pump sends; the
+docs describe the contract, the files are it. When Orca's behavior is in question, run the read-only
+commands (`worker-list`, `worktree list`, `agent-context`) and pin the captured shape in
+`test_orca_api.py`; do not guess a field.
+
+The pump waits with `check --wait` and acknowledges each Delivery on its next wait, but it reads what
+settled from `worker-list` and the outcome files, not from the messages: a message is a wake-up and a
+place a worker's question can arrive, never the proof of completion. Mutations do not yet use
+`--retry-request`; crash safety comes from `state.json`, `recover()`, and re-reading Orca. Adding
+request ids is the next hardening step, once their format is confirmed on a live run.
 
 **A PR is reviewed once, and the reviewer fixes in the session that found the problem.** This is
 the load-bearing simplification. Findings used to be filed as children and worked by a later

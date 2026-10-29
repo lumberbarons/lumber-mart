@@ -1,31 +1,56 @@
 # Reference
 
-Resolver and merge-pass schemas, the Orca Run/Task/worktree lifecycle, prompt templates, the
-review-round and repair comments, findings filing, naming, timeout budgets, and the report format
-for `work-epic`.
+The driver's module map, state file, card states, the scripts' output schemas, the comment and
+filing formats, the Orca shapes it relies on, and the report format for `work-epic`.
 
-## Agents
+## The driver
+
+`scripts/work_epic.py` is the coordinator. It wires real Orca, hew, and gh into `pump.Pump` and runs
+the loop; everything it does is covered by `test_pump.py` against a simulated Orca and GitHub.
+
+| Module | What it owns |
+|---|---|
+| `work_epic.py` | CLI: arguments, preflight, skill-directory discovery, `--dry-run`, the report and exit code |
+| `pump.py` | The loop and the agents block: reaping, the review and repair lifecycles, the merge pass, parking, stopping |
+| `orca_api.py` | The Orca CLI as typed calls; the envelope, errors, and the shapes captured from a live Orca |
+| `findings.py` | Filing a reviewer's findings, the deterministic dedup rule, closing the fixed ones, the round comment |
+| `resolve_ready.py` | Which issues spawn, and in what order (read-only planner) |
+| `pr_state.py` | Which PRs merge, repair, update, or hold (read-only planner) |
+| `repo_state.py` | Scope resolution and the git/gh probes both planners share |
+| `prompts/` | What each agent is told: `worker.md`, `reviewer.md`, `repairer.md` (`${name}` placeholders) |
+
+One tick: reap settled agents, start a reviewer for each delivered PR, run the merge pass, spawn
+into free slots. Between ticks the driver waits on the Run's mailbox with `check --wait`, which is
+also the CI-poll clock (~2 minutes). It acknowledges each Delivery on its next wait, records
+`question` and `escalation` messages in the report, and never answers them. It stops when no agent is
+live, nothing can spawn, and every open PR is parked.
+
+## Agents and prompts
 
 | Role | What it runs | Agent |
 |---|---|---|
-| **Coordinator** | This skill: plans, spawns, reaps, merges, reports | The agent the human started the session in; the pump never spawns a coordinator |
+| **Coordinator** | `work_epic.py` | The terminal the human started it in |
 | **Implementer** | `work-issue` in the issue's worktree | `opencode` |
-| **Reviewer** | `review-code`, then fixes what it found, in the issue's worktree | `claude` |
-| **Repairer** | The repair contract in the issue's worktree | `opencode` |
+| **Reviewer** | `review-code`, then fixes what it found, in the same worktree | `claude` |
+| **Repairer** | The repair contract in the same worktree | `opencode` |
 
-The agents are SKILL.md's `Agents` block and nowhere else. The reviewer is a different agent from
-the implementer by construction: that is the second point of view. The implementer and reviewer
-prompts load their skill by name, so both agents must have it installed; the repairer and the
-reviewer's fix step read the quality-gate table from the work-issue skill directory, so it must be
-readable on the host.
+The agents are `pump.py`'s `IMPLEMENTER`, `REVIEWER`, and `REPAIRER`, and nowhere else. The reviewer
+is a different agent from the implementer by construction: that is the second point of view. The
+implementer and reviewer prompts load their skill by name, so both agents must have it installed; the
+reviewer's fix step and the repairer read the quality-gate table from the work-issue skill
+directory, so it must be readable on the host.
 
-Orca's CLI does not expose an installed-agent list, so the choice is the operator's declaration.
-`orca account list --json` reports managed accounts and rate limits, not installation; the
-runtime's `agentSession.agents` powers the app's picker but is not a CLI command. A failed
-`worker-start` is the availability signal: it names the agent and returns `failedStage` /
-`residualResources` / recovery commands. Release the residual terminal, report the issue as
-unscheduled, and do not silently try a different agent — a different agent is a different point of
-view, and the human chose these.
+The prompts are the contract with each agent. Workers write an outcome file into their own
+worktree (`.work-epic/we-<n>.json`, `wr-<pr>.json`, `wc-<pr>.json`) and the driver trusts only that
+file, never terminal output. The reviewer's file is review-code's findings file plus `fixed` and
+`fixedIn` per finding (and `unfixedReason` when not fixed), and `head` and `gate` at the top. The
+repairer's is `{status: resolved|blocked|error, head, reason, gate}`. The worker's is work-issue's
+own outcome file (`status`, `issues[0].pr`, `issues[0].branch`).
+
+Orca's CLI does not expose an installed-agent list, so the choice is the operator's declaration. A
+failed `worker-start` names the agent and returns `failedStage` / `residualResources`; the driver
+releases the residual terminal, reports the issue as unscheduled, and never silently tries a
+different agent.
 
 ## Orca's model, and what the pump uses
 
@@ -47,73 +72,49 @@ creation, `worker-start --worktree id:<child>` puts a reviewer or repairer in an
 The planners remain the only decision layer. Orca Tasks are bookkeeping for what this pump started;
 dependency order lives in hew and `resolve_ready.py`.
 
-## Run binding and resume
+## Run binding and state
 
-Fresh run:
+The Run is `work-epic #<n> #<n> …` — the scope in the order given. A fresh invocation creates one.
+`--resume` rebinds the Run recorded in `state.json`, else the one Run whose objective matches
+exactly, else stops: no match creates a new Run, and more than one match is ambiguous and stops
+rather than guess between two live pumps. A fresh invocation moves a stale `state.json` aside.
 
-```bash
-ORCA orchestration run-create --objective "work-epic #<n> #<n> …" --json
-```
-
-The objective is `work-epic` followed by each scope number as `#<n>`, in the order given. Read
-`result.run.id` and store it as `run` in `$OUTDIR/state.json`.
-
-Resume:
-
-```bash
-jq -r .run "$OUTDIR/state.json"        # if the scratch dir survived
-ORCA orchestration run-list --json     # otherwise, match the objective exactly
-ORCA orchestration run-use --id "<run_id>" --json
-```
-
-- One exact objective match: bind it.
-- No match: create a new Run, and say the resume identity was lost.
-- More than one match: stop and ask which Run to resume; never guess between two live pumps.
-- A Run already bound with a different objective: stop; do not rebind a coordinator that was used
-  for something else.
-
-## Pump state file
-
-`$OUTDIR/state.json` is the pump's bookkeeping, not a planner. It survives a coordinator restart in
-the same worktree and lets the merge pass find the worktree for a PR without guessing. Write it
-after every transition:
+`$OUTDIR/state.json` (`<coordinator worktree>/.work-epic/coordinator/`) is written after every
+transition and read once at startup. Everything else is re-read from Orca, hew, and GitHub each
+tick, so a restart loses nothing it cannot re-derive:
 
 ```json
 {
-  "scope": [21, 22, 25],
   "run": "run_abc123",
-  "repo": "repo-id",
-  "coordinator": "repo-id::/abs/coordinator",
-  "mainCheckout": "/abs/main",
-  "defaultBranch": "main",
+  "scope": [21, 22, 25],
   "issues": {
-    "21": {
-      "worktree": "repo-id::/abs/we-21",
-      "path": "/abs/we-21",
-      "branch": "lumberbarons/we-21",
-      "task": "task_...",
-      "dispatch": "dispatch_...",
-      "state": "delivered",
-      "pr": 34,
-      "review": "fixed",
-      "findings": [41, 42]
-    }
+    "21": { "state": "reviewed", "worktree": "repo::/abs/we-21", "path": "/abs/we-21",
+            "orca_branch": "lumberbarons/we-21", "branch": "fix/21-x", "pr": 34,
+            "large": false, "findings": [41, 42] }
   },
-  "reviewers": {
-    "34": { "task": "task_...", "dispatch": "dispatch_...", "state": "reviewed" }
+  "agents": {
+    "ctx_abc": { "role": "wr", "key": "34", "issue": 21, "pr": 34, "agent": "claude",
+                 "worktree": "repo::/abs/we-21", "path": "/abs/we-21", "started": 1790000000.0,
+                 "done": true, "archived": ".../outcomes/wr-34.json" }
   },
-  "repairers": {
-    "36": { "task": "task_...", "dispatch": "dispatch_...", "state": "resolved" }
-  }
+  "parked": { "pr36:hold": { "text": "...", "issue": 24, "pr": 36, "kind": "gate" } },
+  "waiting": { "37": { "sig": ["9f2c…", "pending", "CLEAN", "checks pending"], "since": 1790000000.0 } },
+  "merged": [ { "pr": 34, "issue": 21 } ],
+  "notes": [ { "type": "question", "id": "msg_…", "subject": "…" } ]
 }
 ```
 
-Outcome files (`.work-epic/we-<n>.json`, `wr-<pr>.json`, `wc-<pr>.json`) live inside the worktree
-that produced them. Step 0 lists `.work-epic/` in the repository's shared `info/exclude` (local,
-never committed), so they stay out of every worktree's `git status`.
+An issue's `state` is one of `implementing`, `delivered`, `reviewing`, `reviewed`, `merged`,
+`failed`, `error`, `noop`, `review_failed`, or `unscheduled`. The pump never spawns an issue it
+already tracks, whatever state it is in. `parked` entries of kind `gate` follow the PR planner and
+clear themselves when the human lifts the gate (closes the finding, resolves the conflict); kind
+`event` entries stay until the run ends. Outcome files are archived to `$OUTDIR/outcomes/` before the
+worker is released and removed from the worktree, so a stale file never sits in the checkout the
+reviewer reuses. The driver lists `.work-epic/` in the repository's shared `info/exclude`
+(local, never committed), so scratch files stay out of every worktree's `git status`.
 
 The worktree comment is the durable fallback if `$OUTDIR` is lost; the issue link is the durable
-selector (`ORCA worktree show --worktree "issue:<n>" --json`).
+selector (`orca worktree show --worktree issue:<n>`).
 
 ## Worktree conventions
 
@@ -140,18 +141,17 @@ work-epic · <run-id> · we-<n> · <agent> · <state>
 ```
 
 The coordinator's own worktree may be the human's, so its line is the shorter
-`work-epic · <run-id> · coordinator <state>`; the sweep and resume matcher read only the first two
+`work-epic · <run-id> · coordinator <state>`; `recover()` and the resume matcher read only the first two
 tokens. Example: `work-epic · run_abc123 · we-21 · opencode · reviewed by claude; 2 fixed; ready to
 merge`.
 
 Orca has no labels, so this comment is the pump's custom metadata as well as the human status line.
-Keep the marker tokens verbatim; the orphan sweep and resume matching read them. Append the gate
-after the fourth token; do not replace the marker with prose.
+Keep the marker tokens verbatim; resume and orphan adoption read them. The gate goes after the
+fourth token; never replace the marker with prose.
 
 ### Links, status, and unread
 
-Set `--issue <n>` right after creating a worktree and `--pr <pr>` at delivery (SKILL.md Steps 3 and
-4). Status transitions and the comment state each carries:
+The driver sets `--issue <n>` right after creating a worktree and `--pr <pr>` at delivery. Status transitions and the comment state each carries:
 
 | When | `--workspace-status` | Comment state |
 |---|---|---|
@@ -169,9 +169,9 @@ Set `--issue <n>` right after creating a worktree and `--pr <pr>` at delivery (S
 | worker returned no work / not eligible | `completed` (then remove if clean) | `no ready work` / `not eligible` |
 
 There is no blocked status: a PR gate is `in-review` with the gate named. The pump raises the
-unread dot and never clears a human's dot; the human clears it. Keep the `<agent>` token when you
-rewrite the trailing state. Do not change a coordinator's display name, issue/PR links, or parent
-lineage unless the pump created that worktree.
+unread dot and never clears a human's dot; the human clears it. The driver keeps the marker tokens when it
+rewrites the trailing state, and never changes a coordinator's display name, issue/PR links, or
+parent lineage: that worktree may be the human's.
 
 ### Lifecycle and cleanup
 
@@ -185,18 +185,17 @@ card while the PR is open.
 - **Merged** — only after `gh pr merge` has succeeded; the sequence is under
   [Merge-pass commands](#merge-pass-commands). A merge that fails leaves the card, checkout, and
   state untouched.
-- **No ready work / not eligible** — the tree did no work; release and remove it if clean.
-- **Stalled (branch pushed, no PR)** — the branch is on origin; remove the tree if clean, keep it
-  if dirty, and report the branch either way. The resolver treats it as `stalled`; a human decides,
-  never a respawn.
+- **No ready work / not eligible** — the tree did no work; remove it if clean.
+- **Failed worker (branch pushed, no PR)** — parked; the tree is kept, unread, and the branch is on
+  origin. The resolver treats the issue as `stalled`; a human decides, never a respawn.
 - **Orca's own branch** — `worker-start --worktree new-child --name <n>` makes Orca create a branch
   for the worktree, `<user>/<n>` (for example `lumberbarons/we-21`), and report it as `branch` on
-  the receipt. Record it. `work-issue` then switches to its `fix|feat|chore/<n>-…` branch, and
+  the receipt. The driver records it. `work-issue` then switches to its `fix|feat|chore/<n>-…` branch, and
   `worktree rm` only deletes the branch that is checked out at removal, so Orca's own branch is
   left behind with nothing on it. Delete it after a successful removal with
   `git -C "$MAIN" branch -d "<orca-branch>"`: lowercase `-d` refuses a branch holding commits the
-  default branch lacks, so it cannot discard work. A refusal, or a missing receipt `branch`, is
-  reported with the worktree, never forced and never guessed from the name. When the agent never
+  default branch lacks, so it cannot discard work. A refusal, or a missing branch, is
+  left alone and never forced or guessed from the name. When the agent never
   switched, Orca's branch is the checked-out one and `worktree rm` already handled it.
 - **Archive hooks** — `worktree rm` skips repo-defined `orca.yaml` archive hooks unless
   `--run-hooks` is passed. The pump skips them by default. A failed archive hook blocks removal;
@@ -205,27 +204,24 @@ card while the PR is open.
 Never remove a worktree with a live terminal, a blocked worker, uncommitted work, or an open PR
 that is still being worked. Report retained paths in every stop.
 
-### Resume and orphan sweep
+### Resume and orphan adoption
 
-At the start of `--resume` and before each spawn wave:
+`--resume` rebinds the Run (see Run binding and state) and calls `recover()` before the first tick:
 
-```bash
-ORCA worktree list --json
-ORCA orchestration task-list --run "<run-id>" --json
-ORCA orchestration worker-list --run "<run-id>" --json
-```
+- **A handler that never finished** — an agent recorded as done but not handled (the process died
+  after reaping it) is re-handled from its archived outcome file. Filing and closing are idempotent,
+  so a review that crashed mid-filing is finished, not repeated.
+- **A worker started but never recorded** — a worktree whose comment carries
+  `work-epic · <run-id> · we-<n>` with a worker row in this Run but no agent in the state file is
+  adopted as the issue's implementer, so it is neither respawned nor orphaned.
+- **Another Run's worktrees** — a marker naming a different Run belongs to another pump. The driver
+  never adopts, releases, or removes it.
 
-For every worktree whose comment carries `work-epic · <run-id>`, except the coordinator's own root
-worktree:
-
-- **live Task** — adopt it; wait, do not spawn a duplicate.
-- **settled Task with an outcome** — archive the outcome, apply the transition above, release any
-  terminal still live, keep the worktree per policy.
-- **marker, no Task** — a crashed run's leftover. Report it; remove only if clean, agentless, has
-  no linked open PR, and not held. Never remove a worktree whose marker names a different Run.
-
-A worktree whose marker names a different Run is another pump. Skip it and report it; do not adopt,
-release, or remove it.
+`--resume` also tells the resolver to offer this user's bare claims once, on the first pass; after
+that, anything the pump tracks is an agent in flight and is never spawned again. A reviewer or
+repairer that was started but never recorded is not adopted: that double failure is rare, and the
+planner would start a second one on the same worktree, so check `orca worktree list` after a crash
+that interrupted a review or repair.
 
 ## Resolver output
 
@@ -373,104 +369,6 @@ One JSON object from `scripts/pr_state.py <issue-number>... [--repo owner/name]
   moves main nor conflicts with a merge elsewhere.
 - Exit codes: `0` success (prs may be empty), `1` runtime error, `2` usage error.
 
-## Prompt templates
-
-Substitute `<n>` (issue), `<pr>` (PR number), `<default>` (origin's default branch), `<branch>` (the
-PR's head branch from `pr_state.py`), and `<work-issue dir>` (the installed work-issue skill
-directory — the one holding its `SKILL.md`; it ships in the hew plugin). The implementer and
-reviewer load their skills by name; the reviewer's fix step and the repairer need `<work-issue dir>`
-for the quality-gate table.
-
-### Worker
-
-```text
-Use the work-issue skill. Work issue #<n> exactly as it specifies, with flags
---non-interactive --json '.work-epic/we-<n>.json'. When it finishes, create `.work-epic/`
-if needed and write that file; do not commit it. Then send the worker_done message the
-orchestration preamble specifies, with --outcome succeeded only if the file's status is
-delivered, otherwise failed, and --report-path '.work-epic/we-<n>.json'. Do not ask
-questions and do not interact with the user.
-```
-
-### Reviewer (reviews, then fixes, in one session)
-
-```text
-Review PR #<pr> and fix what you find, in this worktree. Issue #<n> is the change the PR carries;
-read it with `hew show <n>` when its intent is not clear from the diff.
-
-This worktree is already on the PR's issue branch. Bring it to the PR head first:
-1. `git fetch origin`
-2. `git merge --ff-only origin/<branch>`
-If the fast-forward fails, stop and write status "error" with the reason; do not reset, rebase,
-or force anything.
-
-Then:
-3. Use the review-code skill with flags --non-interactive --json '.work-epic/wr-<pr>.json'. Its
-   default branch-vs-default scope is exactly this PR's diff.
-4. For each finding at P0, P1, or P2, in order, try to fix it:
-   - make the smallest change that resolves it, inside the files this PR already changes or
-     their direct tests;
-   - run the quality gate the changed files select (the table in <work-issue dir>/REFERENCE.md);
-   - if the gate passes, commit it as `fix: <finding title>` and set "fixed": true and
-     "fixedIn": "<short sha>" on that finding in the file;
-   - otherwise undo the change entirely (`git restore --staged --worktree .`) and set
-     "fixed": false and "unfixedReason": "<why>" on that finding.
-   Leave a finding unfixed, with the reason, when the fix needs a design decision, reaches outside
-   this PR's files, would be large, or conflicts with another finding. Never weaken or delete a
-   test to make a gate pass. Leave P3 findings alone.
-5. If you committed anything: `git push origin HEAD:<branch>`. Never --force, never rebase,
-   never push to a ref other than this PR's <branch>.
-6. Add to the file's top level "head": "<sha after the push>" and "gate": "<command and result>".
-   Create `.work-epic/` if needed; do not commit the file.
-7. Send the worker_done message the orchestration preamble specifies, with --outcome succeeded
-   only if the file's status is reviewed, otherwise failed, and --report-path
-   '.work-epic/wr-<pr>.json'. Ask nothing and do not interact with the user.
-```
-
-The file is review-code's findings file with four additions the converter and the pump read:
-`fixed` and `fixedIn` per finding (and `unfixedReason` when not fixed), and `head` and `gate` at
-the top. Everything else is untouched, so a file with no fixes is exactly review-code's output.
-
-### Repairer (conflict or red CI)
-
-There is no repair skill to load: the prompt carries the whole contract.
-
-```text
-Repair PR #<pr>. Issue #<n> is the change the PR carries; read it with `hew show <n>` when its
-intent is not clear from the diff. The PR is either in conflict with origin/<default> or has a
-failing check; find out which.
-
-This worktree is already on the PR's issue branch. Bring it to the PR head first:
-1. `git fetch origin`
-2. `git merge --ff-only origin/<branch>`
-If the fast-forward fails, stop and write status "error" with the reason; do not reset, rebase,
-or force anything.
-
-Then:
-3. If the PR conflicts: `git merge origin/<default>`. For each conflicted file, reconcile both
-   sides' intent: the PR side is issue #<n>'s change, the incoming side is already-merged work.
-   Combine both when they are compatible; when they contradict each other in behaviour — not just
-   in text — stop and write status "blocked" with the clashing files and why. Never drop one side
-   wholesale, never guess.
-4. If a check is failing: read it with `gh pr checks <pr>` and the failing run's log. Fix the
-   cause when this PR caused it. When it did not — a flaky test, an outage, a failure that is
-   already on origin/<default> — stop and write status "blocked" and say so; do not paper over it,
-   and never skip, weaken, or delete a test or a check.
-5. Run the quality gate the changed files select (the table in <work-issue dir>/REFERENCE.md) over
-   the union of files you touched. A failing gate is "blocked"; do not push.
-6. Commit and `git push origin HEAD:<branch>`. Never --force, never rebase, never push to a ref
-   other than this PR's <branch>.
-7. Write '.work-epic/wc-<pr>.json' as JSON:
-   { "status": "resolved" | "blocked" | "error", "head": "<sha after the push>",
-     "reason": "<why, when not resolved>", "gate": "<command and result>" }
-   Do not commit it.
-8. Send the worker_done message the orchestration preamble specifies, with --outcome succeeded
-   only if status is "resolved", otherwise failed, and --report-path '.work-epic/wc-<pr>.json'.
-   Ask nothing and do not interact with the user.
-```
-
-The prompt trusts only the outcome file: the head is verified before the pump acts on `resolved`.
-
 ## Review-round comment
 
 Every `reviewed` findings file — clean or not — becomes exactly one comment. Post it **after** the
@@ -533,18 +431,18 @@ record. Nothing about a successful repair puts the PR back into review.
 
 ## Findings filing
 
-The reviewer's findings file (critique's FINDINGS.md shape, plus the `fixed` fields) becomes
-issues, filed with no parent: they are the paper trail of this review. This runs before the
-review-round comment is posted, so a failure here leaves the PR unreviewed rather than mergeable
-with its blocker missing:
+`findings.Filer` turns the reviewer's findings file (critique's FINDINGS.md shape, plus the `fixed`
+fields) into issues, filed with no parent: they are the paper trail of this review. It runs before the
+review-round comment is posted, so a failure leaves the PR unreviewed rather than mergeable with its
+blocker missing. In order, it runs:
 
 ```bash
 uv run --no-project <raise-issues skill dir>/scripts/findings_to_plan.py \
   "$OUTDIR/outcomes/wr-<pr>.json" --reviewed-issue <n> --reviewed-pr <pr> \
   --at-or-above P2 --out "$OUTDIR/wr-<pr>.plan.jsonl"
-hew list --json --bodies --state all > "$OUTDIR/issues.ndjson"
+hew list --json --bodies --state all        # → wr-<pr>.issues.ndjson
 uv run --no-project <raise-issues skill dir>/scripts/dedup_candidates.py \
-  "$OUTDIR/wr-<pr>.plan.jsonl" "$OUTDIR/issues.ndjson" --reviewed-issue <n>
+  "$OUTDIR/wr-<pr>.plan.jsonl" "$OUTDIR/wr-<pr>.issues.ndjson" --reviewed-issue <n>
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl" --dry-run
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 ```
@@ -552,18 +450,19 @@ hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically, stamps
 `review-of: #<n> (PR #<pr>)` into `where`, adds `fixed-in: <sha>` when the finding carries
 `fixedIn`, and — with `--at-or-above P2` — leaves P3s to the round comment. Exit 3 means the file's
-status is not `reviewed`; Step 5 has already escalated that case, so it should never reach here.
-`dedup_candidates.py` lists, per plan line, the issues that already carry the same key and were
-raised against this reviewed issue; a hit on the reviewed issue itself, or on a finding raised
-against another issue, comes back under `other_generation` and is never a reason to skip. For each
-candidate, apply raise-issues' Step 3 table: read the body, and skip the line only if it describes
-the same finding. The scan spans open and closed, so a finding whose fix merged before is re-filed
-as a regression (`--discovered-from`), and one a human declined stays suppressed. Drop suppressed
-lines from the plan before `hew apply`.
+status is not `reviewed`; the driver parks that case before filing, so it should never reach here.
 
-Then close what the reviewer fixed. Every open issue that names this PR and carries a `fixed-in:`
-line is closed as completed, with that commit as the reason. Unfixed findings carry no `fixed-in:`
-line, so they stay open:
+**The dedup rule is deterministic.** `dedup_candidates.py` finds leads — issues with the same review
+key raised against the same review target — and the raise-issues agent flow reads each body to decide.
+A driver has no reader, so it drops a plan line only when a candidate has the same key, the same
+review target, **and** the same set of paths (`same_paths`); the line then reuses that issue's number
+in the round comment. Anything less is filed. This errs toward a duplicate over a lost finding. A
+finding raised against another review target is never a duplicate, so a finding about a fix stays
+distinct from the finding the fix was for.
+
+Then it closes what the reviewer fixed. Every open issue that names this PR
+(`review-of: #<n> (PR #<pr>)`) and carries a `fixed-in:` line is closed as completed, with that
+commit as the reason — equivalent to:
 
 ```bash
 hew list --json --bodies \
@@ -575,9 +474,10 @@ hew list --json --bodies \
     done
 ```
 
-The command is safe to repeat — a closed issue no longer lists — which is why Step 7 runs it again
-for every reviewed PR: a crash between filing and closing leaves a fixed finding open, which holds
-a P1's PR until the sweep closes it. The hold is safe in that direction.
+Unfixed findings carry no `fixed-in:` line, so they stay open. The step is safe to repeat — a closed
+issue no longer lists — which is why `recover()` can re-run a filing a crash interrupted: until the
+close lands, a fixed P1 sits open and holds a PR that has no round comment yet, which is the safe
+direction.
 
 Each findings issue is filed `blocked-by` the reviewed issue, so an unfixed finding's own fix waits
 until the PR merges and the defect exists on main. An open finding at P1 or above holds its PR until
@@ -586,55 +486,43 @@ next pass readies and merges the PR; nothing re-reviews it.
 
 ## Timeout budgets
 
-`check --wait` is the pump's clock. Size the loop like this:
+The budgets are constants at the top of `pump.py`.
 
-- **Single `check --wait` timeout:** ~10 minutes. On timeout, enumerate `worker-list`, handle any
-  `agentWait`/attention row, then run the merge pass. Do not treat the timeout as failure.
-- **Hard per-implementer budget:** ~2 hours of continuous `working`. Beyond it, `worker-read` the
-  worker, mark its worktree `--unread` with the budget in the comment, and escalate. Keep it
-  un-released rather than killing a run that may be legitimately long.
-- **Hard per-reviewer budget:** ~90 minutes of continuous `working`, handled the same way. It is
-  bounded by one PR's diff plus the fixes and their gates; one running this long is stuck.
-- **Hard per-repairer budget:** ~1 hour of continuous `working`, handled the same way, and its
-  failure comment posted then — an uncounted hang is respawned by every later run. A repair is
-  bounded by one PR's conflict or failure plus the gate. Left un-released, it stays `--repairing`
-  and keeps the queue held until the human closes it.
-- **`exited` liveness with no `worker_done`:** positive proof the agent stopped. Read the outcome
-  file (with the grace period); if it exists, treat it as a settled report. If it is missing,
-  follow the orchestration recovery reference — `worker-stop` only on proven exit,
-  `worker-abandon` for `outcome_unknown` when the guide says so; never invent a kill from a
-  timeout.
-- **CI wait (merge pass):** poll `pr_state.py` on a ~2-minute cadence; a PR with no state change for
-  ~60 minutes of continuous `wait` is escalated, its worktree marked unread, and set aside — the
-  pump moves on and the next pass reaps it if CI recovers. `queued` is not a `wait`: it has no
-  budget of its own and moves or parks with the queue head.
+- **Mailbox wait:** one `check --wait` of 2 minutes, which is also the cadence at which CI and
+  idle agents are re-read. A timeout is a checkpoint, never a failure.
+- **Per-agent budget:** continuous working time before the driver parks a flag on the worktree (it
+  never kills the agent): implementer ~2 hours, reviewer ~90 minutes, repairer ~1 hour.
+- **Outcome grace:** a settled agent's outcome file can trail the settlement; a missing file is
+  re-read for ~90 seconds, then counts as an `error`.
+- **CI wait:** a PR whose `wait` has shown no state change (head, checks, merge state) for ~60
+  minutes is parked and set aside; the pump moves on.
+- **Release:** `worker-release` is the only way a terminal is closed, and only after the outcome is
+  read and archived. A release that reports anything but success is recorded in the report's notes,
+  not acted on; it never earns a `terminal close`.
 
-## Orca commands used
+## Orca shapes the driver relies on
 
-- `ORCA worktree current --json` — the coordinator worktree, repo id, and path
-- `ORCA status --json` — runtime readiness
-- `ORCA repo list --json` — confirm the target repo is registered; map `--repo owner/name`
-- `ORCA repo add --path <mainCheckout> --json` — register a repo the human wants Orca to own (a
-  human action, not a pump mutation)
-- `ORCA orchestration run-create|run-use|run-current|run-list` — bind and resume the Run
-- `ORCA orchestration worker-start` — create an issue worktree and its supervised worker, or start
-  a reviewer or repairer in an existing one
-- `ORCA orchestration task-list --run <id> --json` — live writers, reviewers, repairers
-- `ORCA orchestration worker-list --run <id> --json` — liveness, attention, reclaimable terminals
-- `ORCA orchestration worker-show --dispatch <id> --json` — `observation.agentWait` and details
-- `ORCA orchestration worker-read --dispatch <id> --source auto --json` — bounded output
-- `ORCA orchestration worker-release --dispatch <id> --json` — archive and close a settled agent
-- `ORCA orchestration worker-retain --dispatch <id> --json` — explicitly keep a settled terminal
-  live for debugging, only on the human's instruction
-- `ORCA orchestration check --wait --types "worker_done,escalation,question"` — the pump's inbox
-- `ORCA orchestration check --ack <delivery-id> --json` — acknowledge a processed batch
-- `ORCA orchestration check --unread` / `--all` — drain a resumed Run
-- `ORCA orchestration worker-stop|worker-abandon` — recovery only, per the orchestration guide
-- `ORCA worktree set` — issue/PR links, status, comment, unread
-- `ORCA worktree show --worktree "issue:<n>"` — the durable issue selector
-- `ORCA worktree list --json` — the run-marker sweep
-- `ORCA worktree rm` — remove a completed or workless worktree
-- `ORCA worktree ps --json` — optional cross-check of live worktree terminals
+Captured from a live Orca 1.4.x and pinned in `test_orca_api.py`. Every command answers
+`{"ok", "result"}` or `{"ok": false, "error": {"code", "message", "data"}}`; `OrcaError` carries the
+code, the data, and the partial receipt.
+
+- `worker-start` → `result.{taskId, dispatchId, state: "ready", effects[{kind: "worktree", action,
+  id}], residualResources}`. The worktree id Orca created is the `worktree` effect's `id`; an older
+  host that omits it is found by the unique comment marker. Exit 0 only for `ready`.
+- `worker-list --run` → `result.{workers[], page{hasMore, nextCursor}}`; each row has `dispatchId`,
+  `workerState`, `dispatchStatus`, `terminalState`, and `projection.{liveness, attention,
+  nextAction}`. A Dispatch is over when `workerState` is `succeeded` or `failed`.
+- `check --wait --run --types` → `result.{deliveryId, messages[], count, timedOut}`; a message's
+  `payload` is a JSON string (`dispatchId`, `outcome`, `reportPath`).
+- `worktree list` rows: `id`, `path`, `branch` (`refs/heads/…`), `comment`, `workspaceStatus`,
+  `isUnread`, `linkedIssue` (a number), `linkedPR`.
+- `worktree rm` is asynchronous (`removing: true`); the driver polls the list for the worktree to
+  disappear before deleting branches.
+- `worker-show` → `observation.agentWait`: non-null names a worker parked on a dialog only a human can
+  answer. Null means Orca never looked, not that the worker is free.
+
+Not used yet: `--retry-request` on mutations (idempotent replay) and `request-show`. Adding them is
+the next hardening step, once the request-id format is confirmed on a live run.
 
 ## Merge-pass commands
 
@@ -685,56 +573,41 @@ all of them.
 
 ## Report format
 
-One block per issue, one per PR review, one per repair, one per merge-pass action, then the
-stopped/drained distinction, retained worktrees, and the decisions needed:
-
 ```
-Run run_abc123 over #12 (opencode implements, claude reviews and fixes, 2 workers, squash):
-  coordinator: <worktree-id> · in-review
-  #21 we-21 (large): delivered → PR #34; reviewed by claude: 2 fixed (#41, #42 closed), 1 P2
-    filed open (#43); merged, main ff'd; worktree removed
-  #22 we-22: delivered → PR #35; clean review; worktree <id> in-review
-  #23 skipped: blocked (blocked by #35)
-  #24 we-24: delivered → PR #36; P1 finding #44 not fixed (needs a schema decision) — PR held,
-    worktree <id> unread
-  #26 skipped: stalled (branch fix/26-retry-budget pushed, no open PR)
-  PR #36 wc-36 (opencode): conflict with origin/main repaired in the issue's worktree (gate:
-    go test ./... — passed), no re-review
-  PR #38 wc-38 (opencode): blocked (pkg/api rename vs #33's call sites) — coupling filed #46,
-    PR parked, worktree <id> retained
-  PR #39: checks failing, 2 repair attempts spent — parked as ci_failed
-  merge pass: 2 merged, 1 update_branch, 1 conflict (PR #37, filed #45), 1 held, 1 ci_failed
-  skipped totals: blocked 1, untriaged 0, claimed 0, in_review 0, stalled 1
-  progress: 5/8 issues closed — 0 eligible remain, spawn budget 2; pump stopped, not drained
-  retained worktrees: #24 <id> (held); #38 <id> (conflict); 0 reclaimable terminals
+Run run_abc123 over #21 #22 #24 #26: STOPPED
+  #21: merged; PR #34; findings #41, #42
+  #22: reviewed; PR #35
+  #24: reviewed; PR #36; findings #44
+  #26: failed
+  merged: PR #34
+  resolver: closed 4, blocked 0, untriaged 0, claimed 0, in_review 2, stalled 1, eligible 0
+  spawn budget 2; stopped, not drained
   decisions needed:
-    #24 / PR #36 — finding #44 (P1): <one line>; close #44 to release the PR
-    PR #38 — conflicts with #33's change; resolve by hand or re-scope
-    PR #39 — CI red on <check> after two repairs: <reason>
+    PR #36: an open P1 finding the reviewer could not fix holds it; close the finding to release the PR
+    #26: the opencode worker failed — gate would not pass
 ```
 
-"0 eligible remain" without "stopped, not drained" reads as a finished scope; the resolver's
-`counts` is what keeps the two apart, which is the same distinction work-issue's `no_ready_work` vs
-`not_eligible` protects. Likewise "N eligible remain, spawn budget 0" is a full backlog, not an
-empty queue. PRs set aside on a spent CI budget when the pump stops are listed so the next run — or
-the human — knows what is still in flight. A retained worktree with no reason is an omission: every
-one is either held, conflicted, failed, blocked, or kept for a human's inspection, and each one
-appears under the decisions needed.
+"Drained" means no parked decisions and nothing left open in scope; "stopped" means decisions are
+waiting; "halted" means an outage stopped the pump. An epic scope whose children are all closed is
+reported as such and left for a human to close. `report.json` beside the state file carries the same
+data.
 
 ## Script tests
-
-The decision logic of the scripts — `pr_state.plan_pr`, `pr_state.schedule`,
-`resolve_ready.classify`, and `repo_state`'s scope parser — is pure over hew and gh JSON and covered
-by stdlib `unittest` files beside them:
 
 ```bash
 python3 -m unittest discover <this skill's directory>/scripts
 ```
 
-A change to a decision table, a skip reason, or a parser lands with the test case that pins it,
-before the pump that depends on it is trusted. The review-once rule is pinned in
-`test_pr_state.py`: a moved head is not re-reviewed, and an unfixed P1 holds without any second
-round to escalate to.
+- `test_pr_state.py`, `test_resolve_ready.py`, `test_repo_state.py` — the decision tables and the
+  scope parser, pure over hew and gh JSON.
+- `test_orca_api.py` — the envelope and the captured Orca shapes.
+- `test_findings.py` — filing, the dedup rule, closing the fixed, the round comment.
+- `test_pump.py` — the whole pump against a simulated Orca, GitHub, and tracker: the happy path,
+  review and fix, holds, repairs, halts, stalls, resume, and the mailbox.
+
+A change to a decision, a skip reason, a parser, or the loop lands with the test case that pins it.
+The review-once rule is pinned in `test_pr_state.py` (a moved head is not re-reviewed) and in
+`test_pump.py` (a repaired PR merges without a second reviewer).
 
 ## Worktree reliability notes
 

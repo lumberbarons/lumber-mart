@@ -1,7 +1,7 @@
 {
   "name": "work-epic",
-  "description": "Skill for burning down a hew epic or a set of issues across Orca-managed worktrees and supervised agents. Resolves the ready issues deterministically, creates one Orca worktree per issue, starts an implementer running work-issue, has a different agent review each delivered PR once and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make.",
-  "version": "4.0.0",
+  "description": "Skill for burning down a hew epic or a set of issues across Orca-managed worktrees and supervised agents, driven by a tested script rather than by an agent following prose. The driver resolves the ready issues, creates one Orca worktree per issue, starts an implementer running work-issue, has a different agent review each delivered PR once and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make.",
+  "version": "4.1.0",
   "author": {
     "name": "lumberbarons"
   }
