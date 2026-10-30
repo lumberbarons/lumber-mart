@@ -381,6 +381,9 @@ by a path the reviewer did not see.
 
 Do not run `hew close`.
 
+To take a delivered issue through review and merge, use the `finish-issue` skill. Work-epic
+already owns that finish when this skill runs inside its orchestration loop.
+
 Under `--batch`, go back to Step 1 and resolve the next issue, until the ceiling is reached or
 the queue runs dry. When the batch is done, Step 8 verifies it as a whole.
 
