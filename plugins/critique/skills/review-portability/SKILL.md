@@ -23,6 +23,7 @@ Your input may carry flags alongside a path. Strip the flags first; whatever rem
 
 - **`--json <path>`** — additionally write a findings file at that path, per
   [FINDINGS.md](FINDINGS.md) with `skill: "portability"`. Off by default.
+- **`--inline`** — review in this session instead of delegating to subagents.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report
   the outcome and stop.
 
@@ -34,6 +35,11 @@ Review every file the target ships: frontmatter, prose, fenced code blocks, and 
 
 A review that ran and found nothing, and a review that never ran, both end with zero findings
 and mean opposite things — say which happened, in the report and in the findings file's `status`.
+
+Delegate by default: spawn subagents and give each a couple of files plus the pattern
+vocabulary, severity ladder, and not-flagging list from [REFERENCE.md](REFERENCE.md). Review in
+this session only when `--inline` was given or the harness cannot delegate. Merge what comes
+back before collapsing by root cause.
 
 ## Method
 

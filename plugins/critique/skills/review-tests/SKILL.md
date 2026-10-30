@@ -19,6 +19,7 @@ What follows is only the local policy you could not infer. Prescribing the revie
 Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
 
 - **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](FINDINGS.md). Off by default; the markdown report is unchanged either way.
+- **`--inline`** — review in this session instead of delegating to subagents.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
 
 ## Scope
@@ -47,11 +48,11 @@ A review that ran and found nothing, and a review that never ran, both end with 
 
 The script returns paths language-blind. Filter to test files; keep the production sources in view too, since a gap is only visible against the code nothing tests.
 
-For three or more test files, fan out if delegation is available: give each subagent a couple
-of files, the severity rules below, and the falsifiability requirement. Otherwise review the
-same files sequentially. Keep delegated reviews to static reading: use available
-file-reading/search tools, including terminal commands when needed, but do not execute
-project code. Merge what comes back before collapsing patterns.
+Delegate by default: spawn subagents and give each a couple of files, the severity rules below,
+and the falsifiability requirement. Review in this session only when `--inline` was given or the
+harness cannot delegate. Keep delegated reviews to static reading: use available
+file-reading/search tools, including terminal commands when needed, but do not execute project
+code. Merge what comes back before collapsing patterns.
 
 ## Severity, anchored on falsifiability
 
