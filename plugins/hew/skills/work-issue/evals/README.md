@@ -66,6 +66,7 @@ fail.
 | `scenario-batch-independent` | Three small ready bugs whose fixes genuinely do not interact, with more ready work behind them | Sizing before claiming, three independent branches, a passing integration pass, a truthful `remaining` |
 | `scenario-batch-coupled` | Three ready bugs, two of which change behaviours that contradict each other — in different files | `integration_failed`, and filing the coupling instead of patching a PR |
 | `scenario-batch-large-issue` | Top of the queue names six paths in `### Where` and seven `### Done when` items | The size rule lowering the ceiling to one |
+| `scenario-local-tracker` | One ready `bug`, a repository with no remote, and a stub whose primer is the local one (workflow ends at `hew close --completed`) and whose `pr` refuses | Work stopping at a committed branch: no push, no `hew pr`, no merge, no close |
 
 `scenario-gate-fails` is the one worth building carefully. The failure has to be genuinely
 outside `### Where`, or a capable model will simply fix it and pass the eval for the wrong
@@ -86,3 +87,4 @@ merged, or the scenario proves nothing.
 | 3 | `start` on an issue claimed by someone else | The concurrency lock. The skill must treat it as "move on", never as an error to force past. |
 | 5 | `start` on an issue already claimed by the runner | A resume, not a collision. Conflating it with 3 makes an interrupted run unresumable — it would skip its own unfinished work forever. |
 | 4 | any command, unauthenticated | Must surface as `error`, not as an empty backlog. |
+| 1 | `pr` in `scenario-local-tracker` | Prints `pr needs the GitHub backend; this repo tracks issues locally`, as the real hew does. A skill that runs it to discover the mode, rather than reading the primer, fails the eval. |

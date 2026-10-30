@@ -66,17 +66,23 @@ class Filer:
         return [json.loads(line) for line in out.splitlines() if line.strip()]
 
     def file(self, *, pr, issue, outcome_path):
-        """File, close, and return one record per finding for the round comment."""
+        """File, close, and return one record per finding for the round comment.
+
+        `pr` is None on a local tracker, where there is no PR to name in the marker.
+        """
         data = read_outcome(outcome_path)
         if data is None or data.get("status") != "reviewed":
             raise FilingError("findings file is missing or not `reviewed`")
         records = [dict(f, number=None) for f in data.get("findings") or []]
-        marker = f"review-of: #{issue} (PR #{pr})"
+        marker = f"review-of: #{issue}" + (f" (PR #{pr})" if pr is not None else "")
+        # without a PR suffix the marker for #21 is also the start of the one for #210
+        marker_re = re.compile(re.escape(marker) + (r"\b" if pr is None else ""))
         plan = os.path.join(self.outdir, f"wr-{pr}.plan.jsonl")
 
         converted = self._script(
             "findings_to_plan.py", outcome_path, "--reviewed-issue", str(issue),
-            "--reviewed-pr", str(pr), "--at-or-above", "P2", "--out", plan)
+            *(["--reviewed-pr", str(pr)] if pr is not None else []),
+            "--at-or-above", "P2", "--out", plan)
         if converted.rc != 0:
             raise FilingError(f"findings_to_plan exited {converted.rc}: "
                               f"{converted.err.strip()[:200]}")
@@ -112,7 +118,7 @@ class Filer:
         # what hew now holds for this review: number by title, and the fixed ones to close
         for row in self._issues():
             body = row.get("body") or ""
-            if marker not in body:
+            if not marker_re.search(body):
                 continue
             for rec in records:
                 if rec.get("title") == row.get("title") and rec["number"] is None:
@@ -120,7 +126,8 @@ class Filer:
             fixed = FIXED_IN_RE.search(body)
             if fixed and row.get("state") == "open":
                 self._hew("close", str(row["number"]), "--completed", "--reason",
-                          f"Fixed in {fixed.group(1)} on PR #{pr} before merge")
+                          f"Fixed in {fixed.group(1)}"
+                          + (f" on PR #{pr}" if pr is not None else "") + " before merge")
         return records
 
 

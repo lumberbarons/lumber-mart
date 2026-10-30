@@ -7,6 +7,7 @@ copies that drift.
 """
 
 import json
+import os
 import re
 import subprocess
 from urllib.parse import quote
@@ -122,6 +123,91 @@ def default_branch(repo=None):
         text=True,
     )
     return (p.stdout.strip() or None) if p.returncode == 0 else None
+
+
+def local_tracker(repo=None):
+    """True when hew keeps this repository's issues in a local `.hew`, not on GitHub.
+
+    hew's own rule: `--repo` always means GitHub; otherwise the main checkout's
+    `.hew/config.json` names the backend. Read here rather than asked of hew
+    because every hew command that reports it also writes. An unreadable or
+    absent config means GitHub, as it does for hew.
+    """
+    main = None if repo else main_checkout()
+    if not main:
+        return False
+    try:
+        with open(os.path.join(main, ".hew", "config.json")) as f:
+            return json.load(f).get("backend") == "local"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def local_default_branch():
+    """The local default branch: origin/HEAD when set, else main, else master, else None.
+
+    The order review-code's discover-files.sh uses, so the pump and the reviewer
+    agree on what a branch is compared against.
+    """
+    p = subprocess.run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+                       capture_output=True, text=True, check=False)
+    if p.returncode == 0 and p.stdout.strip().startswith("origin/"):
+        return p.stdout.strip()[len("origin/"):]
+    for name in ("main", "master"):
+        p = subprocess.run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{name}"], check=False)
+        if p.returncode == 0:
+            return name
+    return None
+
+
+def unmerged_issue_branches(default):
+    """Local branches named for an issue (`<prefix>/<n>-<slug>`) that `default` does not contain.
+
+    Returns {issue number: branch name}; the first branch per issue wins. A branch
+    that was squash-merged is not contained, so the pump deletes what it merges.
+    """
+    out = run(["git", "branch", "--no-merged", default, "--format=%(refname:short)"])
+    found = {}
+    for name in out.splitlines():
+        n = branch_issue(name.strip())
+        if n is not None:
+            found.setdefault(n, name.strip())
+    return found
+
+
+def branch_head(branch):
+    """The commit a local branch points at, or None when there is no such branch."""
+    p = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+                       capture_output=True, text=True, check=False)
+    return (p.stdout.strip() or None) if p.returncode == 0 else None
+
+
+def commits_behind(default, head):
+    """How many commits on `default` the commit `head` lacks, or None if unknown."""
+    p = subprocess.run(["git", "rev-list", "--count", f"{head}..{default}"],
+                       capture_output=True, text=True, check=False)
+    try:
+        return int(p.stdout.strip()) if p.returncode == 0 else None
+    except ValueError:
+        return None
+
+
+def conflicts_with(default, head):
+    """Whether merging `head` into `default` would conflict; None when git cannot say.
+
+    `merge-tree --write-tree` computes the merge without touching any worktree or
+    ref. Exit 0 is clean. Exit 1 is both a conflict and a bad ref, so the two are told
+    apart by stdout: a conflict leads with the result tree's object id, an error prints
+    only to stderr. Anything else — an old git without --write-tree — is unknown, which
+    no caller may read as clean.
+    """
+    p = subprocess.run(["git", "merge-tree", "--write-tree", "--no-messages", default, head],
+                       capture_output=True, text=True, check=False)
+    if p.returncode == 0:
+        return False
+    if p.returncode == 1 and re.match(r"^[0-9a-f]{40,64}$", p.stdout.split("\n", 1)[0]):
+        return True
+    return None
 
 
 def open_prs(fields, repo=None):

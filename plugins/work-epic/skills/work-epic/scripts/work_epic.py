@@ -8,6 +8,10 @@ whole loop — resolve, spawn, review-and-fix, repair, merge — inside the curr
 Orca-managed worktree and prints a report. Run it from the coordinator's
 terminal: the Run, the mailbox, and the escalation card all belong to it.
 
+When hew keeps the issues in a local `.hew` (and no --repo is given) there is no
+GitHub: each issue's branch is reviewed, gated, and squashed into the local
+default branch, and the issue is closed by the merge.
+
 Exit: 0 drained · 10 stopped with decisions parked for a human · 3 halted on an
 outage · 1 could not start · 2 usage error.
 """
@@ -20,11 +24,18 @@ import time
 from pathlib import Path
 
 import findings
+import local_state
 import pr_state
 import pump
 import resolve_ready
 from orca_api import Orca, OrcaError, real_sh
-from repo_state import default_branch, main_checkout, parse_scope
+from repo_state import (
+    default_branch,
+    local_default_branch,
+    local_tracker,
+    main_checkout,
+    parse_scope,
+)
 
 USAGE = ("usage: work_epic.py <issue-number>... [--repo owner/name] [--workers N] "
          "[--resume] [--dry-run]")
@@ -77,9 +88,14 @@ def find_skill_dir(name, env_var):
 
 
 def dry_run(scope, repo, workers, resume):
-    plan = resolve_ready.resolve(scope, repo, resume, workers)
-    prs = pr_state.plan(scope, repo)
-    print(f"Run: work-epic {' '.join('#%d' % n for n in scope)}  (dry run: nothing created)")
+    local = local_tracker(repo)
+    if local:  # nothing is tracked yet, so nothing is delivered and no branch awaits a merge
+        plan, prs = local_state.resolve(scope, {}, workers), local_state.plan(scope, {})
+    else:
+        plan = resolve_ready.resolve(scope, repo, resume, workers)
+        prs = pr_state.plan(scope, repo)
+    print(f"Run: work-epic {' '.join('#%d' % n for n in scope)}  (dry run: nothing created)"
+          + ("  [local tracker]" if local else ""))
     slots = min(workers, plan["spawnBudget"])
     print(f"Would start up to {slots} of {len(plan['eligible'])} eligible ({workers} workers assumed free):")
     for e in plan["eligible"][:slots]:
@@ -87,7 +103,7 @@ def dry_run(scope, repo, workers, resume):
               f"{'  [large]' if e['large'] else ''}")
     for s in plan["skipped"]:
         print(f"  skipped #{s['number']}: {s['reason']} ({s['detail']})")
-    print("Merge plan for open PRs:")
+    print("Merge plan for delivered branches:" if local else "Merge plan for open PRs:")
     for p in prs["prs"]:
         print(f"  PR #{p['number']} (#{p['issue']}): {p['action']}" + (f" — {p['note']}" if p.get("note") else ""))
     if not prs["prs"]:
@@ -135,12 +151,16 @@ def main(argv):
 
     work_issue = find_skill_dir("work-issue", "WORK_EPIC_WORK_ISSUE_DIR")
     raise_issues = find_skill_dir("raise-issues", "WORK_EPIC_RAISE_ISSUES_DIR")
+    local = local_tracker(repo)
+    state = pump.State(state_path)
     cfg = pump.Config(scope=scope, coord=coord, outdir=outdir, work_issue_dir=work_issue,
                       workers=workers, repo=repo, resume=resume, main=main_checkout(),
-                      default=default_branch(repo) or "main")
+                      default=(local_default_branch() if local else default_branch(repo)) or "main",
+                      local=local)
     filer = findings.Filer(real_sh, cwd=coord["path"], raise_dir=raise_issues, outdir=outdir, repo=repo)
-    p = pump.Pump(cfg, orca, real_sh, resolve_ready.resolve, pr_state.plan, filer,
-                  pump.State(state_path))
+    resolve_fn, plan_fn = ((local_state.resolver(state), local_state.planner(state)) if local
+                           else (resolve_ready.resolve, pr_state.plan))
+    p = pump.Pump(cfg, orca, real_sh, resolve_fn, plan_fn, filer, state)
     try:
         summary = p.run()
     except pump.StopRun as e:

@@ -1,13 +1,13 @@
 ---
 name: work-issue
-description: Take a hew-tracked GitHub issue from claimed to draft PR, test-first — select from `hew ready`, claim it, branch, drive the issue's own "Done when" checklist as tests, verify, push, and open the PR with `hew pr`. Use whenever the user wants a tracked issue worked, fixed, implemented, or delivered — "work the next issue", "fix #42", "implement that bug", "pick up the next ready item", "what's ready — go do it", "fix a few bugs", "drain the backlog". Use it after the raise-issues skill files findings, and inside any scheduled or looping agent that works a hew backlog unattended. Handles bug, task, and enhancement issues; `--batch` works several in one run and verifies them together; given an epic it descends to the next ready child rather than working the epic directly.
+description: Take a hew-tracked GitHub issue from claimed to draft PR (on a local tracker, to a committed branch), test-first — select from `hew ready`, claim it, branch, drive the issue's own "Done when" checklist as tests, verify, push, and open the PR with `hew pr`. Use whenever the user wants a tracked issue worked, fixed, implemented, or delivered — "work the next issue", "fix #42", "implement that bug", "pick up the next ready item", "what's ready — go do it", "fix a few bugs", "drain the backlog". Use it after the raise-issues skill files findings, and inside any scheduled or looping agent that works a hew backlog unattended. Handles bug, task, and enhancement issues; `--batch` works several in one run and verifies them together; given an epic it descends to the next ready child rather than working the epic directly.
 argument-hint: "Optional issue number, or flags: --batch [n], --non-interactive, --json <path>, --dry-run"
 ---
 
 # Work Issue
 
-One issue, from `hew ready` to a draft PR, with the issue's acceptance criteria driving the
-tests rather than trailing them.
+One issue, from `hew ready` to a draft PR — or, on a local tracker, a committed branch — with the
+issue's acceptance criteria driving the tests rather than trailing them.
 
 > [!IMPORTANT]
 > [REFERENCE.md](REFERENCE.md) carries the outcome-file schema, the quality-gate table, branch
@@ -27,7 +27,8 @@ Two of its rules do the most work here, and both are easy to undo by accident:
 **Closing is not delivering.** What closes a delivered issue is the merge, through the `Fixes #n`
 that `hew pr` composes. Reaching for `hew close` on work you actually did skips review entirely
 and records the opposite of what happened — which is what the primer's restriction on it is
-protecting.
+protecting. A local tracker has no PR, so its primer ends work with `hew close <n> --completed`,
+but the rule survives: that close follows the merge, and the merge is not this skill's to make.
 
 **Exit 3 is a feature.** `start` refusing a claimed issue is what makes this safe to run on a
 schedule beside another agent: two runs cannot take the same issue, and the loser just moves
@@ -53,11 +54,33 @@ target.
 ## Prerequisites
 
 `hew` on PATH and authenticated — exit code 4 from any `hew` command means run `gh auth login`,
-and unattended that is an `error` outcome, not an empty queue.
+and unattended that is an `error` outcome, not an empty queue. A local tracker needs no
+authentication and no GitHub; see [Local trackers](#local-trackers).
 
 The working tree must be clean before claiming anything. Uncommitted changes would land in this
 issue's commit and silently widen its diff. Stop and say so rather than stashing on the user's
 behalf.
+
+## Local trackers
+
+A repository can keep its issues in a local `.hew` directory instead of GitHub (`hew init
+--local`). Claiming, branching, tests, and the gate all work the same; what changes is where the
+work leaves the checkout. Detect it once, from the primer: a local tracker's workflow line ends in
+`hew close <n> --completed` where GitHub's says `hew pr`. Do not find out by running `hew pr` — it
+refuses (`pr needs the GitHub backend; this repo tracks issues locally`), and that refusal would
+read as a failed delivery.
+
+- **The base is the local default branch.** Wherever this skill says `origin/<default>`, use
+  `<default>`. There may be no remote at all, and where there is one it is not where this
+  repository's work lands.
+- **Nothing is pushed.** The committed branch is the delivery, doing the job the draft PR does on
+  GitHub: the thing a reviewer reads before anything lands. Keep the `<prefix>/<n>-<slug>` name —
+  it is how a person, or work-epic, matches the branch to its issue.
+- **Do not merge it and do not close the issue.** The merge is the review gate, and
+  `hew close --completed` belongs after it, so whoever merges closes. The issue stays claimed
+  meanwhile, as it does while a PR is open.
+- **The testing evidence has no PR body to live in.** What `--testing` would have carried goes in
+  the report and the outcome's `gate`.
 
 ## Step 1 — Resolve the target
 
@@ -236,9 +259,13 @@ Exit 0 prints the current local branch; exit 1 means detached HEAD.
   git switch -c <prefix>/<n>-<slug> origin/<default>
   ```
 
+  (On a local tracker: `<default>`, as in [Local trackers](#local-trackers).)
+
 Before shipping, HEAD must be attached to a local branch. `git push -u` establishes its upstream,
 and `hew pr` resolves the PR head from that upstream ref. Merely pushing a detached commit does
-not establish branch tracking, even with a fully qualified remote ref.
+not establish branch tracking, even with a fully qualified remote ref. On a local tracker nothing
+is pushed and there is no upstream; the requirement shrinks to the branch being attached and
+named for the issue.
 
 Under `--batch`, give each issue its own branch from the same default-branch base. Commit and
 push each issue before starting the next, and record its local branch and upstream name for
@@ -301,18 +328,32 @@ Three checks, in this order, before anything is pushed:
    issue named that you never touched means you solved a different problem than the one filed,
    or the issue's scope was wrong. Either way, stop and explain the gap rather than shipping
    past it.
-3. **The repo's quality gate.** Detect it from the changed files — the language-to-command table
-   is in [REFERENCE.md](REFERENCE.md). Run every gate that applies; a change touching Go and
-   Terraform runs both.
+3. **Every check the project gates on.** Not just the tests: linters, formatters in check mode,
+   type checkers, builds, and anything else the project has set up to hold quality. Find them by
+   reading what the project itself runs — CI workflows, `Makefile`/`justfile`/`Taskfile` targets,
+   `package.json` scripts, pre-commit config, and the repo's agent instructions or contributing
+   guide — and run what CI would run on this branch. The language-to-command table in
+   [REFERENCE.md](REFERENCE.md) is the floor for a project that defines nothing, never the
+   ceiling. Narrow a check to the changed module while iterating, but the final run is the one
+   the project runs, at the scope the project runs it.
+
+The work is not done until all of them pass. A check you could not run (tool missing, needs
+credentials or network) is not a pass: name it in the outcome's `gate` and in the PR's
+`--testing` instead of leaving it out. A check that also fails on the default branch is not this
+change's doing — confirm that by running it there, record it in `gate`, and carry on rather than
+failing the issue over it.
 
 A failure here is not something to work around. Fix it inside the issue's scope and re-run. If
-it cannot be fixed inside that scope, that is a `failed` outcome: commit and push the branch so
-the work is not lost and is inspectable, do **not** open the PR, and leave the issue claimed.
+it cannot be fixed inside that scope, that is a `failed` outcome: commit and push the branch (a
+local tracker: just commit it) so the work is not lost and is inspectable, do **not** open the PR,
+and leave the issue claimed.
 Leaving it claimed is deliberate — the next loop tick will hit exit 3, skip past it, and work
 something else instead of retrying a broken change forever while a human wonders why the queue
 stopped moving.
 
 ## Step 7 — Ship
+
+On a GitHub tracker:
 
 ```bash
 git push -u origin HEAD:<prefix>/<n>-<slug>
@@ -329,12 +370,19 @@ written for a human in a browser rather than an agent in a terminal — and `go 
 set in proportional prose loses exactly the characters that carry its meaning. The same applies
 to any issue you file for discovered work.
 
+On a local tracker there is nothing to push and no PR to open. Commit the work on the issue
+branch, confirm the tree is clean, and stop: that branch is the delivery. Say in the report what
+`--testing` would have said.
+
 Commit conventions are in [REFERENCE.md](REFERENCE.md). The short version: conventional subject
 matching the branch prefix, and `Refs #<n>` rather than a second `Fixes #<n>` — the PR body
 already carries the one closing reference, and a duplicate in a commit closes the issue on merge
 by a path the reviewer did not see.
 
 Do not run `hew close`.
+
+To take a delivered issue through review and merge, use the `finish-issue` skill. Work-epic
+already owns that finish when this skill runs inside its orchestration loop.
 
 Under `--batch`, go back to Step 1 and resolve the next issue, until the ceiling is reached or
 the queue runs dry. When the batch is done, Step 8 verifies it as a whole.
@@ -389,7 +437,8 @@ independent, which is the assumption every separate PR in the batch is resting o
 
 ## Step 9 — Report
 
-Say what happened in terms the next run — or a human reading a job log — can act on:
+Say what happened in terms the next run — or a human reading a job log — can act on. On a local
+tracker the `PR:` line reads `Merge:   pending — branch committed, not pushed`:
 
 ```
 #42 fix: Write commands guard against closed targets
@@ -429,9 +478,9 @@ in a question has to end in a reported outcome instead. The `status` field carri
 
 | status | Means |
 |---|---|
-| `delivered` | Every issue the run took was worked and a PR opened. Under `--batch`, `batch.remaining` says whether the queue is drained or the ceiling simply ran out. |
+| `delivered` | Every issue the run took was worked and a PR opened (a local tracker: the branch committed). Under `--batch`, `batch.remaining` says whether the queue is drained or the ceiling simply ran out. |
 | `integration_failed` | Every issue reached a PR, but Step 8 could not merge or gate them together. The PRs stay open; the coupling is filed as its own issue. |
-| `failed` | An issue was claimed and worked, but verification did not pass. Branch pushed, no PR, issue still claimed. |
+| `failed` | An issue was claimed and worked, but verification did not pass. Branch pushed (committed, on a local tracker), no PR, issue still claimed. |
 | `no_ready_work` | `hew ready` was empty. The backlog is drained — a real result. |
 | `not_eligible` | Ready work exists, but none of it could be taken: all claimed, or all untriaged. |
 | `error` | The run could not start: not authenticated, not a git repository, dirty working tree. |

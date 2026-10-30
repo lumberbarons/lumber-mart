@@ -41,5 +41,6 @@ jobs:
         run: |
           python3 -m unittest discover -s plugins/critique/skills/review-docs/scripts
           python3 -m unittest discover -s plugins/hew/skills/raise-issues/scripts
+          python3 -m unittest discover -s plugins/hew/skills/finish-issue/scripts
       - name: Check shell scripts
         run: find plugins scripts -name '*.sh' -not -path '*/evals/fixtures/*' -print0 | xargs -0 uv run --no-project --with shellcheck-py shellcheck

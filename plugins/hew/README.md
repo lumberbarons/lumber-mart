@@ -1,6 +1,6 @@
 # hew
 
-Agent skills for tracking work in GitHub Issues through the
+Agent skills for tracking work in GitHub Issues or a local tracker through the
 [hew](https://github.com/lumberbarons/hew) CLI, usable from any coding agent that loads skills
 (Claude Code, opencode, codex).
 
@@ -10,6 +10,8 @@ Agent skills for tracking work in GitHub Issues through the
   what is already tracked so a review can run repeatedly without re-filing the same work.
 - **work-issue** — takes a tracked issue from `hew ready` to a draft PR, test-first, with the
   issue's own "Done when" checklist driving the tests.
+- **finish-issue** — reviews an existing PR or committed local branch, verifies it against the
+  current default branch, squash merges, and confirms the issue is closed.
 
 Together they close the loop: a review files what is wrong, and the next run picks it up and
 fixes it.
@@ -18,6 +20,8 @@ fixes it.
 
 - [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`
 - Run from a checkout of the target repository (`--repo owner/name` overrides detection)
+- A repository that keeps its issues in a local `.hew` (`hew init --local`) needs no GitHub, no
+  remote, and no `gh`; see [Local trackers](#local-trackers)
 - `hew init` once per repo, to create the convention labels
 
 ## Session hooks
@@ -41,6 +45,7 @@ system context). Only the artifact's own header comment is documentation; edit t
 |-------|-------------|-----------------|
 | `raise-issues` | File review findings as deduplicated GitHub issues | Yes |
 | `work-issue` | Take a tracked issue from claimed to draft PR, test-first | Yes |
+| `finish-issue` | Land a reviewed, verified PR or local branch and confirm closure | Yes |
 
 Skill names are agent-neutral. Agents that resolve skills by name (opencode, codex) call them
 directly; Claude Code prefixes the plugin name (`/hew:work-issue`).
@@ -56,6 +61,10 @@ work-issue 42                      # a specific issue, or an epic to descend int
 work-issue --batch                 # up to 3 issues, then verify them together
 work-issue --batch 5               # a higher ceiling; sizing may still stop sooner
 work-issue --dry-run
+
+finish-issue 42                    # finish an existing delivery (issue number, not PR)
+finish-issue 42 --dry-run          # inspect and show the landing plan
+finish-issue 42 --non-interactive --json out/finish.json
 ```
 
 ## Working an issue
@@ -77,6 +86,14 @@ in hew — a human deciding no work was needed.
 same issue and the loser simply moves down the queue. That is what makes an unattended run safe
 to point at a shared backlog.
 
+### Local trackers
+
+With a local tracker there is no PR, so the workflow ends one step earlier: `hew ready` →
+`hew start` → branch from the local default branch → tests → commit. The committed, unpushed
+branch is the delivery, doing the job the draft PR does on GitHub. `work-issue` neither merges it
+nor closes the issue: whoever merges (a person, `finish-issue`, or [work-epic](../work-epic)) closes with
+`hew close --completed` afterwards, so the review gate still sits between delivered and done.
+
 The `### Done when` checklist is what makes the test-first part more than ceremony: the
 acceptance criteria already exist, written by whoever filed the issue and checked by whoever
 reviews the PR. Behavioural items become failing tests before any implementation; structural
@@ -85,6 +102,26 @@ unit test asserting the absence of a pattern is theatre.
 
 Epics are trees, not work — given one, the skill descends to the next ready child, works exactly
 that, and leaves the epic open for the next run.
+
+## Finishing a delivery
+
+`finish-issue 42` picks up an existing delivery, reviews it (or reads completed review evidence),
+handles scoped repairs, and verifies it against the current default branch. On GitHub it waits
+for CI, squash merges the verified head, and confirms the PR's closing reference closed the
+issue. On a local tracker it squashes into the local default branch and then closes with
+`hew close --completed`, recording the commit. The tracker backend, not the presence of a remote,
+selects the path. Default branches need not be named `main`.
+
+The local helper keeps a receipt inside git's common directory. If committing succeeds and
+closing fails, retrying closes the existing delivery instead of squashing it again. A queued
+GitHub merge or a merged commit with unconfirmed closure is reported as pending, never finished.
+Required checks that could not run block finishing; they are not treated as passes.
+
+Work-epic already performs review, repair, verification, and merging in its tested driver. It
+does not launch another finish-issue agent per issue. A future native `hew finish` is the right
+shared operation for exact-head merging and merge/close recovery; review, project-check
+discovery, and repair remain skill responsibilities. The current CLI has no `finish` command,
+so the standalone skill uses `gh` and its bundled local helper today.
 
 ## Working several at once
 
@@ -139,7 +176,8 @@ closed issues. A closed-as-completed match means the pattern regressed and is fi
 
 ## Running unattended
 
-Both skills are built to survive a scheduled loop.
+The implementation and filing skills are built to survive a scheduled loop; `finish-issue`
+also reports unfinished CI, merges, and closure explicitly so a caller can resume them.
 
 `raise-issues`:
 

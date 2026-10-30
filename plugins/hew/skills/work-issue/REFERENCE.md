@@ -46,7 +46,7 @@ run touched, which is a single entry unless `--batch` was given.
 | `integration` | Present only when two or more issues were delivered. `result` is `passed`, `failed`, or `conflict` — `conflict` meaning the branches would not even merge. The branch is local and unpushed; it never becomes a PR. |
 | `issues` | Empty array when nothing was worked. |
 | `outcome` | Per issue: `delivered` or `failed`. |
-| `pr` | The PR number, or `null` on a `failed` issue — a failed issue has a pushed branch and no PR. |
+| `pr` | The PR number, or `null` on a `failed` issue — a failed issue has a pushed branch and no PR. Also `null` on a delivered issue when the tracker is local: there `branch` alone is the delivery, committed and not pushed. |
 | `done_when` | Checklist items total and verified. `verified < total` on a delivered issue is a contradiction; do not emit it. |
 | `tdd` | `applied`, or `not_applicable` with the reason in `gate` (config, docs, migration, wiring). |
 | `skipped` | Why candidates were passed over. A run reporting `no_ready_work` with a non-zero `claimed` count is describing a stall, not a drained backlog. |
@@ -61,8 +61,12 @@ coupled, and only a human reading the pair resolves that.
 
 ## Quality gates
 
-Detect from the files the branch changed (`git diff <default-branch>...HEAD --name-only`), then
-run every gate that applies — a change touching Go and Terraform runs both.
+Step 6 runs every check the project defines — tests, linters, formatters, type checkers, builds —
+found in its CI workflows, task runner targets, package scripts, pre-commit config and contributing
+docs. This table is the floor: what to run for a language when the project names nothing, and the
+minimum even when it does. Detect from the files the branch changed
+(`git diff <default-branch>...HEAD --name-only`) and run every row that applies — a change touching
+Go and Terraform runs both.
 
 | Changed | Gate |
 |---|---|
@@ -76,10 +80,11 @@ run every gate that applies — a change touching Go and Terraform runs both.
 | `*.swift` | `swift test` |
 | `*.php` | `./vendor/bin/phpunit` |
 | `*.tf` `*.tfvars` | `terraform validate` in the module directory |
-| Shell, config, docs only | No automated gate — the `### Done when` items are the verification |
+| Shell, config, docs only | Nothing from this table — the `### Done when` items are the verification, plus whatever the project checks such files with (shellcheck, a markdown or link lint, a schema validator) |
 
-Prefer whatever the repo actually runs in CI over this table when the two disagree; a Makefile
-target or a CI workflow naming the real command is better evidence than a language guess.
+When the repo's own command for a row differs from the table, run the repo's: a Makefile target or
+a CI workflow naming the real command is better evidence than a language guess. The table never
+excuses skipping a check the project defines because no row mentions it.
 
 Step 8 runs the same table against the *union* of the files the batch changed, which can pull in
 a gate no single issue triggered — three Go-only fixes plus one touching Terraform means the
@@ -92,7 +97,9 @@ truncated to something readable. This is the **upstream** name; an existing loca
 dedicated to the issue can keep its name. Attach detached HEAD to a local issue branch before
 pushing, preserving any commits from an earlier attempt. Then
 `git push -u origin HEAD:<prefix>/<n>-<slug>` establishes tracking for either case. Checkout
-and worktree management follow the user's and repository's conventions.
+and worktree management follow the user's and repository's conventions. On a local tracker
+nothing is pushed: the local branch keeps the same `<prefix>/<n>-<slug>` name, and it is the
+delivery.
 
 | Issue type | Branch prefix | Commit prefix | `hew pr` title default |
 |---|---|---|---|
@@ -113,7 +120,9 @@ Refs #42
 
 `Refs`, not `Fixes`. The PR body composed by `hew pr` already carries exactly one `Fixes #42`,
 which is what closes the issue on merge. A second closing keyword in a commit message closes it
-by a path the reviewer never saw, and does so even if the PR is closed unmerged.
+by a path the reviewer never saw, and does so even if the PR is closed unmerged. A local tracker
+has no PR body; keep `Refs` there too, because the issue is closed by `hew close --completed`
+after the merge, not by a keyword.
 
 Sign commits however the repository already does — read the recent log rather than assuming a
 trailer. Hardcoding a specific model name in a co-author trailer ages out within a release.

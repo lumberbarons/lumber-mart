@@ -62,7 +62,7 @@
     {
       "name": "work-epic",
       "description": "Skill for burning down a hew epic or a set of issues across Orca-managed worktrees and supervised agents, driven by a tested script rather than by an agent following prose. The driver resolves the ready issues, creates one Orca worktree per issue, starts an implementer running work-issue, has a different agent review each delivered PR once and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make.",
-      "version": "4.1.0",
+      "version": "4.2.0",
       "source": "./plugins/work-epic",
       "category": "workflow",
       "keywords": [
@@ -99,8 +99,8 @@
     },
     {
       "name": "hew",
-      "description": "Skills for tracking work in GitHub Issues via the hew CLI. Files review findings as deduplicated issues using a stable review key, and takes a tracked issue — or a bounded batch of them, verified together — from claimed to draft PR test-first, driven by the issue's own acceptance checklist.",
-      "version": "2.7.0",
+      "description": "Skills for tracking work through the hew CLI, with GitHub or local trackers. File deduplicated review findings, implement issues test-first through a draft PR or committed branch, then review, verify, squash merge, and confirm closure with finish-issue.",
+      "version": "2.9.0",
       "source": "./plugins/hew",
       "category": "workflow",
       "keywords": [

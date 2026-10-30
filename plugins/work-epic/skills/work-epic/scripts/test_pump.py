@@ -16,6 +16,7 @@ import tempfile
 import unittest
 
 import findings
+import local_state
 import pr_state
 import pump
 import resolve_ready
@@ -37,10 +38,18 @@ def envelope(result=None, error=None):
 
 
 class World:
-    """Orca + GitHub + hew, just enough for the pump."""
+    """Orca + GitHub (or, when `local`, git) + hew, just enough for the pump.
 
-    def __init__(self, root, issues, blockers=None):
+    On a local tracker there are no PRs: a delivery is an entry in `branches`, keyed by its
+    issue number, and a merge is a squash into the main checkout that moves every other
+    branch one commit behind.
+    """
+
+    def __init__(self, root, issues, blockers=None, local=False):
         self.root, self.t = root, 1_000_000.0
+        self.local, self.branches, self.pump_issues = local, {}, dict
+        self.main, self.main_head, self.squash_fail, self.close_fail = os.path.join(root, "main"), "main", 0, False
+        self.merge_count, self.squashed = 0, None
         self.issues = {n: {"state": "open", "title": f"issue {n}"} for n in issues}
         self.blockers = blockers or {}
         self.claimed = set()
@@ -92,7 +101,12 @@ class World:
         out = self.script.get((role, key), "default")
         if role == "we":
             n = int(key)
-            if out == "default":
+            if out == "default" and self.local:
+                self.branches[n] = {"branch": f"fix/{n}-x", "head": self.new_sha(), "behind": 0,
+                                    "conflicts": False}
+                out = {"status": "delivered", "issues": [{"number": n, "outcome": "delivered",
+                                                          "branch": f"fix/{n}-x"}]}
+            elif out == "default":
                 pr = 100 + n
                 self.prs[pr] = {"number": pr, "issue": n, "branch": f"fix/{n}-x", "draft": True,
                                 "merge_state": "CLEAN", "mergeable": "MERGEABLE", "rollup": GREEN,
@@ -104,15 +118,20 @@ class World:
             if out == "default":
                 out = {"status": "reviewed", "skill": "code", "findings": [], "gate": "ok"}
             if isinstance(out, dict) and out.get("push"):
-                self.prs[pr]["head"] = self.new_sha()
+                (self.branches if self.local else self.prs)[pr]["head"] = self.new_sha()
+            if self.local and isinstance(out, dict) and out.get("status") == "reviewed":
+                out = dict({"head": self.branches[pr]["head"]}, **out)
         elif role == "wc":
             pr = int(key)
             if out == "default":
                 head = self.new_sha()
                 out = {"status": "resolved", "head": head, "gate": "ok"}
             if isinstance(out, dict) and out.get("status") == "resolved" and not out.get("_nopush"):
-                p = self.prs[pr]
-                p.update(head=out["head"], merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN)
+                if self.local:
+                    self.branches[pr].update(head=out["head"], behind=0, conflicts=False)
+                else:
+                    p = self.prs[pr]
+                    p.update(head=out["head"], merge_state="CLEAN", mergeable="MERGEABLE", rollup=GREEN)
         w["state"] = "succeeded" if (out is not None and out.get("status") not in ("error",)) else "failed"
         if out is not None:
             self.write(w, f"{role}-{key}.json", out)
@@ -122,10 +141,14 @@ class World:
     def resolve(self, scope, repo, resume, workers):
         children = []
         for n, iss in self.issues.items():
+            # hew names a local claimant per worktree, so it never equals the coordinator
+            claimant = f"wt-{n}" if self.local else ME
             children.append({"number": n, "title": iss["title"], "state": iss["state"], "priority": "P2",
                              "type": "task", "body": "", "inProgress": n in self.claimed,
-                             "assignees": [ME] if n in self.claimed else [],
+                             "assignees": [claimant] if n in self.claimed else [],
                              "openBlockers": [b for b in self.blockers.get(n, []) if self.issues[b]["state"] == "open"]})
+        if self.local:
+            return local_state.resolve_over(scope, children, "main", self.pump_issues(), workers)
         prs = [{"number": p["number"], "headRefName": p["branch"]} for p in self.prs.values()]
         by_pr, by_branch = resolve_ready.delivery_index(prs, [p["branch"] for p in self.prs.values()])
         elig, skipped, closed = resolve_ready.classify(children, ME, by_pr, by_branch, resume)
@@ -133,7 +156,16 @@ class World:
                 "counts": resolve_ready.count_by_reason(elig, skipped, closed),
                 "spawnBudget": resolve_ready.spawn_budget(skipped, workers)}
 
+    def facts(self, branch):
+        b = self.branches.get(branch_issue(branch))
+        return b and {"head": b["head"], "behind": b["behind"], "conflicts": b["conflicts"]}
+
     def plan(self, scope, repo, reviewing=frozenset(), repairing=frozenset()):
+        if self.local:
+            children = [{"number": n, "state": i["state"]} for n, i in self.issues.items()]
+            return local_state.plan_over(
+                scope, "main", children, {n: list(f) for n, f in self.findings.items()},
+                self.pump_issues(), self.facts, reviewing, repairing)
         planned = []
         for p in self.prs.values():
             raw = {"number": p["number"], "headRefName": p["branch"], "headRefOid": p["head"],
@@ -159,7 +191,29 @@ class World:
             path = argv[2]
             return Proc(0, "M file\n" if path in self.dirty else "", "")
         if argv[0] == "git" and "symbolic-ref" in argv:
-            return Proc(0, "main\n", "")
+            return Proc(0, f"{self.main_head}\n", "")
+        if argv[0] == "git" and argv[3:5] == ["rev-parse", "--verify"]:
+            b = self.branches.get(branch_issue(argv[-1].removeprefix("refs/heads/")))
+            return Proc(0, b["head"] + "\n", "") if b else Proc(1, "", "")
+        if argv[0] == "git" and argv[3:] == ["rev-parse", "HEAD"]:
+            return Proc(0, f"{self.merge_count:07x}" + "f" * 33 + "\n", "")
+        if argv[0] == "git" and argv[3:5] == ["merge", "--squash"]:
+            if self.squash_fail:
+                self.squash_fail -= 1
+                return Proc(1, "", "CONFLICT (content): Merge conflict in f")
+            self.squashed = argv[5]
+            return Proc(0, "", "")
+        if argv[0] == "git" and argv[3] == "commit":
+            self.merge_count += 1  # the default branch moved: everything else is now behind it
+            for n in [n for n, b in self.branches.items() if b["head"] == self.squashed]:
+                del self.branches[n]
+            for b in self.branches.values():
+                b["behind"] += 1
+            return Proc(0, "", "")
+        if argv[0] == "hew" and argv[1] == "close":
+            if self.close_fail:
+                return Proc(1, "", "hew: the tracker is locked")
+            self.issues[int(argv[2])]["state"] = "closed"
         return Proc(0, "", "")
 
     def gh(self, args, input):
@@ -264,9 +318,10 @@ class FakeFiler:
     """Files what the reviewer reported: numbers P2+ findings, opens the unfixed ones."""
 
     def __init__(self, world):
-        self.world, self.next, self.error = world, 200, None
+        self.world, self.next, self.error, self.prs = world, 200, None, []
 
     def file(self, *, pr, issue, outcome_path):
+        self.prs.append(pr)
         if self.error:
             raise findings.FilingError(self.error)
         data = findings.read_outcome(outcome_path)
@@ -289,30 +344,32 @@ def finding(title, priority, **kw):
 
 
 class Scenario(unittest.TestCase):
-    def build(self, issues, *, blockers=None, workers=2, resume=False):
+    def build(self, issues, *, blockers=None, workers=2, resume=False, local=False):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        self.world = w = World(tmp, issues, blockers)
+        self.world = w = World(tmp, issues, blockers, local=local)
         coord = {"id": "repo::" + w.coord_path, "path": w.coord_path, "repoId": "repo"}
         outdir = os.path.join(tmp, "out")
         os.makedirs(outdir)
         cfg = pump.Config(scope=list(issues), coord=coord, outdir=outdir, work_issue_dir="/skills/work-issue",
-                          workers=workers, resume=resume)
+                          workers=workers, resume=resume, local=local, main=w.main if local else None)
         self.filer = FakeFiler(w)
         self.logs = []
-        self.pump = pump.Pump(cfg, Orca(w.sh, command=["orca"]), w.sh, w.resolve, w.plan, self.filer,
-                              pump.State(os.path.join(outdir, "state.json")), clock=lambda: w.t,
-                              sleep=w.advance, log=self.logs.append)
+        self.pump = self.new_pump(cfg)
         return w
+
+    def new_pump(self, cfg):
+        w = self.world
+        state = pump.State(os.path.join(cfg.outdir, "state.json"))
+        w.pump_issues = lambda: state["issues"]  # a local tracker's planners read the pump's table
+        return pump.Pump(cfg, Orca(w.sh, command=["orca"]), w.sh, w.resolve, w.plan, self.filer,
+                         state, clock=lambda: w.t, sleep=w.advance, log=self.logs.append)
 
     def rebuild(self, *, resume=True):
         """A fresh process over the same world and state file, as after a crash."""
-        w = self.world
         cfg = self.pump.cfg
         cfg.resume = resume
-        self.pump = pump.Pump(cfg, Orca(w.sh, command=["orca"]), w.sh, w.resolve, w.plan, self.filer,
-                              pump.State(os.path.join(cfg.outdir, "state.json")), clock=lambda: w.t,
-                              sleep=w.advance, log=self.logs.append)
+        self.pump = self.new_pump(cfg)
         return self.pump
 
     def run_pump(self):
@@ -724,6 +781,189 @@ class Mailbox(Scenario):
         self.assertEqual([c for c in w.calls if c[:3] == ["orca", "orchestration", "reply"]], [])
 
 
+def squashes(w):
+    return [c for c in w.calls if c[:5] == ["git", "-C", w.main, "merge", "--squash"]]
+
+
+def closes(w):
+    return [c for c in w.calls if c[:2] == ["hew", "close"]]
+
+
+class LocalMode(Scenario):
+    """A local tracker: no GitHub, no PRs, and the merge is a squash into the local default branch."""
+
+    def conflicted(self, w, n=21):
+        original = w.finish
+
+        def conflict(d, worker):
+            original(d, worker)
+            if worker["role"] == "we" and int(worker["key"]) == n:
+                w.branches[n]["conflicts"] = True
+
+        w.finish = conflict
+
+    def test_issues_are_implemented_reviewed_gated_and_squashed_into_main(self):
+        w = self.build([21, 22], local=True)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertTrue(s["local"])
+        self.assertEqual([m["issue"] for m in s["merged"]], [21, 22])
+        self.assertEqual(len(squashes(w)), 2)
+        self.assertEqual([c[2] for c in closes(w)], ["21", "22"])  # the merge is what closes them
+        for c in closes(w):
+            self.assertIn("--completed", c)
+        self.assertEqual(sorted(w.issues[n]["state"] for n in w.issues), ["closed", "closed"])
+        self.assertEqual(list(w.worktrees), ["repo::" + w.coord_path])
+
+    def test_nothing_touches_github_or_a_remote(self):
+        w = self.build([21, 22], local=True)
+        self.run_pump()
+        self.assertEqual([c for c in w.calls if c[0] == "gh"], [])
+        self.assertEqual([c for c in w.calls if "push" in c or "fetch" in c], [])
+        self.assertEqual(self.filer.prs, [None, None])  # findings name no PR
+
+    def test_the_first_branch_merges_on_the_reviewers_gate_alone(self):
+        self.build([21], local=True)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(len(self.started("wc")), 0)
+
+    def test_a_branch_the_default_branch_has_outrun_is_gated_before_it_merges(self):
+        w = self.build([21, 22], local=True)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(len(self.started("wc")), 1)  # the second, behind the first's merge
+        self.assertEqual(len(self.started("wr")), 2)  # reviewed once each, never again
+        self.assertEqual(w.branches, {})
+
+    def test_the_squash_names_the_issue_and_merges_the_verified_head(self):
+        w = self.build([21], local=True)
+        self.run_pump()
+        head = w.calls_of("git", "-C", w.main, "merge", "--squash")[0][5]
+        self.assertEqual(len(head), 40)
+        (commit,) = [c for c in w.calls if c[:4] == ["git", "-C", w.main, "commit"]]
+        self.assertTrue(commit[5].startswith("fix: issue 21 (#21)\n"))
+        self.assertIn("Closes #21", commit[5])
+
+    def test_workers_branch_from_the_local_default_branch(self):
+        w = self.build([21], local=True)
+        self.run_pump()
+        (start,) = [c for c in w.calls_of("orca", "orchestration", "worker-start") if "--base-branch" in c]
+        self.assertEqual(start[start.index("--base-branch") + 1], "main")
+
+    def test_the_review_round_is_kept_as_a_file_not_commented(self):
+        self.build([21], local=True)
+        self.run_pump()
+        self.assertTrue(os.path.exists(os.path.join(self.pump.cfg.outdir, "rounds", "wr-21.md")))
+
+    def test_a_dependent_starts_only_after_the_merge_closes_its_blocker(self):
+        w = self.build([21, 22], blockers={22: [21]}, local=True)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual([c[2] for c in closes(w)], ["21", "22"])
+        self.assertEqual(len(self.started("wc")), 0)  # 22 branched after 21 landed: nothing to catch up on
+
+    def test_a_conflict_is_repaired_and_the_branch_merges_without_a_re_review(self):
+        w = self.build([21], local=True)
+        self.conflicted(w)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(len(self.started("wc")), 1)
+        self.assertEqual(len(self.started("wr")), 1)
+
+    def test_a_head_the_reviewer_did_not_report_is_gated_again_before_it_merges(self):
+        w = self.build([21], local=True)
+        w.script[("wr", "21")] = {"status": "reviewed", "skill": "code", "findings": [],
+                                   "head": "deadbeefdead", "gate": "ok"}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(len(self.started("wc")), 1)
+
+    def test_two_failed_repairs_park_the_branch(self):
+        w = self.build([21], local=True)
+        self.conflicted(w)
+        w.script[("wc", "21")] = {"status": "blocked", "reason": "clashes with #33"}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertEqual(len(self.started("wc")), 2)
+        self.assertEqual(s["issues"]["21"]["repair_failures"], 2)
+        self.assertEqual(squashes(w), [])
+        self.assertIn("pr21:conflict", s["parked"])
+        self.assertIn("#21's branch", s["parked"]["pr21:conflict"]["text"])
+
+    def test_a_repair_whose_head_is_not_the_branchs_is_not_trusted(self):
+        w = self.build([21], local=True)
+        self.conflicted(w)
+        w.script[("wc", "21")] = {"status": "resolved", "head": "deadbeefdead", "gate": "ok",
+                                   "_nopush": True}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "halted")
+        self.assertEqual(squashes(w), [])
+
+    def test_an_unfixed_p1_holds_the_branch(self):
+        w = self.build([21], local=True)
+        w.script[("wr", "21")] = {"status": "reviewed", "skill": "code", "findings": [
+            finding("Needs a schema decision", "P1", fixed=False, unfixedReason="design call")]}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertEqual(squashes(w), [])
+        self.assertIn("release the branch", s["parked"]["pr21:hold"]["text"])
+        self.assertIn("HOLD", w.card(21)["comment"])
+
+    def test_a_dirty_main_checkout_blocks_the_merge_until_it_is_clean(self):
+        w = self.build([21], local=True)
+        w.dirty.add(w.main)
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertEqual(squashes(w), [])
+        self.assertIn("uncommitted changes", s["parked"]["pr21:merge"]["text"])
+        w.dirty.discard(w.main)  # the human committed their work
+        self.pump.progress = False
+        again = self.pump.run()
+        self.assertEqual(again["status"], "drained")
+        self.assertEqual(len(squashes(w)), 1)
+
+    def test_a_main_checkout_on_another_branch_blocks_the_merge(self):
+        w = self.build([21], local=True)
+        w.main_head = "feature-x"
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertEqual(squashes(w), [])
+        self.assertIn("not on main", s["parked"]["pr21:merge"]["text"])
+
+    def test_a_squash_that_fails_twice_parks_and_leaves_the_checkout_as_it_found_it(self):
+        w = self.build([21], local=True)
+        w.squash_fail = 2
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertIn("pr21:merge", s["parked"])
+        self.assertEqual(len(w.calls_of("git", "-C", w.main, "reset", "--merge")), 2)
+        self.assertEqual(closes(w), [])
+
+    def test_a_merge_whose_close_fails_is_still_a_merge_and_asks_for_the_close(self):
+        w = self.build([21], local=True)
+        w.close_fail = True
+        s = self.run_pump()
+        self.assertEqual([m["issue"] for m in s["merged"]], [21])
+        self.assertEqual(s["status"], "stopped")
+        self.assertIn("`hew close` failed", s["parked"]["issue-21"]["text"])
+        self.assertEqual(len(squashes(w)), 1)  # not merged a second time
+
+    def test_a_delivery_without_a_branch_that_exists_halts(self):
+        w = self.build([21], local=True)
+        w.script[("we", "21")] = {"status": "delivered",
+                                   "issues": [{"number": 21, "outcome": "delivered", "branch": "fix/21-gone"}]}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "halted")
+        self.assertIn("without a branch that exists", s["halted"])
+
+    def test_the_report_names_issues_not_prs(self):
+        self.build([21, 22], local=True)
+        report = pump.render_report(self.run_pump())
+        self.assertIn("merged: #21, #22", report)
+        self.assertNotIn("PR #", report)
+
+
 class Prompts(unittest.TestCase):
     def test_every_prompt_renders_with_the_values_the_pump_passes(self):
         values = dict(n=21, pr=121, branch="fix/21-x", default="main", work_issue_dir="/skills/work-issue")
@@ -733,6 +973,19 @@ class Prompts(unittest.TestCase):
         self.assertIn("work-epic/we-21.json".replace("work-epic/", ".work-epic/"), pump.render("worker", **values))
         self.assertIn("git push origin HEAD:fix/21-x", pump.render("reviewer", **values))
         self.assertIn("gh pr checks 121", pump.render("repairer", **values))
+
+    def test_the_local_prompts_name_no_remote_and_no_pr(self):
+        values = {"n": 21, "pr": 21, "branch": "fix/21-x", "default": "main",
+                  "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch"}
+        for name in ("reviewer_local", "repairer_local"):
+            text = pump.render(name, **values)
+            self.assertNotIn("${", text)
+            for forbidden in ("git push origin", "git fetch", "origin/", "gh pr"):
+                self.assertNotIn(forbidden, text, name)
+        self.assertIn(".work-epic/wr-21.json", pump.render("reviewer_local", **values))
+        repair = pump.render("repairer_local", **values)
+        self.assertIn(".work-epic/wc-21.json", repair)
+        self.assertIn("2 commits behind the default branch", repair)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ Then:
    cause when this PR caused it. When it did not — a flaky test, an outage, a failure that is
    already on origin/${default} — stop and write status "blocked" and say so; do not paper over it,
    and never skip, weaken, or delete a test or a check.
-5. Run the quality gate the changed files select (the table in ${work_issue_dir}/REFERENCE.md) over
-   the union of files you touched. A failing gate is "blocked"; do not push.
+5. Run every check the project gates on — tests, linters, type checks, builds — as step 6 of
+   ${work_issue_dir}/SKILL.md describes (its REFERENCE.md table is only the floor), over the union
+   of files you touched. A failing gate is "blocked"; do not push.
 6. Commit and `git push origin HEAD:${branch}`. Never --force, never rebase, never push to a ref
    other than this PR's ${branch}.
 7. Write '.work-epic/wc-${pr}.json' as JSON:

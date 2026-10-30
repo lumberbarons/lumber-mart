@@ -64,6 +64,18 @@ class OwnClaims(unittest.TestCase):
     def test_unknown_user_treats_claims_as_foreign(self):
         self.assertEqual(reasons([mine(21)], resume=True, me=None), {21: "claimed"})
 
+    def test_a_claim_the_caller_vouches_for_is_its_own_whatever_the_assignee_reads(self):
+        c = child(21, inProgress=True, assignees=["jim-wt21"])
+        _, skipped, _ = classify([c], None, {}, {}, False, mine={21})
+        self.assertEqual([(s["reason"], s.get("own")) for s in skipped], [("claimed", True)])
+        _, skipped, _ = classify([c], None, {}, {}, False)
+        self.assertEqual([(s["reason"], s.get("own")) for s in skipped], [("claimed", None)])
+
+    def test_a_vouched_claim_with_a_branch_is_stalled(self):
+        c = child(21, inProgress=True, assignees=["jim-wt21"])
+        _, skipped, _ = classify([c], None, {}, {21: "fix/21-child"}, False, mine={21})
+        self.assertEqual([s["reason"] for s in skipped], ["stalled"])
+
 
 class Basics(unittest.TestCase):
     def test_unclaimed_ready_child_is_eligible(self):
