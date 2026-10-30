@@ -16,6 +16,8 @@ Each skill produces a structured findings report with P1/P2/P3 (and P4 for docs)
 
 Every skill also takes two flags for use outside an interactive session: `--json <path>` writes a machine-readable findings file alongside the report ([FINDINGS.md](FINDINGS.md)), and `--non-interactive` removes every prompt, reporting `no_scope` or `error` instead of asking which path to review. Together they make a review safe to run unattended — including the part that matters most, distinguishing "reviewed and found nothing" from "never ran".
 
+`review-code`, `review-tests`, and `review-docs` delegate by default: each review runs in subagent sessions, so its findings are reached without the caller's context. `--inline` reviews in the current session instead. Where the harness cannot run subagents, they fall back to an inline review rather than skipping the work.
+
 ## Installation
 
 Install via the lumber-mart marketplace — see the [root README](../../README.md#usage) for the `/plugin marketplace add` and `/plugin install` commands.

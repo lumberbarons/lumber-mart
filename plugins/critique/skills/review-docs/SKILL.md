@@ -19,6 +19,7 @@ What follows is only the local policy you could not infer. Prescribing the revie
 Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
 
 - **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](FINDINGS.md). Off by default; the markdown report is unchanged either way.
+- **`--inline`** — review in this session instead of delegating to subagents.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
 
 ## Scope
@@ -52,6 +53,11 @@ instruction sources: for example, Codex's `project_doc_fallback_filenames` and O
 `instructions` paths/globs in `opencode.json` or `opencode.jsonc`. Review configured files
 in the requested scope even when their names differ from the conventional ones. Exclude
 personal and auto-managed sources as described below.
+
+Delegate by default: spawn subagents and give each a couple of files plus the severity and
+"What not to flag" sections below. Review in this session only when `--inline` was given or
+the harness cannot delegate. Run the validator below yourself, repo-wide, and fold its output
+into the merged findings. Merge what comes back before collapsing patterns.
 
 ## Run the validator
 
