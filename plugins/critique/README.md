@@ -18,6 +18,11 @@ Every skill also takes two flags for use outside an interactive session: `--json
 
 Every skill delegates by default: each review runs in subagent sessions, so its findings are reached without the caller's context. `--inline` reviews in the current session instead. Where the harness cannot run subagents, skills fall back to an inline review rather than skipping the work.
 
+For `review-code` and `review-tests`, one subagent reviews a branch or focused change as a whole,
+with the diff and relevant surrounding code. Multiple reviewers are reserved for exploratory
+audits of independent subsystems. An explicit path narrows the scope; it does not by itself
+select an exploratory audit.
+
 ## Installation
 
 Install via the lumber-mart marketplace — see the [root README](../../README.md#usage) for the `/plugin marketplace add` and `/plugin install` commands.

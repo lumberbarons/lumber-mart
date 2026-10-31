@@ -48,11 +48,21 @@ A review that ran and found nothing, and a review that never ran, both end with 
 
 The script returns paths language-blind. Filter to test files; keep the production sources in view too, since a gap is only visible against the code nothing tests.
 
-Delegate by default: spawn subagents and give each a couple of files, the severity rules below,
-and the falsifiability requirement. Review in this session only when `--inline` was given or the
-harness cannot delegate. Keep delegated reviews to static reading: use available
-file-reading/search tools, including terminal commands when needed, but do not execute project
-code. Merge what comes back before collapsing patterns.
+Delegate by default, choosing the review shape from the user's intent:
+
+- **Branch or focused change review** — use one subagent for the whole change. Give it the
+  complete diff in scope and access to production sources and related tests so it can assess
+  coverage and interactions across files. Do not split the change among reviewers, including
+  through further delegation.
+- **Exploratory audit** — when looking for existing issues across a test suite or directory,
+  multiple subagents may review independent subsystems. Divide by coherent responsibility,
+  not arbitrary file counts, and merge their findings before collapsing patterns.
+
+A path selects scope, not review mode: reviewing a change within a directory still uses one
+reviewer. Give every reviewer the severity rules below and the falsifiability requirement.
+Review in this session only when `--inline` was given or the harness cannot delegate. Keep
+delegated reviews to static reading: use available file-reading/search tools, including terminal
+commands when needed, but do not execute project code.
 
 ## Severity, anchored on falsifiability
 
