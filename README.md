@@ -15,7 +15,7 @@ Learn more about Claude Code marketplaces in the [official documentation](https:
 |--------|----------|-------------|
 | [runbooks](plugins/runbooks/) | Workflow | Operational runbook creation with consistent structure and built-in maintenance feedback loops |
 | [critique](plugins/critique/) | Workflow | Review skills for code, tests, documentation, and observability -- design, coverage, doc-structure, and logging issues that linters miss |
-| [decisions](plugins/decisions/) | Workflow | Architectural Decision Record (ADR) authoring in MADR format with relationship tracking and registration in active agent instructions |
+| [decisions](plugins/decisions/) | Workflow | Research documents and Architectural Decision Records (ADRs) in script- and template-enforced formats, with research cited by the ADRs that rest on it, and policy review of changes against accepted ADRs |
 
 ### [runbooks](plugins/runbooks/)
 
@@ -38,11 +38,12 @@ Review skills that surface design, coverage, doc-structure, and logging issues t
 
 ### [decisions](plugins/decisions/)
 
-Architectural Decision Record (ADR) authoring, maintenance, and enforcement. Produces MADR-format ADRs as standalone, append-only policy with ADR-to-ADR relationship tracking (`supersedes`, `superseded-by`, `related`). Specs cite the ADRs that constrained them; ADRs do not track their downstream consumers. Includes a review skill that audits a code change against the accepted ADRs and flags violations, erosions, drift, and driver-shift candidates.
+Research and Architectural Decision Record (ADR) authoring, maintenance, and enforcement. Research documents record what was found out, with a confidence on each finding and the sources it rests on, in a checker-enforced format. ADRs are MADR-format, standalone, append-only policy with ADR-to-ADR relationship tracking (`supersedes`, `superseded-by`, `related`) and a `research` field citing the research they rest on. Specs cite the ADRs and research that constrained them; ADRs do not track their downstream consumers. Includes a review skill that audits a code change against the accepted ADRs and flags violations, erosions, drift, and driver-shift candidates.
 
 | Component | Type | Description |
 |-----------|------|-------------|
 | `decisions:create-adr` | Skill | Create a new ADR from a MADR template, research context from the codebase, and register it in the project's active agent instructions |
+| `decisions:create-research` | Skill | Investigate a question and record it in `docs/research/NNNN-slug.md` with per-finding confidence and cited sources, checker-enforced, ahead of an ADR or a spec |
 | `decisions:review-policy` | Skill | Review a code change (working diff, PR, or path) against the accepted ADRs, flagging violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit |
 
 ## Usage

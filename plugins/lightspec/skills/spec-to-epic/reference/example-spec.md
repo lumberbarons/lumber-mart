@@ -19,6 +19,10 @@ and the current experience gives them no reason to.
 - [ADR-0004 Store prices as integer cents](docs/adr/0004-store-prices-as-integer-cents.md) — the drop shown on the page is computed in cents and formatted once at the edge, never as a float
 - [ADR-0009 API keys identify callers, sessions identify people](docs/adr/0009-api-keys-and-sessions.md) — the watchlist is keyed to a session user, so it is unreachable from an API-key caller and the schema must not imply otherwise
 
+## Research
+
+- [RES-0003 How often shoppers revisit the same bottle](docs/research/0003-bottle-revisit-rate.md) — F1 (High): most repeat visits are to a product seen in the last two weeks, so the page shows the current price beside the price at add time and does not need history
+
 ## Out of Scope
 
 - Email or push notification when a price drops; the watchlist is pull-only for now
