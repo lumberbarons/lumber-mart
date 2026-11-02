@@ -17,7 +17,9 @@ ADRs are **standalone policy**. Each one records a constraint and the reasoning 
 
 The primary reader of an ADR in this project is another AI agent picking up the codebase weeks or months from now. That agent will decide whether a proposed change respects or violates the decision, and whether a driver has shifted enough that the ADR should be revisited. Write for that reader: state the drivers precisely enough that an agent can evaluate "does this still hold?", and name the rejected options so the agent doesn't re-propose them.
 
-Use MADR format with rich frontmatter. Link only to other ADRs via `supersedes`, `superseded-by`, and `related` — those edges are stable and directionally correct. Do not embed paths to specs, plans, or task files; those are forward-references that rot.
+Use MADR format with rich frontmatter. Link to other ADRs via `supersedes`, `superseded-by`, and `related`, and to the research the decision rests on via `research` — those edges are stable and directionally correct. Do not embed paths to specs, plans, or task files; those are forward-references that rot.
+
+Research (`create-research`) sits upstream of the ADR: it establishes what is true, and the ADR records what was decided given that. An ADR cites the research documents it relies on by id (`RES-0004`), and the cited document gets this ADR's id added to its own `related`, so the link can be followed from either end. Both ends are append-only records with stable ids, which is what makes a link in each direction safe; that does not extend to specs, which is why the spec side still does the citing.
 
 ## Workflow
 
@@ -38,6 +40,14 @@ If the directory already contains ADRs, read them before drafting. You need to k
 - **Conflict or supersede candidates** — any prior ADR that contradicts or is narrower than the new one. If the new decision replaces an earlier one, you will record that in both the new ADR's `supersedes:` field and the old ADR's `superseded-by:` field + status change to `superseded`.
 - **Related decisions** — prior ADRs that the new one depends on or complements. Capture these in `related:`.
 - **House style** — deciders convention, tag vocabulary, any project-specific sections.
+
+Then look for research. Find the research directory (`docs/research/` or `research/`) and read the titles and research questions of what is there. A document that investigated this question, or the options on the table, is the strongest source for the Context, Drivers and Consequences you are about to write, so read it before researching the codebase yourself in Step 5.
+
+- **Cite only research whose `status` is `complete`.** A `draft` is unconfirmed; if it is the only research there is, say so in your report rather than resting the decision on it.
+- **Do not cite `superseded` research.** Follow its `superseded-by` to the document that replaced it.
+- **Weigh the confidence of the findings you lean on.** A driver that rests on a `Low` finding should be written as an assumption, not as fact.
+- **Check `Revisit When`.** If a condition in it has been met, the research is stale. Tell the user and suggest `create-research` to refresh it before the ADR leans on it.
+- **A decision with no research behind it is fine** when the question is simple or already well understood. Write `research: []`. If the choice hinges on facts nobody has established yet, say that in your report and offer `create-research` first, rather than inventing the evidence.
 
 ### Step 3: Generate the slug and title
 
@@ -85,26 +95,29 @@ Edit the scaffolded file, replacing every placeholder with project-specific cont
   - `status`: start as `proposed` unless the user explicitly says the decision is already made
   - `deciders`: names/handles of the people deciding, from the user's input — do not guess
   - `supersedes` / `superseded-by` / `related`: ADR IDs you identified in Step 2
+  - `research`: the `RES-NNNN` IDs of the research documents this decision rests on, from Step 2. Ids only, not paths
   - `tags`: short nouns (e.g., `storage`, `observability`, `build`) — reuse vocabulary from prior ADRs
-- **Context and Problem Statement**: the forces at play, grounded in the codebase research
+- **Context and Problem Statement**: the forces at play, grounded in the codebase research and any cited research documents
 - **Decision Drivers**: specific, measurable where possible
 - **Considered Options**: include the chosen option plus at least one real alternative; "do nothing" is a valid option if relevant
 - **Decision Outcome**: which option won and *which drivers tipped the balance* — a reader should be able to tell whether changing a driver would invalidate this decision
 - **Consequences**: honest positives, negatives, and risks; if there are no negatives, you haven't thought hard enough
 - **Pros and Cons of the Options**: per-option analysis, including the rejected ones
 - **Implementation Notes**: how the decision cascades into code and operational policy — modules or services affected, invariants future changes must respect, and leading indicators that would prompt revisiting. Do not enumerate spec paths here; that coupling belongs on the spec side.
-- **References**: links to discussions, PRs, issues, and prior ADRs
+- **References**: links to discussions, PRs, issues, and prior ADRs, plus a markdown link to each cited research document with a few words on what it established. Where a driver or consequence rests on a specific finding, name it in the text (`RES-0004 F2`) so a later reader can check the claim at its source
 
 > [!NOTE]
 > If the request or the conversation does not provide enough material for Decision Drivers or Consequences, stop and ask the user. An ADR with hand-wavy drivers and made-up consequences is worse than no ADR.
 
-### Step 7: Update supersede links (if applicable)
+### Step 7: Update back-links
 
-If the new ADR supersedes an earlier one (captured in its `supersedes:` frontmatter), edit the superseded ADR:
+**Supersede links.** If the new ADR supersedes an earlier one (captured in its `supersedes:` frontmatter), edit the superseded ADR:
 
 1. Set its `status:` to `superseded`
 2. Add the new ADR's ID to its `superseded-by:` list
 3. Do **not** rewrite the old ADR's content — the historical record matters
+
+**Research links.** For each id in the new ADR's `research`, edit that research document's frontmatter and add this ADR's id to its `related` list. Change nothing else in it — not its status, findings, or text — since it records what was known when it was written. Superseded research should not have been cited (Step 2).
 
 ### Step 8: Update the ADR index (if one exists)
 
@@ -128,7 +141,7 @@ In each selected file, look for an existing `## Architectural Decisions` section
 ```markdown
 ## Architectural Decisions
 
-ADRs live in `<adr-dir>/`. Read the relevant ADRs before proposing architectural changes — they encode constraints and rejected alternatives. When writing or modifying a spec, cite the ADRs that constrained it in the spec's own frontmatter; ADRs do not track their downstream consumers.
+ADRs live in `<adr-dir>/`. Read the relevant ADRs before proposing architectural changes — they encode constraints and rejected alternatives. When writing or modifying a spec, cite the ADRs that constrained it in the spec itself; ADRs do not track their downstream consumers. An ADR does name the research it rests on (its `research` frontmatter) — read that before overturning a decision.
 
 | ADR | When this applies |
 |---|---|
@@ -143,5 +156,6 @@ Show the user the completed ADR and ask whether the drivers, rejected alternativ
 
 - Any section where you had to make assumptions due to limited information
 - Any supersede links you applied to prior ADRs
+- Which research documents the decision cites, and any driver that rests on a `Low`-confidence finding or on research still at `draft`
 
 Only change `status:` from `proposed` to `accepted` after the user confirms — do not do it preemptively.

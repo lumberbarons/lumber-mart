@@ -1,7 +1,7 @@
 {
   "name": "decisions",
-  "description": "Skills for creating, maintaining, and enforcing Architectural Decision Records (ADRs) as standalone, append-only policy. MADR format with AI-native metadata, ADR-to-ADR relationship tracking, registration in the repository's active agent instructions, and policy compliance review of code changes against accepted ADRs.",
-  "version": "1.4.0",
+  "description": "Skills for researching, deciding, and enforcing: create-research records a question investigated with per-finding confidence and cited sources, create-adr writes Architectural Decision Records (ADRs) as standalone, append-only policy in MADR format that cite the research they rest on, and review-policy checks code changes against accepted ADRs.",
+  "version": "1.5.0",
   "author": {
     "name": "lumberbarons"
   }

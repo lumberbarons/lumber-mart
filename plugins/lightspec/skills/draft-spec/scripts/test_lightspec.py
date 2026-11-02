@@ -368,6 +368,60 @@ class CitedDecisionsResolve(unittest.TestCase):
         )
 
 
+class Research(unittest.TestCase):
+    """Research is optional, so older specs pass, but checked when present."""
+
+    WITH = VALID.replace(
+        "## Out of Scope", "## Research\n\n- None\n\n## Out of Scope", 1
+    )
+
+    def test_a_spec_without_the_section_still_passes(self):
+        self.assertEqual([], problems_for(VALID))
+
+    def test_none_passes(self):
+        self.assertEqual([], problems_for(self.WITH))
+
+    def test_a_linked_citation_passes(self):
+        text = self.WITH.replace(
+            "## Research\n\n- None",
+            "## Research\n\n- [RES-0004 Failover](docs/research/0004-failover.md) — rows survive",
+        )
+        self.assertEqual([], problems_for(text))
+
+    def test_a_citation_without_a_link_is_reported(self):
+        text = self.WITH.replace("## Research\n\n- None", "## Research\n\n- RES-0004 says so")
+        self.assertTrue(any("research document as a markdown link" in m for m in problems_for(text)))
+
+    def test_an_empty_section_is_reported(self):
+        text = self.WITH.replace("## Research\n\n- None\n\n", "## Research\n\n")
+        self.assertTrue(any("Research needs at least one" in m for m in problems_for(text)))
+
+    def test_the_section_must_follow_prior_decisions(self):
+        text = VALID.replace("## Assumptions", "## Research\n\n- None\n\n## Assumptions", 1)
+        self.assertTrue(any("sections must be exactly" in m for m in problems_for(text)))
+
+    def test_a_dead_link_is_reported_inside_a_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".git").mkdir()
+            spec = root / "specs" / "001-thing" / "spec.md"
+            spec.parent.mkdir(parents=True)
+            spec.write_text(
+                self.WITH.replace(
+                    "## Research\n\n- None",
+                    "## Research\n\n- [RES-0004 X](docs/research/0004-x.md) — x",
+                ),
+                encoding="utf-8",
+            )
+            messages = [m for _, m in lightspec.check_file(spec).items]
+            self.assertTrue(any("research document" in m and "does not exist" in m for m in messages), messages)
+
+    def test_a_fresh_skeleton_carries_the_section(self):
+        text = lightspec.skeleton("Thing", "001-thing", "2026-01-01", stories=1)
+        self.assertLess(text.index("## Prior Decisions"), text.index("## Research"))
+        self.assertLess(text.index("## Research"), text.index("## Out of Scope"))
+
+
 class StatusCommand(unittest.TestCase):
     def _spec(self, tmp: str, text: str = VALID) -> Path:
         spec = Path(tmp) / "001-thing" / "spec.md"

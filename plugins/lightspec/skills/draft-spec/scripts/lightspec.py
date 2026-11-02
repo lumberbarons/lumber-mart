@@ -31,6 +31,10 @@ REQUIRED_SECTIONS = (
     "Tasks",
     "Done When",
 )
+# Research is optional so specs written before it existed still pass: when
+# present it sits straight after Prior Decisions. `new` always writes it, so
+# every fresh spec says either what it rests on or `- None`.
+RESEARCH_SECTION = "Research"
 CROSS_CUTTING = "Cross-cutting"
 FILL = "<FILL:"
 MAX_SLUG_LEN = 40
@@ -132,6 +136,12 @@ def skeleton(title: str, slug: str, created: str, stories: int) -> str:
         "- <FILL: an accepted decision this feature must respect, as"
         " `[ADR-0007 Prices in cents](docs/adr/0007-prices-in-cents.md) — the"
         " constraint it puts on this work`. Write `- None` if none bear on it.>",
+        "",
+        "## Research",
+        "",
+        "- <FILL: a complete research document this feature relies on, as"
+        " `[RES-0004 Export failover](docs/research/0004-export-failover.md) — the"
+        " finding it leans on`. Write `- None` if there is none.>",
         "",
         "## Out of Scope",
         "",
@@ -415,19 +425,23 @@ def check_bulleted(
             problems.add(lineno, f"{name} takes only `- ` bullets")
 
 
-def check_decisions(
+def check_citations(
+    name: str,
+    noun: str,
+    example: str,
     body: list[tuple[int, str]],
     heading_lineno: int,
     path: Path,
     problems: Problems,
 ) -> None:
-    """Every cited decision must be reachable, or the section must say None.
+    """Every cited decision or research document must be reachable, or the
+    section must say None.
 
     A citation without a link is a claim a reader cannot follow, and the whole
-    point of the section is that the spec can be held against the decisions
-    already made.
+    point of these sections is that the spec can be held against what was
+    decided and what was established.
     """
-    check_bulleted("Prior Decisions", body, heading_lineno, problems)
+    check_bulleted(name, body, heading_lineno, problems)
     for lineno, line in nonblank(body):
         if line.startswith((" ", "\t")) or not BULLET_RE.match(line):
             continue
@@ -440,15 +454,13 @@ def check_decisions(
                 for target in unresolved_links(line, path):
                     problems.add(
                         lineno,
-                        f"cited decision `{target}` does not exist - a citation"
+                        f"cited {noun} `{target}` does not exist - a citation"
                         " a reader cannot follow is not a citation",
                     )
             continue
         problems.add(
             lineno,
-            "cite the decision as a markdown link, e.g."
-            " `- [ADR-0007 Prices in cents](docs/adr/0007-prices-in-cents.md) — ...`,"
-            " or write `- None`",
+            f"cite the {noun} as a markdown link, e.g. `{example}`, or write `- None`",
         )
 
 
@@ -575,11 +587,14 @@ def check_file(path: Path) -> Problems:
 
     found = sections(lines, fenced)
     names = [name for name, _, _ in found]
-    if names != list(REQUIRED_SECTIONS):
+    expected = list(REQUIRED_SECTIONS)
+    if RESEARCH_SECTION in names:
+        expected.insert(expected.index("Prior Decisions") + 1, RESEARCH_SECTION)
+    if names != expected:
         problems.add(
             found[0][1] if found else 1,
             "sections must be exactly, in order: "
-            + ", ".join(REQUIRED_SECTIONS)
+            + ", ".join(expected)
             + (f" (found: {', '.join(names)})" if names else " (found none)"),
         )
 
@@ -591,7 +606,26 @@ def check_file(path: Path) -> Problems:
             problems.add(lineno, "Description is empty")
     if "Prior Decisions" in by_name:
         lineno, body = by_name["Prior Decisions"]
-        check_decisions(body, lineno, path, problems)
+        check_citations(
+            "Prior Decisions",
+            "decision",
+            "- [ADR-0007 Prices in cents](docs/adr/0007-prices-in-cents.md) — ...",
+            body,
+            lineno,
+            path,
+            problems,
+        )
+    if RESEARCH_SECTION in by_name:
+        lineno, body = by_name[RESEARCH_SECTION]
+        check_citations(
+            RESEARCH_SECTION,
+            "research document",
+            "- [RES-0004 Export failover](docs/research/0004-export-failover.md) — ...",
+            body,
+            lineno,
+            path,
+            problems,
+        )
     for name in ("Out of Scope", "Assumptions"):
         if name in by_name:
             lineno, body = by_name[name]

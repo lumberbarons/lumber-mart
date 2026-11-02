@@ -6,15 +6,15 @@ skills (Claude Code, opencode, codex).
 
 ## Overview
 
-The process this serves is **ADR → spec → approve → implement**:
+The process this serves is **research → ADR → spec → approve → implement**:
 
 - **draft-spec** — turns a feature request into `specs/NNN-slug/spec.md`: description, prior
-  decisions, prioritised user stories, tasks, and a done-when checklist. A script
+  decisions, the research it relies on, prioritised user stories, tasks, and a done-when checklist. A script
   (`lightspec.py`) owns the format so every spec comes out identical; the skill supplies the
   judgment. Specs leave here at `Draft`.
 - **approve-spec** — reviews a Draft spec the way someone who has to live with it would, and
-  either moves it to `Accepted` or sends it back with blocking objections. Six questions, one
-  per section; a finding that would not hold up the work is not a finding.
+  either moves it to `Accepted` or sends it back with blocking objections. One question per
+  section; a finding that would not hold up the work is not a finding.
 - **spec-to-epic** — files an Accepted spec as a hew epic: one epic issue carrying the spec's
   framing, one child issue per user story, done-when items derived per story so `work-issue`
   can drive them test-first. Its bundled checker gates on shape and status even when the
@@ -53,7 +53,7 @@ spec-to-epic specs/001-x/spec.md           # by path instead of number
 ## The pipeline
 
 ```
-ADR (decisions plugin) ─→ draft-spec ─→ approve-spec ─→ spec-to-epic ─→ hew epic
+research + ADR (decisions plugin) ─→ draft-spec ─→ approve-spec ─→ spec-to-epic ─→ hew epic
                                                      (human gate)     └→ work-issue per child
 ```
 
@@ -71,8 +71,10 @@ than described. Closed vocabularies the checker holds shut:
 - **Priorities** — P1 is what makes the feature worth shipping at all; P2/P3 what makes it good.
 - **Done When** — observable claims a stranger could falsify without reading the diff.
 
-Citation links in Prior Decisions are resolved against the repository by `check`, so a
-plausible-looking path to an ADR that does not exist is caught rather than believed.
+Citation links in Prior Decisions and Research are resolved against the repository by `check`, so
+a plausible-looking path to an ADR or research document that does not exist is caught rather than
+believed. Research is optional for older specs, and new skeletons always carry it (`- None` when
+nothing bears on the feature). Specs cite research; research never links to a spec.
 
 ## Maintenance
 

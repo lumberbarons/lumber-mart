@@ -11,9 +11,9 @@ must respect, prioritised user stories, the tasks, and how anyone can tell it is
 done. A script owns the format so every spec comes out identical; you supply the
 judgment.
 
-The process this serves is **ADR → spec → approve → implement**. This skill is
-the drafting step. It reads decisions already recorded, and leaves something a
-person or an agent can implement from. It writes no code, cuts no branches,
+The process this serves is **research → ADR → spec → approve → implement**. This
+skill is the drafting step. It reads decisions and research already recorded, and
+leaves something a person or an agent can implement from. It writes no code, cuts no branches,
 files no issues, and does not approve its own output — a spec leaves here at
 `Draft`, and `approve-spec` is what moves it.
 
@@ -69,12 +69,38 @@ Three cases worth handling deliberately:
 - **The feature forces a decision nobody has recorded.** Put it in Assumptions
   and note it deserves an ADR of its own.
 
-## 3. Ground it in the code
+## 3. Collect the research
+
+Research documents record what was found out before anything was decided or built.
+Look in `docs/research/` or `research/`, read the titles and research questions, and
+read the ones that bear on this feature:
+
+```bash
+ls docs/research research 2>/dev/null
+```
+
+Cite a document only if it is `status: complete` and not `superseded`; for a superseded
+one, follow its `superseded-by` to what replaced it. A `draft` is not yet confirmed, so
+rely on it only by saying so in Assumptions. For each citation write the link and the
+specific finding the spec leans on — `RES-0004 F2`, not a summary of the document —
+because the finding's stated confidence tells a reviewer how much weight it can bear. If
+a story rests on a `Low` finding, put that in Assumptions too.
+
+Where an ADR has since been written on the strength of the research, cite the ADR in
+Prior Decisions and leave the research out unless it adds something the ADR does not. If
+a `Revisit When` condition in cited research has been met, say so in your report; the
+research may need refreshing before the spec is worth approving.
+
+Write `- None` when no research bears on it. That is the common case for a small feature,
+and no reason to commission research. If the feature plainly turns on a fact nobody has
+established, say so in your report and offer `create-research` first.
+
+## 4. Ground it in the code
 
 Skim enough of the repo to name real files in the task list. You are locating
 the seams the work will touch, not auditing them — a few searches, not a survey.
 
-## 4. Generate the skeleton
+## 5. Generate the skeleton
 
 ```bash
 uv run --no-project "$LIGHTSPEC" new "Price Drop Watchlist" --stories 2
@@ -82,9 +108,9 @@ uv run --no-project "$LIGHTSPEC" new "Price Drop Watchlist" --stories 2
 
 Decide the story count from step 1. The script auto-numbers from the highest
 existing `specs/NNN-`, derives the slug from the title, refuses to overwrite,
-and prints the path it wrote. Keep that path — step 6 checks it.
+and prints the path it wrote. Keep that path — step 7 checks it.
 
-## 5. Fill it in
+## 6. Fill it in
 
 Replace every `<FILL: ...>` marker. The marker text is the instruction for that
 slot — delete it as you go. `reference/example-spec.md` is a filled spec written
@@ -94,6 +120,7 @@ to be imitated.
 |---|---|
 | Description | What this is, who it serves, why it is worth doing now. No technology choices. |
 | Prior Decisions | Step 2's citations, each with the constraint it imposes here. |
+| Research | Step 3's citations, each with the finding the spec leans on. `- None` if there is none. |
 | Out of Scope | What a reader would otherwise assume is included. This is where scope creep dies. |
 | Assumptions | Every place you guessed, stated so a reader can disagree with a specific line. |
 | User Stories | `As a <role>, I want <capability> so that <outcome>`, then 1-2 lines: the flow, the constraint that shapes it, the edge case that matters. |
@@ -125,9 +152,9 @@ Done-when items are the acceptance test. "Clicking watch twice leaves exactly
 one row and reports success both times" — not "the watchlist works". Write them
 so a stranger could run them.
 
-## 6. Check
+## 7. Check
 
-Check the exact path step 4 printed:
+Check the exact path step 5 printed:
 
 ```bash
 uv run --no-project "$LIGHTSPEC" check specs/009-price-drop-watchlist/spec.md
@@ -147,7 +174,7 @@ or that a story is really three stories. That judgment stays yours — re-read t
 Done When section once with the checker green and ask whether each line could
 actually be verified by someone who did not write the code.
 
-## 7. Report
+## 8. Report
 
 Give the path, the story and task counts, and anything you assumed that the user
 should overturn. Say the spec is at `Draft` and that approve-spec is the next
@@ -168,6 +195,8 @@ their call, not something this skill does.
 - Done-when items that restate tasks; a task is work, a done-when is evidence
 - Empty Out of Scope or Assumptions when the request was genuinely ambiguous
 - Padding Prior Decisions with ADRs that do not actually constrain this feature
+- Citing research that is a draft, superseded, or unread, or citing a whole document
+  where one finding is what the spec relies on
 - More than about eight stories or twenty-five tasks — that is two features
 - Cutting a branch, filing issues, or writing code from this skill
 

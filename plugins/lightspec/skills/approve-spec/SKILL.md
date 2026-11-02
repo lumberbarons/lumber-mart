@@ -66,7 +66,7 @@ You cannot judge a spec against nothing. Two things to gather first:
   plausible and whether something obvious is missing. A few searches. You are
   testing the spec's grip on reality, not auditing the codebase.
 
-## 4. The six questions
+## 4. The questions
 
 One per section, and they are the whole review. Each asks whether the section is
 doing its job — not whether it could be worded better.
@@ -75,6 +75,7 @@ doing its job — not whether it could be worded better.
 |---|---|---|
 | Description | Is this worth doing **now**? | The stated reason is decoration, or the problem is asserted rather than evidenced. |
 | Prior Decisions | Does it contradict an accepted decision, or quietly make one nobody recorded? | An ADR that constrains this and went uncited; a choice whose consequences outlive this feature, made in passing. |
+| Research | Does a story rest on a claim the cited research does not support, or rates `Low`? | A cited finding that says less than the spec assumes; a `draft` or `superseded` document; a factual premise in the Description that no research backs. `- None` is fine unless the spec turns on a fact nobody established. |
 | Out of Scope | Is the boundary defensible, or drawn to make the spec easy? | Something excluded that the feature does not work without. |
 | Assumptions | Which assumption, if wrong, invalidates the spec — and is it written down? | The load-bearing guess is missing while three harmless ones are listed. |
 | User Stories | Is P1 actually what makes this worth shipping? Is a story secretly three? | A P1 nobody would ship alone; a story whose "and" hides a second feature. |

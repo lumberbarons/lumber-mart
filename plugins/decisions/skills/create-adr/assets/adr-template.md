@@ -7,6 +7,7 @@ deciders: []
 supersedes: []
 superseded-by: []
 related: []
+research: []
 tags: []
 ---
 
@@ -74,4 +75,4 @@ Chosen option: **[Option X]**
 
 ## References
 
-- [Links to discussions, PRs, issues, docs, related ADRs, spec files]
+- [Links to discussions, PRs, issues, docs, related ADRs, and the research documents this decision rests on]
