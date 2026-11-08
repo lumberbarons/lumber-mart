@@ -1,7 +1,7 @@
 # work-issue evals
 
 How to run the eval set in `evals.json`. The fixtures themselves live in
-`../../work-issue-workspace/fixtures/`, which is gitignored like every other skill workspace in
+`plugins/hew/skills/work-issue-workspace/fixtures/`, which is gitignored like every other skill workspace in
 this repo — this file is the tracked description of what has to be built there.
 
 ## Why a stub instead of a fixture repo
@@ -50,7 +50,7 @@ CLI whenever hew's output shape moves.
 
 ## Scenarios
 
-Each scenario is a directory under `../../work-issue-workspace/fixtures/` holding the canned
+Each scenario is a directory under `plugins/hew/skills/work-issue-workspace/fixtures/` holding the canned
 `ready`/`show`/`list` payloads plus a small real project — real enough that TDD has something to
 bite on, since a test that cannot fail proves nothing about a skill that is supposed to watch it
 fail.

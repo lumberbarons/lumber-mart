@@ -5,7 +5,7 @@ Skills for GitHub and local issue trackers through the [hew](https://github.com/
 | `skills/raise-issues/` | Files review findings as deduplicated hew issues | Changing how findings become issues, or the review-key scheme |
 | `skills/work-issue/` | Takes a tracked issue from claimed to draft PR, test-first | Changing how issues get implemented, verified, or shipped |
 | `skills/finish-issue/` | Reviews and lands an existing delivery; local squash/close recovery helper and real-git tests | Changing how deliveries are merged, closed, or recovered |
-| `skills/raise-issues/evals/` | The dedup-judgement eval: a tracker snapshot and two plans | Changing Step 3's match rules or `dedup_candidates.py` |
+| `../../evals/hew/raise-issues/` | The dedup-judgement eval: a tracker snapshot and two plans | Changing Step 3's match rules or `dedup_candidates.py` |
 | `README.md` | Plugin overview, the review-key contract, and the unattended pipeline | Understanding what hew skills do |
 
 Requires the `hew` binary on PATH, authenticated via `gh auth login`.
