@@ -1,12 +1,18 @@
 """Scope-resolution tests for repo_state.parse_scope and scope_issues.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
+Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only, no network: `hew` is patched out.
 """
 
+import sys
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 from repo_state import CommandError, parse_scope, scope_issues, touches_code
 

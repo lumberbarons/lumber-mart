@@ -1,13 +1,19 @@
 """Tests for findings: filing, the deterministic dedup rule, closing the fixed, the round comment.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
+Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only; the converter, dedup helper and hew are a scripted fake.
 """
 
+import sys
 import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 from findings import (FilingError, Filer, round_comment, read_outcome, unfixed_blocker)
 from orca_api import Proc

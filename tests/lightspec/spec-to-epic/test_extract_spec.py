@@ -8,6 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/lightspec/skills/spec-to-epic/scripts"
+SKILL = SCRIPTS.parent
+sys.path.insert(0, str(SCRIPTS))
+
 from extract_spec import SpecFormatError, parse
 
 MINIMAL = """\
@@ -111,7 +116,7 @@ class ParseTests(unittest.TestCase):
             parse(broken, Path("spec.md"))
 
     def test_bundled_example_parses(self) -> None:
-        example = Path(__file__).resolve().parents[1] / "reference" / "example-spec.md"
+        example = SKILL / "reference" / "example-spec.md"
         data = parse(example.read_text(encoding="utf-8"), example)
         self.assertEqual(len(data["stories"]), 2)
         self.assertEqual(sum(len(s["tasks"]) for s in data["stories"]), 6)
@@ -128,7 +133,7 @@ class IsolatedInstallTests(unittest.TestCase):
         # target checkout. Spaces exercise the quoted script paths in the skill.
         self.skill = root / "installed skills" / "spec-to-epic"
         shutil.copytree(
-            Path(__file__).resolve().parents[1], self.skill,
+            SKILL, self.skill,
             ignore=shutil.ignore_patterns("__pycache__"),
         )
         self.repo = root / "target repo"

@@ -6,16 +6,21 @@ pins them together; the rest break one rule at a time.
 
 from __future__ import annotations
 
+import sys
 import contextlib
 import io
 import tempfile
 import unittest
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/decisions/skills/create-research/scripts"
+SKILL = SCRIPTS.parent
+sys.path.insert(0, str(SCRIPTS))
+
 import research
 
-HERE = Path(__file__).resolve().parent
-EXAMPLE = HERE.parent / "reference" / "example-research.md"
+EXAMPLE = SKILL / "reference" / "example-research.md"
 
 
 def run(*argv: str) -> tuple[int, str, str]:

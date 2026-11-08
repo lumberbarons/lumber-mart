@@ -19,7 +19,7 @@ The policy layer: `resolve_ready.py` (which children, in what order) and `pr_sta
 PRs merge, repair, update, or hold), plus `repo_state.py`'s parsers. `test_*.py`
 pins every decision, skip reason, and parser case. Run them from the repo root:
 
-    python3 -m unittest discover -s plugins/work-epic/skills/work-epic/scripts
+    scripts/run-tests.sh tests/work-epic/work-epic
 
 CI runs the same command. The prose in `SKILL.md` and `REFERENCE.md` is not covered by these
 tests, by design: it tells an orchestrator what to do, and the parts that could be checked are
@@ -60,13 +60,13 @@ description was selected for one phrasing.
 
 ## The simulated harness, and what is still unproven
 
-`scripts/test_pump.py` is the harness this section used to ask for: the real pump loop, the real
+`tests/work-epic/work-epic/test_pump.py` is the harness this section used to ask for: the real pump loop, the real
 decision tables, and a simulated Orca, GitHub, and tracker (`World`), with scenarios for the happy
 path, review and fix, holds, repairs, halts, stalls, resume, and the mailbox, asserting over the
 command log (one worktree per issue, the reviewer in that same worktree, no merge without a review
 round, every Delivery acknowledged). It runs in CI like the other tests.
 
-What it cannot prove is that Orca behaves as the fake does. `test_orca_api.py` pins the shapes
+What it cannot prove is that Orca behaves as the fake does. `tests/work-epic/work-epic/test_orca_api.py` pins the shapes
 captured from a live Orca 1.4.x, but the `worker-start` receipt and the settlement of real agents
 come from past runs, not from exercising this code. The first real epic is the live test; run it with
 `--workers 1` on a small, low-risk scope and watch the log.

@@ -1,6 +1,6 @@
 """Tests for findings_to_plan.
 
-Run with `python3 -m unittest discover plugins/hew/skills/raise-issues/scripts`
+Run with `python3 -m unittest discover tests/hew/raise-issues`
 — stdlib only; the CLI cases run the script as a subprocess.
 """
 
@@ -11,9 +11,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/hew/skills/raise-issues/scripts"
+sys.path.insert(0, str(SCRIPTS))
+
 from findings_to_plan import convert
 
-SCRIPT = Path(__file__).with_name("findings_to_plan.py")
+SCRIPT = SCRIPTS / "findings_to_plan.py"
 
 
 def finding(priority="P2", **kw):

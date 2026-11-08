@@ -7,8 +7,10 @@ import sys
 import tempfile
 import unittest
 
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/critique/skills/review-docs/scripts"
+SCRIPT = SCRIPTS / "validate-claude-md.py"
 
-SCRIPT = Path(__file__).with_name("validate-claude-md.py")
 BROKEN_NAVIGATION = (
     "| File | What | When to read |\n"
     "| --- | --- | --- |\n"

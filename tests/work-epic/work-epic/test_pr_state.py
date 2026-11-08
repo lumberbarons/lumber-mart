@@ -1,10 +1,16 @@
 """Decision-table tests for pr_state.plan_pr and the merge queue.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
+Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only, no network: plan_pr and queue_merges are pure over gh/hew JSON.
 """
 
+import sys
 import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 from pr_state import (
     REPAIR_FAIL_MARKER,

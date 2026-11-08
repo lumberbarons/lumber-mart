@@ -41,8 +41,8 @@ the verified head against the current default branch, and reports finished only 
 issue closure are observed. GitHub closes through the PR; a local tracker closes with
 `hew close --completed` after the squash commit. The local helper's receipt lives in git's common
 directory so a retry can close an already-landed issue without squashing twice. Never delete a
-receipt to bypass a failed landing. Tests use real scratch git repositories and substitute only
-hew's transport; run `python3 -m unittest discover -s plugins/hew/skills/finish-issue/scripts`.
+receipt to bypass a failed landing. Tests live in `tests/hew/finish-issue/`, use real scratch git repositories and substitute only
+hew's transport; run `scripts/run-tests.sh tests/hew/finish-issue`.
 
 The skill owns review, project-check discovery, and scoped repairs. Deterministic merge/closure
 and recovery are candidates for a future native `hew finish`; the current hew has no such

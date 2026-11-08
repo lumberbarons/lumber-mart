@@ -4,15 +4,21 @@ The probes run against a throwaway repository because what they promise is git's
 behaviour (what `merge-tree` calls a conflict, what `--no-merged` leaves out); the
 tables run on plain dicts.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`.
+Run with `python3 -m unittest discover tests/work-epic/work-epic`.
 """
 
+import sys
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 import local_state
 import repo_state

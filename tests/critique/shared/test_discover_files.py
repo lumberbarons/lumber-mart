@@ -6,9 +6,9 @@ import subprocess
 import tempfile
 import unittest
 
-
-SCRIPT = Path(__file__).with_name("discover-files.sh")
-
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/critique/scripts"
+SCRIPT = SCRIPTS / "discover-files.sh"
 
 class DiscoverFilesPathTests(unittest.TestCase):
     def setUp(self):

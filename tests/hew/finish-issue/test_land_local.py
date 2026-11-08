@@ -1,5 +1,6 @@
 """Exercise real git; only the hew transport is substituted."""
 
+import sys
 import argparse
 import fcntl
 import importlib.util
@@ -10,7 +11,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-SPEC = importlib.util.spec_from_file_location("land_local", Path(__file__).with_name("land_local.py"))
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/hew/skills/finish-issue/scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+SPEC = importlib.util.spec_from_file_location("land_local", SCRIPTS / "land_local.py")
 landing = importlib.util.module_from_spec(SPEC)
 if SPEC.loader:
     SPEC.loader.exec_module(landing)

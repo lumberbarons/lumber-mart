@@ -1,12 +1,18 @@
 """Classification tests for resolve_ready.classify.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
+Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only, no network: classify is pure over hew JSON plus the PR and
 branch indexes.
 """
 
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 from resolve_ready import (
     classify,

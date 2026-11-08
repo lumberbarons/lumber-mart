@@ -81,8 +81,7 @@ nothing bears on the feature). Specs cite research; research never links to a sp
 The format is defined twice — skeleton generator and checker — and the tests pin them together:
 
 ```bash
-python3 -m unittest discover plugins/lightspec/skills/draft-spec/scripts
-python3 -m unittest discover plugins/lightspec/skills/spec-to-epic/scripts
+scripts/run-tests.sh tests/lightspec/draft-spec tests/lightspec/spec-to-epic
 ```
 
 A fresh skeleton must fail the check for its `<FILL: ...>` markers and nothing else;

@@ -1,13 +1,19 @@
 """Tests for orca_api: the envelope, and the shapes captured from a live Orca 1.4.x.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`
+Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only; `sh` is a scripted fake.
 """
 
+import sys
 import json
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 from orca_api import (Orca, OrcaError, Proc, find_key, orca_command, parse_envelope,
                       payload, settled)

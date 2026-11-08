@@ -1,7 +1,7 @@
 """Tests for lightspec.
 
-Run with `python3 -m unittest discover -s "<this skill's directory>/scripts"` -
-stdlib only, no test dependency to install.
+Run with `scripts/run-tests.sh tests/lightspec/draft-spec` - stdlib only, no test
+dependency to install.
 
 The two tests that matter most are the round trip (a fresh skeleton fails only
 for its FILL markers) and the reference example (the file the skill tells the
@@ -11,11 +11,17 @@ drifting apart, which is the only way this tool can quietly stop working.
 
 from __future__ import annotations
 
+import sys
 import contextlib
 import io
 import tempfile
 import unittest
 from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/lightspec/skills/draft-spec/scripts"
+SKILL = SCRIPTS.parent
+sys.path.insert(0, str(SCRIPTS))
 
 import lightspec
 
@@ -83,7 +89,7 @@ class SkeletonRoundTrip(unittest.TestCase):
 
 class ReferenceExample(unittest.TestCase):
     def test_example_spec_passes(self):
-        example = Path(__file__).resolve().parents[1] / "reference" / "example-spec.md"
+        example = SKILL / "reference" / "example-spec.md"
         problems = lightspec.check_file(example)
         self.assertEqual([], problems.items)
 
