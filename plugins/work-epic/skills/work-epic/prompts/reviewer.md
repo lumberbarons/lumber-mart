@@ -8,8 +8,11 @@ If the fast-forward fails, stop and write status "error" with the reason; do not
 or force anything.
 
 Then:
-3. Use the review-code skill with flags --non-interactive --json '.work-epic/wr-${pr}.json'. Its
+3. Use the review-code skill with flags --non-interactive --report-only --json '.work-epic/wr-${pr}.json'. Its
    default branch-vs-default scope is exactly this PR's diff.
+   `--report-only` is required: the fix step below is the repair phase, and review-code must not
+   edit the tree itself, or its edits would be committed under the wrong finding or undone by a
+   failed gate.
 4. For each finding at P0, P1, or P2, in order, try to fix it:
    - make the smallest change that resolves it, inside the files this PR already changes or
      their direct tests;

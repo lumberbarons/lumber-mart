@@ -8,8 +8,11 @@ This worktree is where the work was done. Confirm that first:
    "error" with the reason; do not switch, reset, or rebase anything.
 
 Then:
-2. Use the review-code skill with flags --non-interactive --json '.work-epic/wr-${n}.json'. Its
+2. Use the review-code skill with flags --non-interactive --report-only --json '.work-epic/wr-${n}.json'. Its
    default branch-vs-default scope is exactly this branch's diff.
+   `--report-only` is required: the fix step below is the repair phase, and review-code must not
+   edit the tree itself, or its edits would be committed under the wrong finding or undone by a
+   failed gate.
 3. For each finding at P0, P1, or P2, in order, try to fix it:
    - make the smallest change that resolves it, inside the files this branch already changes or
      their direct tests;

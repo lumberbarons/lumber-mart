@@ -60,7 +60,9 @@ findings format and stop. In fix mode, the calling agent makes one repair pass o
 findings, followed by relevant verification:
 
 - For automatic mode, fix only problems introduced by the reviewed branch, within its changed
-  files and their direct tests. Existing unrelated problems remain findings. For an explicit
+  files and their direct tests. A file the branch left unchanged may be edited only when the
+  branch's change is incomplete without it (a migration list, an export, a schema version), and
+  the repair summary names it. Existing unrelated problems remain findings. For an explicit
   fix request, stay within its authorized target; confirm the checkout matches the reviewed
   PR head before editing a PR's code. An unresolved or mismatched target remains report-only.
 - Make the smallest correction that preserves intended behavior. Leave broad redesigns,
@@ -70,6 +72,10 @@ findings, followed by relevant verification:
 - Preserve pre-existing edits when an explicit fix request allows a dirty tree. Run the
   project's required checks relevant to the repair; never weaken or delete assertions just
   to obtain a pass. If verification fails or is unavailable, do not claim the repair succeeded.
+  A project with no checks is not by itself unavailable: when the failing trace can be
+  reproduced, show it failing before the edit and passing after, name that reproduction as the
+  verification and say the project has no checks. If the trace cannot be reproduced, leave the
+  finding unresolved.
   Undo only that attempted repair's edits, preserving user work and earlier verified repairs,
   and report the finding unresolved with the failure or limitation.
 - Do not start a repeated review/fix loop. Do not commit, push, publish PR comments or file
