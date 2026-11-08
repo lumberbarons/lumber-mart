@@ -974,6 +974,16 @@ class Prompts(unittest.TestCase):
         self.assertIn("git push origin HEAD:fix/21-x", pump.render("reviewer", **values))
         self.assertIn("gh pr checks 121", pump.render("repairer", **values))
 
+    def test_reviewers_run_review_code_report_only(self):
+        # The reviewer owns the repair phase (commit per finding, fixedIn, gate). review-code
+        # auto-fixes a clean development branch unless told otherwise, which would leave
+        # uncommitted edits the fix step then commits under the wrong finding or discards.
+        values = {"n": 21, "pr": 121, "branch": "fix/21-x", "default": "main",
+                  "work_issue_dir": "/skills/work-issue"}
+        for name in ("reviewer", "reviewer_local"):
+            text = pump.render(name, **values)
+            self.assertRegex(text, r"review-code skill with flags[^\n]*--report-only", name)
+
     def test_the_local_prompts_name_no_remote_and_no_pr(self):
         values = {"n": 21, "pr": 21, "branch": "fix/21-x", "default": "main",
                   "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch"}

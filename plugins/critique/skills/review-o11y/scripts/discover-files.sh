@@ -27,7 +27,14 @@ if [[ $# -gt 0 && -n "${1:-}" ]]; then
     exit 0
   fi
   if git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    git ls-files --cached --others --exclude-standard -- "$path"
+    # The caller's cwd may be outside the repository that holds $path (an absolute
+    # path handed in from elsewhere), where a pathspec lookup fails. Fall back to
+    # listing from inside $path and prefixing the result, so callers see the same
+    # shape either way.
+    if ! git ls-files --cached --others --exclude-standard -- "$path" 2>/dev/null; then
+      git -C "$path" ls-files --cached --others --exclude-standard |
+        while IFS= read -r file; do printf '%s/%s\n' "${path%/}" "$file"; done
+    fi
   else
     find "$path" -type f
   fi

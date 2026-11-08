@@ -22,12 +22,18 @@ export function parseCents(input: string): Cents {
   if (!DECIMAL.test(trimmed)) {
     throw new RangeError(`not a decimal amount: ${JSON.stringify(input)}`);
   }
-  const value = Number(trimmed);
-  const cents = Math.sign(value) * Math.round(Math.abs(value) * 100);
+  // Work on the digits, not on Number(trimmed) * 100: "1.005" has no exact binary
+  // form, so scaling it as a float lands just below the half-cent and rounds down.
+  const negative = trimmed.startsWith("-");
+  const [whole, fraction = ""] = trimmed.replace("-", "").split(".");
+  let cents = Number(whole) * 100 + Number((fraction + "00").slice(0, 2));
+  if (fraction.length > 2 && fraction[2] >= "5") {
+    cents += 1;
+  }
   if (!Number.isSafeInteger(cents)) {
     throw new RangeError(`amount is too large to represent exactly: ${input}`);
   }
-  return cents;
+  return negative && cents !== 0 ? -cents : cents;
 }
 
 /** Sums cents. */

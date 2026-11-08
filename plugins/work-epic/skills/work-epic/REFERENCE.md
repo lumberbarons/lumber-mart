@@ -84,7 +84,10 @@ directory, so it must be readable on the host.
 
 The prompts are the contract with each agent. Workers write an outcome file into their own
 worktree (`.work-epic/we-<n>.json`, `wr-<pr>.json`, `wc-<pr>.json`) and the driver trusts only that
-file, never terminal output. The reviewer's file is review-code's findings file plus `fixed` and
+file, never terminal output. The reviewer runs `review-code` with `--report-only`: critique's
+review-code repairs a clean development branch on its own by default, but the reviewer owns the
+repair phase here, so the findings file holds every finding rather than only the unresolved ones.
+The reviewer's file is review-code's findings file plus `fixed` and
 `fixedIn` per finding (and `unfixedReason` when not fixed), and `head` and `gate` at the top. The
 repairer's is `{status: resolved|blocked|error, head, reason, gate}`. The worker's is work-issue's
 own outcome file (`status`, `issues[0].pr`, `issues[0].branch`).

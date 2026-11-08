@@ -41,6 +41,7 @@ jobs:
         run: python3 -m unittest discover -s plugins/work-epic/skills/work-epic/scripts
       - name: Run critique and hew regression tests
         run: |
+          python3 -m unittest discover -s plugins/critique/scripts
           python3 -m unittest discover -s plugins/critique/skills/review-docs/scripts
           python3 -m unittest discover -s plugins/hew/skills/raise-issues/scripts
           python3 -m unittest discover -s plugins/hew/skills/finish-issue/scripts

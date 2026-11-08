@@ -39,8 +39,20 @@ otherwise have to parse prose.
 | `files_reviewed` | Count matching the markdown header line |
 | `findings` | Empty array when the review ran and found nothing |
 | `omitted` | The truncated tail when the ten-finding cap applied; zeros otherwise |
+| `mode` | `report` or `fix` for code/test reviews; other skills may omit it |
+| `mode_reason` | The classifier's reason, or why a requested repair could not safely proceed |
+| `repaired` | In fix mode, original findings successfully repaired, each with a `verification` string naming checks and results; never issue-filing input |
 
-Per finding, `priority`, `files`, and `fix` are what consumers depend on. A finding missing any
+For code/test reviews in fix mode, `findings` contains only unresolved findings, and the markdown
+header count matches that list. Put verified repairs in `repaired`, even when none remain
+unresolved. In report mode, keep the original full findings list. Consumers such as
+`raise-issues` read `findings`, not `repaired`, so successful repairs are not filed as new work.
+Do not claim a clean initial review when all its findings were repaired.
+
+Per finding, `priority`, `files`, and `fix` are what consumers depend on. `review-code` also sets
+`lens` to `design` or `correctness`, saying which read raised the finding. It is informational:
+a finding's identity is its skill, pattern and `files`, not its lens, so a defect keeps the same
+key whichever lens finds it. Other skills omit it. A finding missing any
 of them is unusable downstream, so fill them or drop the finding.
 
 `portability` is the canonical identity for `review-portability`. Older reports used `skills`;

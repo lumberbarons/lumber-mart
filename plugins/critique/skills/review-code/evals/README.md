@@ -69,6 +69,40 @@ index ownership) was tried on top and made no measurable difference, so it was d
 two fixtures stay as the regression guard. Both are small and carry docstrings that state the
 migration contract, so they show the section works, not where it stops working.
 
+## The two-lens rubric
+
+The skill now reads for correctness as well as design (`--lens` runs one), and can repair a
+clean development branch (`--fix` / `--report-only`). Measured against the previous skill on
+this fixture set and on two harnesses: Claude Code subagents, and `opencode run` on its default
+(non-Claude) model, one to three runs per cell.
+
+**What moved.** The new behaviours work on both harnesses: `--lens` is honoured and the excluded
+lens stays silent, every finding carries a lens tag, and a repair is reported separately from
+unresolved findings with a verification string. On `py-ledger`, the old skill still found every
+seeded bug but rated the duplicate credit P2, fell for the `tier_percent` trap and filed
+hypothetical-future claims; the new skill did not. The weaker the model, the more the
+failing-trace bar bought.
+
+**What did not.** On the original fixtures the two skills tie (about 94% each on Claude Code;
+within run-to-run spread on opencode). The new skill costs about a quarter more time and a tenth
+more tokens on Claude Code.
+
+**A scare that was noise.** `py-store-upgrade` first looked like a regression: the new skill
+dropped the note that the legacy `idx_orders_customer` is superseded. Repeated runs say the old
+skill misses it too (2 of 4 runs raise it, against 2 of 6 for the new skill). Do not read
+single-run differences on the P3 notes in `py-store-upgrade` as signal.
+
+**Why some assertions changed.** "Every P1 is a security finding, at most two" encoded the
+design-only severity scheme; the correctness lens rates data corruption P1, so it is now two
+assertions. `parseCents` in `ts-api/src/money.ts` was fixed after a correctness reviewer found
+that scaling `"1.005"` as a float rounds down: the restraint trap was not actually clean.
+"Nothing drops the superseded index" was never met by any run and now accepts the write-cost
+form.
+
+**Harness differences.** Under Claude Code the eval agents are themselves subagents, so every
+Claude Code run reviewed inline. Under opencode every run delegated to one subagent. Compare
+harnesses on pass rate and finding content, not on time or tokens.
+
 ## Fixtures
 
 | Fixture | Seeded conditions |
