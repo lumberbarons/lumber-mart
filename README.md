@@ -14,7 +14,8 @@ Learn more about Claude Code marketplaces in the [official documentation](https:
 | Plugin | Category | Description |
 |--------|----------|-------------|
 | [runbooks](plugins/runbooks/) | Workflow | Operational runbook creation with consistent structure and built-in maintenance feedback loops |
-| [critique](plugins/critique/) | Workflow | Review skills for code, tests, documentation, and observability -- design, coverage, doc-structure, and logging issues that linters miss |
+| [critique](plugins/critique/) | Workflow | Review skills for code, tests, and documentation -- design, correctness, coverage, and doc-structure issues that linters miss |
+| [skill-portability](plugins/skill-portability/) | Workflow | Review skill files for agent-harness coupling that breaks or degrades them on another coding agent |
 | [decisions](plugins/decisions/) | Workflow | Research documents and Architectural Decision Records (ADRs) in script- and template-enforced formats, with research cited by the ADRs that rest on it, and policy review of changes against accepted ADRs |
 
 ### [runbooks](plugins/runbooks/)
@@ -27,14 +28,21 @@ Operational runbook creation with consistent structure and built-in maintenance 
 
 ### [critique](plugins/critique/)
 
-Review skills that surface design, coverage, doc-structure, and logging issues that linters and static analysis miss. Each skill produces a structured findings report with P1/P2/P3 (and P4 for docs) severities, file:line locations, and concrete fixes.
+Review skills that surface design, correctness, coverage, and doc-structure issues that linters and static analysis miss. Each skill produces a structured findings report with P1/P2/P3 (and P4 for docs) severities, file:line locations, and concrete fixes.
 
 | Component | Type | Description |
 |-----------|------|-------------|
 | `critique:review-code` | Skill | Review code for design issues -- single responsibility, abstraction levels, testability, naming |
 | `critique:review-tests` | Skill | Review tests for completeness, coverage gaps, output validation, isolation, readability |
 | `critique:review-docs` | Skill | Review README and CLAUDE.md files for progressive disclosure, enumeration completeness, index drift |
-| `critique:review-o11y` | Skill | Review observability -- log levels, log value, missing logs at I/O boundaries, error-message quality |
+
+### [skill-portability](plugins/skill-portability/)
+
+Review skill files for coupling to one coding agent -- constructs that break, degrade, or teach the wrong thing when Claude Code, opencode, or codex runs the skill.
+
+| Component | Type | Description |
+|-----------|------|-------------|
+| `skill-portability:review-portability` | Skill | Review skills for slash-command references, `$ARGUMENTS`, plugin-root paths, machine-specific paths, single-harness tool names and examples |
 
 ### [decisions](plugins/decisions/)
 
