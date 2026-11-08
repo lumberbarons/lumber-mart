@@ -1,24 +1,25 @@
 ---
 name: review-code
-description: Reviews code for design issues that static analysis misses — single responsibility, abstraction levels, testability, meaningful naming, API design, and error-handling strategy. Use when asked to review code, audit a module, check architecture or design, find design problems, improve code quality, or look at testability/coupling/SRP. Also invoke when a user says things like "review this code", "is this well-structured", "audit src/X for design problems", "what's wrong with this module", "check the architecture here", "look for SRP violations", "is this testable", or asks for a design-level (not lint-level) read of a file or directory.
+description: Reviews code for design issues and correctness bugs that static analysis misses — single responsibility, abstraction levels, testability, meaningful naming, API design, error-handling strategy, and defects you can trace to a failing input or state. Use when asked to review code, audit a module, check architecture or design, find design problems or bugs, improve code quality, or look at testability/coupling/SRP. Also invoke when a user says things like "review this code", "is this well-structured", "audit src/X for design problems", "what's wrong with this module", "check the architecture here", "look for SRP violations", "is this testable", "any bugs in this?", "will this break on retry?", or asks for a design-level (not lint-level) read of a file or directory.
 ---
 
 # Code Review
 
-Review the code in scope for design and architecture problems.
+Review the code in scope through two lenses: **design** (how the code will fare under change) and **correctness** (what it does wrong today). They are separate reads with separate severity rules; the report merges them.
 
 > [!IMPORTANT]
 > Consult [REFERENCE.md](REFERENCE.md) for the expected output format and level of detail.
 
 You already know what bad design looks like — a function with two unrelated reasons to change, business rules interleaved with transport parsing, a constructor that reaches out and builds its own dependency, an API that must be called in an order nothing enforces, a name that describes a category instead of an action, an error path that collapses three different failures into one. Apply that judgement directly and thoroughly; reading the code closely is the bulk of the value here.
 
-What follows is only the local policy you could not infer. Prescribing the review itself made reviews worse, not better: a 249-line version of this skill scored 78.4% across four fixtures against 94.5% for this one, with five times the variance, because attention went to restating design criteria instead of reading the code.
+What follows is only the local policy you could not infer. In an earlier design-review benchmark, a 249-line version scored 78.4% across four fixtures against 94.5% for a 97-line version, with five times the variance. Those measurements predate the two-lens rubric; they support keeping instructions focused on local policy rather than restating review criteria.
 
 ## Arguments
 
 Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
 
 - **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](FINDINGS.md). Off by default; the markdown report is unchanged either way.
+- **`--lens design|correctness`** — run one lens only. Without it, both run.
 - **`--inline`** — review in this session instead of delegating to subagents.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
 
@@ -50,20 +51,30 @@ The script returns paths language-blind. Filter to source files, dropping tests,
 
 Delegate by default, choosing the review shape from the user's intent:
 
-- **Branch or focused change review** — use one subagent for the whole change. Give it the
-  complete diff in scope and access to surrounding code so it can trace interactions across
-  files. Do not split the change among reviewers, including through further delegation.
+- **Branch or focused change review** — one subagent gets the complete diff in scope and access
+  to surrounding code so it can trace interactions across files. Do not split the change by
+  file, directory or lens, including through further delegation.
 - **Exploratory audit** — when looking for existing issues across a codebase or directory,
   multiple subagents may review independent subsystems. Divide by coherent responsibility,
-  not arbitrary file counts, and merge their findings before collapsing patterns.
+  not arbitrary file counts; each reviewer applies both lenses to its entire subsystem.
 
 A path selects scope, not review mode: reviewing a change within a directory still uses one
-reviewer. Give every reviewer the severity rules below and the named-consequence requirement.
-Review in this session only when `--inline` was given or the harness cannot delegate. Keep
-delegated reviews to static reading: use available file-reading/search tools, including terminal
-commands when needed, but do not execute project code.
+reviewer. Give each reviewer both lens sections below. Make two explicit passes: correctness
+first, then design. Apply each lens's own reporting bar and severity rules; neither pass needs
+to produce a finding. Merge overlapping root causes into one report after both passes.
+With `--lens`, run only that lens; the other lens is out of scope.
 
-## Severity, anchored on a named consequence
+Review in this session only when `--inline` was given or the harness cannot delegate, using
+the same two-pass method.
+Keep delegated reviews to static reading: use available file-reading/search tools, including
+terminal commands when needed, but do not execute project code.
+
+## Design lens
+
+This lens reads for how the code will fare under change. A defect that is wrong today belongs to
+the correctness lens; do not hunt for one here.
+
+### Severity, anchored on a named consequence
 
 These findings feed a work-tracking pipeline, so an inflated severity becomes false urgency in someone's backlog and teaches people to ignore the reviewer. The driving question for every finding: **name a specific change someone is likely to make that this design would predictably break.** State it concretely — *"adding a CLI entry point would force re-implementing the discount tiers currently inlined in the HTTP handler."* A finding you cannot put in that form is below the bar; drop it, and do not demote it to P3 because it sounds mild. P1 is the exception: its consequence is implicit.
 
@@ -75,7 +86,7 @@ P1 is narrower than it looks, and it is the severity that drifts. Where the lang
 
 The P2/P3 line: does the named consequence hit a change someone is **likely to make**, or only a **reader's first impression**? A design that forces a future refactor to land in many places is P2; one that merely reads awkwardly is P3.
 
-## What not to flag
+### What not to flag
 
 Each of these spends the reader's attention on something they cannot act on, or on a decision they already made:
 
@@ -85,20 +96,47 @@ Each of these spends the reader's attention on something they cannot act on, or 
 - **A missing abstraction nothing yet needs.** An interface with one implementation, a config value not yet configurable, a layer someone might want later — speculative generality costs more than it saves, and asking for it lands on code that is currently right.
 - **An alternative idiom the codebase has already chosen.** Raising versus returning an error, constructor injection versus a factory, a protocol with a single implementation: a defensible convention consistently applied is not a defect. Flag inconsistency, not preference.
 
-## Do not drop a correctness defect because this is a design review
+## Correctness lens
 
-The framing here pulls attention toward structure, and the cost shows up in one particular
-blind spot: an operation that is not idempotent in a world that will retry it. A refund
-`UPDATE` with no already-refunded guard, a retry loop that mints a fresh idempotency key on
-every attempt, a batch job that recharges on re-run. These sit in the seam between structure
-and behaviour, so a reviewer looking for responsibilities and abstraction levels reads past
-them — in testing, unskilled reviews caught these and design-focused ones did not.
+You already know what a bug looks like — a cache keyed on fewer fields than its value depends
+on, an error swallowed so the caller carries on with stale data, a rounding step that drifts a
+total by a cent per line, an operation that is not idempotent in a world that will retry it, a
+change that fits a fresh database and breaks every existing one. Read for those. The cost is false positives: a suspected bug that is not one is worse than a missed
+design note, because it sends someone chasing.
 
-When you notice a defect like that, file it with the same named-consequence discipline as
-everything else. The reader does not care which review was supposed to catch it. This is not
-licence to file every bug you can find: it applies to what you noticed while reading for
-design, not to a hunt for logic errors, which is a different review. In a findings file,
-re-run, retry and upgrade-over-existing-data hazards take the `unsafe-state-transition` slug.
+**The bar is a failing trace.** Every finding names a concrete input or state, the path the code
+takes on it, and the wrong result: *"`prices(user, currency)` caches under
+`user` alone at catalog.py:41, so a user's first EUR request is answered from their earlier
+USD entry and every later one repeats it."* A finding
+you cannot put in that form is a suspicion; drop it. Trace into callers and unchanged
+dependencies before filing — the failing path often lives in code the diff did not touch, and a
+guard you did not look for may exist there.
+
+- **P1** — security flaw traceable from attacker-controlled input to the privilege it buys; data
+  loss or corruption; money moved wrongly or twice; a crash on startup or on existing data.
+- **P2** — wrong result or failure on input or state that normal operation reaches.
+- **P3** — wrong only at an edge value or in a rare, recoverable state.
+
+Do not flag:
+
+- Anything the toolchain already prints — type errors, unused values, and what injection and
+  secret scanners report.
+- A hazard that requires a caller to break the documented contract, or a state the types or an
+  upstream guard rule out.
+- Speculative failures: "could be nil", "might overflow" with no path that gets there.
+- Performance, style and structure. A bug whose only fix is a redesign is still filed here, as a
+  bug; the redesign itself belongs to the design lens.
+- Defects in tests, and anything under `fixtures/`, `testdata/`, `__fixtures__/` or `golden/`.
+
+In a findings file, re-run, retry and upgrade-over-existing-data hazards take the
+`unsafe-state-transition` slug.
+
+## Merging the lenses
+
+Findings from both passes go into one list, each finding tagged with its lens. When both lenses report the
+same root cause — a forged header the design reviewer called a trust-boundary flaw and the
+correctness reviewer traced to a refund — keep one finding at the higher severity and keep the
+failing trace.
 
 ## Collapse patterns, then cap at ten
 
@@ -112,16 +150,16 @@ Design changes have wider blast radius than test fixes, so churn matters more he
 
 ## When the code is sound, say so
 
-A review that finds little should read as a verdict, not as a shrug. Reporting only issues is the right default, but on well-designed code a bare count line leaves the reader unable to tell a careful review from a cursory one, and the next thing they do is ask whether you actually looked. Say plainly that the design holds up and name what carries it — the injected dependencies, the single-purpose modules, the error type that gives callers something to branch on. Two sentences is enough. Then file the one or two real findings if there are any, and stop; do not reach for filler to make the report look substantial.
+A review that finds little should read as a verdict, not as a shrug. Reporting only issues is the right default, but a bare count line leaves the reader unable to tell a careful review from a cursory one. State what the selected lens or lenses established: that the design holds up, that no failing trace turned up, or both. Name the evidence carrying that verdict — the injected dependencies, the single-purpose modules, the error type that gives callers something to branch on. With `--lens`, make no claim about the excluded lens. Two sentences is enough. Then file the one or two real findings if there are any, and stop; do not reach for filler to make the report look substantial.
 
 ## Output
 
 Produce a report following the structure in [REFERENCE.md](REFERENCE.md). Each finding must include:
 
-- **Priority** (P1/P2/P3) in the H3 header
+- **Priority** (P1/P2/P3) and **lens** (`design` or `correctness`) in the H3 header
 - **Location** (file:line)
-- **Explanation** of the problem and why it matters
+- **Explanation** of the problem and why it matters — the named consequence for a design finding, the failing trace for a correctness finding
 - **Fix** — concrete prescription. For an API design issue, give the exact shape: parameter names, types, signatures, not just the general approach.
-- **Done when** — a criterion verifiable by reading the diff, referencing specific functions, files or observable behaviour. "Both parseSkillFrontmatter and parseAgentFrontmatter delegate to a shared parseFrontmatterRaw; no duplicated delimiter-scanning code remains." NOT: "the duplication is removed."
+- **Done when** — a criterion verifiable by reading the diff, referencing specific functions, files or observable behaviour. "Both parseSkillFrontmatter and parseAgentFrontmatter delegate to a shared parseFrontmatterRaw; no duplicated delimiter-scanning code remains." NOT: "the duplication is removed." For a correctness finding, name the guard or fix and the case that now behaves correctly: "`prices` caches under `(user, currency)`; a test requesting USD then EUR for one user gets EUR prices the second time."
 
-When `--json <path>` was given, write the findings file described in [FINDINGS.md](FINDINGS.md) as well. Two fields need care because nothing downstream can recover them if they are wrong: `files` must list every path a finding touches, and `pattern` must be the slug that names its root cause, taken from the vocabulary in [REFERENCE.md](REFERENCE.md). Findings you collapsed together share a root cause, so they share a slug — that pairing is what lets a later run recognise this finding as one it has already reported.
+When `--json <path>` was given, write the findings file described in [FINDINGS.md](FINDINGS.md) as well. Three fields need care: `files` must list every path a finding touches, `lens` must say which lens raised it, and `pattern` must be the slug that names its root cause, taken from the vocabulary in [REFERENCE.md](REFERENCE.md). Findings you collapsed together share a root cause, so they share a slug — that pairing is what lets a later run recognise this finding as one it has already reported.

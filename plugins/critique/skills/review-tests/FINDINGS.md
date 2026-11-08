@@ -40,7 +40,10 @@ otherwise have to parse prose.
 | `findings` | Empty array when the review ran and found nothing |
 | `omitted` | The truncated tail when the ten-finding cap applied; zeros otherwise |
 
-Per finding, `priority`, `files`, and `fix` are what consumers depend on. A finding missing any
+Per finding, `priority`, `files`, and `fix` are what consumers depend on. `review-code` also sets
+`lens` to `design` or `correctness`, saying which read raised the finding. It is informational:
+a finding's identity is its skill, pattern and `files`, not its lens, so a defect keeps the same
+key whichever lens finds it. Other skills omit it. A finding missing any
 of them is unusable downstream, so fill them or drop the finding.
 
 `portability` is the canonical identity for `review-portability`. Older reports used `skills`;
