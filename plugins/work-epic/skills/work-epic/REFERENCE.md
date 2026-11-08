@@ -18,7 +18,7 @@ the loop; everything it does is covered by `test_pump.py` against a simulated Or
 | `pr_state.py` | Which PRs merge, repair, update, or hold (read-only planner) |
 | `local_state.py` | The same two decisions for a local tracker: spawn, and merge/repair/hold over delivered branches |
 | `repo_state.py` | Scope resolution and the git/gh probes both planners share |
-| `prompts/` | What each agent is told: `worker.md`, `reviewer.md`, `repairer.md` (`${name}` placeholders), and `reviewer_local.md`, `repairer_local.md` for a local tracker |
+| `prompts/` | What each agent is told: `worker.md`, `reviewer.md`, `repairer.md` (`${name}` placeholders), and `worker_local.md`, `reviewer_local.md`, `repairer_local.md` for a local tracker |
 
 One tick: reap settled agents, start a reviewer for each delivered PR, run the merge pass, spawn
 into free slots. Between ticks the driver waits on the Run's mailbox with `check --wait`, which is
@@ -65,7 +65,8 @@ squash lands but `hew close` fails, the merge stands: the pump parks `issue-<n>`
 close and does not merge again.
 
 `--resume` does not re-offer bare claims here: a local tracker names claimants per worktree
-(`<user>-<worktree>-<hash>`), so no assignee ever equals the coordinator's name.
+(`<user>-<worktree>-<hash>`), so no assignee ever equals the coordinator's name. A claim the state
+never recorded is therefore skipped as claimed; the human releases it with `hew release <n> --force`.
 
 ## Agents and prompts
 

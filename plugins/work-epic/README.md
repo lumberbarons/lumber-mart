@@ -57,8 +57,8 @@ costs only that issue; the pump reports it and never silently swaps in another a
   stops if it cannot see the coordinator worktree.
 - The target repository registered in Orca (`orca repo list --json`), with CI. A PR with no checks
   reads as "CI has not reported yet" and is never merged.
-- [`hew`](https://github.com/lumberbarons/hew) on PATH, authenticated via `gh auth login`, plus `gh`
-  and `uv`. A local tracker needs neither authentication nor `gh`, and no remote or CI; it does need
+- [`hew`](https://github.com/lumberbarons/hew) on PATH and `uv`; on GitHub, authenticated via
+  `gh auth login`, plus `gh`. A local tracker needs neither authentication nor `gh`, and no remote or CI; it does need
   the main checkout on the default branch and clean whenever a merge lands.
 - The [`hew`](../hew) plugin — implementers run `work-issue`; findings are filed through
   raise-issues' converter script.
