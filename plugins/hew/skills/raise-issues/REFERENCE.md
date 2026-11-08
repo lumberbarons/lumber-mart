@@ -95,7 +95,7 @@ A finding is skipped and counted when it lacks priority, files, fix, or pattern 
 files from critique findings files, which always carry a pattern; hand-written lists go
 through the agent flow instead. `--at-or-above P2` also skips findings less severe than P2,
 for callers (the work-epic pump) that relay those elsewhere rather than track them; the
-threshold compares the finding's own priority, so a P0 still passes and files as P1. The whole file is rejected when `skill` is missing, and a
+threshold compares the finding's own priority, so a P0 still passes and files as P1. The whole file is rejected when `skill` is missing (a finding may carry its own `skill`, which wins over the file's: the work-epic reviewer merges its tests-lens review into the code-lens file that way), and a
 file whose `status` is `no_scope` or `error` exits 3 — nothing was reviewed, which is a
 different outcome from "reviewed, nothing found" (exit 0, empty plan).
 

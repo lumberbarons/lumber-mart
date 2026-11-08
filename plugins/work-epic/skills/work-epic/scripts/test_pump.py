@@ -11,6 +11,7 @@ Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/script
 
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -60,6 +61,7 @@ class World:
         self.script, self.fail_start, self.dirty = {}, set(), set()
         self.calls, self.acked, self.counter, self.sha = [], [], 0, 0
         self.agent_wait = set()
+        self.changed, self.specs = {}, []  # files per delivery id; the prompt each agent got
 
     # --- helpers -------------------------------------------------------------
 
@@ -190,6 +192,9 @@ class World:
         if argv[0] == "git" and "status" in argv:
             path = argv[2]
             return Proc(0, "M file\n" if path in self.dirty else "", "")
+        if argv[0] == "git" and argv[3:5] == ["diff", "--name-only"]:
+            n = branch_issue(argv[5].split("...")[1])
+            return Proc(0, "".join(f + "\n" for f in self.changed.get(n, [])), "")
         if argv[0] == "git" and "symbolic-ref" in argv:
             return Proc(0, f"{self.main_head}\n", "")
         if argv[0] == "git" and argv[3:5] == ["rev-parse", "--verify"]:
@@ -228,6 +233,8 @@ class World:
             self.prs[int(args[2])]["comments"].append({"body": input})
         elif args[:2] == ["pr", "view"]:
             return Proc(0, self.prs[int(args[2])]["head"] + "\n", "")
+        elif args[:2] == ["pr", "diff"]:
+            return Proc(0, "".join(f + "\n" for f in self.changed.get(int(args[2]), [])), "")
         return Proc(0, "", "")
 
     def orca(self, a):
@@ -292,6 +299,7 @@ class World:
     def worker_start(self, flags):
         title = flags["--task-title"]
         role, key = title.split(" ")[0].split("-")
+        self.specs.append((role, key, flags.get("--spec", "")))
         if key in self.fail_start:
             return envelope(error=("start_failed", "agent did not launch"))
         effects = []
@@ -443,7 +451,26 @@ class HappyPath(Scenario):
         self.assertTrue(all(c.startswith("work-epic · run_t · we-21 · opencode · ") for c in self.comments))
 
 
+def lens(world, role_key):
+    """The tests lens the pump put in the reviewer's prompt for one delivery."""
+    spec = next(spec for role, key, spec in world.specs if (role, key) == ("wr", role_key))
+    return re.search(r"this (?:PR's|branch's) lens: \*\*(\w+)\*\*", spec).group(1)
+
+
 class ReviewAndFix(Scenario):
+    def test_the_test_review_runs_on_code_and_is_skipped_for_documentation_only(self):
+        w = self.build([21, 22, 23])
+        w.changed = {121: ["svc/a.go", "svc/a_test.go"], 122: ["README.md", "docs/guide.rst"]}
+        self.run_pump()  # 123 lists no files: not knowing is never a reason to skip
+        self.assertEqual([lens(w, "121"), lens(w, "122"), lens(w, "123")], ["run", "skip", "run"])
+
+    def test_a_branch_gets_the_same_gate_from_its_diff_against_the_default(self):
+        w = self.build([21, 22], local=True)
+        w.changed = {21: ["svc/a.go"], 22: ["CHANGELOG.md"]}
+        self.run_pump()
+        self.assertEqual([lens(w, "21"), lens(w, "22")], ["run", "skip"])
+        self.assertEqual([c for c in w.calls if c[0] == "gh"], [])  # still nothing on GitHub
+
     def test_fixed_findings_do_not_hold_and_the_round_comment_is_posted(self):
         w = self.build([21])
         w.script[("wr", "121")] = {"status": "reviewed", "skill": "code", "gate": "ok", "push": True, "findings": [
@@ -966,7 +993,8 @@ class LocalMode(Scenario):
 
 class Prompts(unittest.TestCase):
     def test_every_prompt_renders_with_the_values_the_pump_passes(self):
-        values = dict(n=21, pr=121, branch="fix/21-x", default="main", work_issue_dir="/skills/work-issue")
+        values = dict(n=21, pr=121, branch="fix/21-x", default="main", work_issue_dir="/skills/work-issue",
+                      tests_lens="run")
         for name in ("worker", "reviewer", "repairer"):
             text = pump.render(name, **values)
             self.assertNotIn("${", text)
@@ -979,14 +1007,27 @@ class Prompts(unittest.TestCase):
         # auto-fixes a clean development branch unless told otherwise, which would leave
         # uncommitted edits the fix step then commits under the wrong finding or discards.
         values = {"n": 21, "pr": 121, "branch": "fix/21-x", "default": "main",
-                  "work_issue_dir": "/skills/work-issue"}
+                  "work_issue_dir": "/skills/work-issue", "tests_lens": "run"}
         for name in ("reviewer", "reviewer_local"):
             text = pump.render(name, **values)
             self.assertRegex(text, r"review-code skill with flags[^\n]*--report-only", name)
 
+    def test_reviewers_run_review_tests_report_only_and_tag_what_they_merge(self):
+        # review-tests auto-fixes a clean development branch for the same reason review-code
+        # does, and the converter files a merged finding under its own key only when tagged.
+        values = {"n": 21, "pr": 121, "branch": "fix/21-x", "default": "main",
+                  "work_issue_dir": "/skills/work-issue", "tests_lens": "run"}
+        for name in ("reviewer", "reviewer_local"):
+            text = pump.render(name, **values)
+            self.assertRegex(text, r"review-tests skill with flags[^\n]*--report-only", name)
+            self.assertRegex(text, r'"skill": "tests"', name)
+            self.assertIn("**run**", text)
+            self.assertLess(text.index("review-code skill"), text.index("review-tests skill"), name)
+
     def test_the_local_prompts_name_no_remote_and_no_pr(self):
         values = {"n": 21, "pr": 21, "branch": "fix/21-x", "default": "main",
-                  "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch"}
+                  "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch",
+                  "tests_lens": "run"}
         for name in ("reviewer_local", "repairer_local"):
             text = pump.render(name, **values)
             self.assertNotIn("${", text)

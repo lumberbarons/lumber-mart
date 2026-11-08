@@ -18,7 +18,7 @@ judgement: settle the scope with the user, launch the driver, and relay what it 
 re-implement the loop by hand; if the driver cannot do something, stop and say so.
 
 **The roles are separate agents.** The implementer runs `work-issue`; the reviewer runs
-`review-code` and then fixes what it found; the repairer resolves a conflict or a red CI run. The
+`review-code` and `review-tests` in turn and fixes what each found; the repairer resolves a conflict or a red CI run. The
 reviewer is a **different** agent from the implementer — a second point of view — and the fix
 happens in the session that found the problem, so nothing is re-reviewed: a PR is reviewed once.
 The agents are one block in [scripts/pump.py](scripts/pump.py) (`IMPLEMENTER`, `REVIEWER`,
@@ -43,7 +43,7 @@ something fails to start.
   with no checks reads as "CI has not reported yet" and is never merged.
 - On a **local hew tracker** (`hew init --local`, no `--repo`) none of GitHub applies: no `gh`, no
   remote, no CI. The driver detects this itself; see [Local trackers](#local-trackers).
-- The `work-issue` skill (hew plugin) installed for the implementer and `review-code` (critique
+- The `work-issue` skill (hew plugin) installed for the implementer and `review-code` and `review-tests` (critique
   plugin) for the reviewer. The driver finds the work-issue and raise-issues skill directories in
   the repo layout or the plugin cache; set `WORK_EPIC_WORK_ISSUE_DIR` or
   `WORK_EPIC_RAISE_ISSUES_DIR` to override.

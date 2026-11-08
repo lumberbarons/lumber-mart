@@ -28,7 +28,7 @@ import findings
 import orca_api
 from orca_api import OrcaError, settled
 from pr_state import REPAIR_FAIL_MARKER
-from repo_state import CommandError
+from repo_state import CommandError, touches_code
 
 # The agents. The only place an agent id appears; edit here to change one.
 IMPLEMENTER = "opencode"
@@ -467,6 +467,16 @@ class Pump:
         status = self.sh(["git", "-C", path, "status", "--porcelain"])
         return status.rc == 0 and not status.out.strip()
 
+    def tests_lens(self, iss):
+        """`run` when the delivery changes more than prose, else `skip` the test review."""
+        if self.cfg.local:
+            proc = self.sh(["git", "-C", iss["path"], "diff", "--name-only",
+                            f"{self.cfg.default}...{iss['branch']}"])
+        else:
+            proc = self._gh("pr", "diff", str(iss["pr"]), "--name-only")
+        paths = proc.out.splitlines() if proc.rc == 0 else []
+        return "run" if touches_code(paths) else "skip"
+
     def start_reviewer(self, n):
         iss = self.state.issue(n)
         pr = iss["pr"]
@@ -476,7 +486,7 @@ class Pump:
                              issue=n, pr=pr, card="DIRTY: not reviewed")
         spec = render("reviewer_local" if self.cfg.local else "reviewer", n=n, pr=pr,
                       branch=iss["branch"], default=self.cfg.default,
-                      work_issue_dir=self.cfg.work_issue_dir)
+                      work_issue_dir=self.cfg.work_issue_dir, tests_lens=self.tests_lens(iss))
         try:
             self.start_agent("wr", str(pr), n, spec=spec, title=f"wr-{pr} · {REVIEWER}",
                              agent=REVIEWER, worktree=f"id:{iss['worktree']}", wid=iss["worktree"],

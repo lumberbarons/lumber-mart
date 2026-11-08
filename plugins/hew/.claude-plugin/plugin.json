@@ -1,7 +1,7 @@
 {
   "name": "hew",
   "description": "Skills for tracking work through the hew CLI, with GitHub or local trackers. File deduplicated review findings, implement issues test-first through a draft PR or committed branch, then review, verify, squash merge, and confirm closure with finish-issue.",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "author": {
     "name": "lumberbarons"
   }

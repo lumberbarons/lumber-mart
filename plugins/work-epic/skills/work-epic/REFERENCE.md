@@ -73,7 +73,7 @@ close and does not merge again.
 |---|---|---|
 | **Coordinator** | `work_epic.py` | The terminal the human started it in |
 | **Implementer** | `work-issue` in the issue's worktree | `opencode` |
-| **Reviewer** | `review-code`, then fixes what it found, in the same worktree | `claude` |
+| **Reviewer** | `review-code`, then `review-tests`, fixing what each found, in the same worktree | `claude` |
 | **Repairer** | The repair contract in the same worktree | `opencode` |
 
 The agents are `pump.py`'s `IMPLEMENTER`, `REVIEWER`, and `REPAIRER`, and nowhere else. The reviewer
@@ -88,7 +88,23 @@ file, never terminal output. The reviewer runs `review-code` with `--report-only
 review-code repairs a clean development branch on its own by default, but the reviewer owns the
 repair phase here, so the findings file holds every finding rather than only the unresolved ones.
 The reviewer's file is review-code's findings file plus `fixed` and
-`fixedIn` per finding (and `unfixedReason` when not fixed), and `head` and `gate` at the top. The
+`fixedIn` per finding (and `unfixedReason` when not fixed), and `head` and `gate` at the top.
+
+**The test review** is a second step in the same session, not a second agent. After fixing
+review-code's findings the reviewer runs `review-tests --report-only` (to
+`.work-epic/wr-<pr>.tests.json`, which the pump never reads), appends its findings to the main file
+with `"skill": "tests"` on each, and fixes the P1 and P2 ones by the same procedure, tests only: a
+finding that needs a production change stays unfixed. It runs after the code fixes so it reads the
+branch as it stands, and there is one push at the end. The implementer works test-first, so its tests
+are the part most likely to confirm themselves; review-code drops test defects by design, so
+nothing else looks at them. If `review-tests` ends in `error`, the main file's status becomes
+`error` and the review is parked like any review that did not run.
+
+The pump decides whether the lens runs, not the agent: `Pump.tests_lens` lists the delivery's files
+(`gh pr diff --name-only`, or `git diff --name-only <default>...<branch>` locally) and passes
+`run` or `skip` into the prompt as `tests_lens`. `repo_state.touches_code` says `skip` only for a
+diff of nothing but prose (`.md`, `.mdx`, `.rst`, `.txt`, `.adoc`); a diff that cannot be listed
+runs the lens. The
 repairer's is `{status: resolved|blocked|error, head, reason, gate}`. The worker's is work-issue's
 own outcome file (`status`, `issues[0].pr`, `issues[0].branch`).
 
@@ -492,7 +508,8 @@ hew apply "$OUTDIR/wr-<pr>.plan.jsonl" --dry-run
 hew apply "$OUTDIR/wr-<pr>.plan.jsonl"
 ```
 
-The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically, stamps
+The converter derives each line's `review-key: <skill>/<pattern>/<scope>` mechanically (a
+finding's own `skill` wins over the file's, which is how test-review findings file under `tests/`), stamps
 `review-of: #<n> (PR #<pr>)` into `where`, adds `fixed-in: <sha>` when the finding carries
 `fixedIn`, and — with `--at-or-above P2` — leaves P3s to the round comment. Exit 3 means the file's
 status is not `reviewed`; the driver parks that case before filing, so it should never reach here.

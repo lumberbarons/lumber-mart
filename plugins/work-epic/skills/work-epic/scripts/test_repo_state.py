@@ -8,7 +8,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from repo_state import CommandError, parse_scope, scope_issues
+from repo_state import CommandError, parse_scope, scope_issues, touches_code
 
 
 class ParseScope(unittest.TestCase):
@@ -43,6 +43,19 @@ def fake_hew(shows, children):
         raise AssertionError(f"unexpected command {argv}")
 
     return run
+
+
+class TouchesCode(unittest.TestCase):
+    def test_prose_only_diffs_are_not_code(self):
+        self.assertFalse(touches_code(["README.md", "docs/Guide.RST", "notes.txt"]))
+
+    def test_one_non_prose_file_makes_it_code(self):
+        self.assertTrue(touches_code(["README.md", "svc/a.go"]))
+        self.assertTrue(touches_code(["Makefile"]))
+
+    def test_a_diff_that_cannot_be_listed_counts_as_code(self):
+        self.assertTrue(touches_code([]))
+        self.assertTrue(touches_code(["", "  "]))
 
 
 class ScopeIssues(unittest.TestCase):
