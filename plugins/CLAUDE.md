@@ -4,6 +4,7 @@ Plugin source directories for the lumber-mart marketplace.
 |-----------|------|--------------|
 | `runbooks/` | Operational runbook plugin | Creating or maintaining operational runbooks |
 | `critique/` | Code/test/docs review plugin | Reviewing code, tests, or documentation for quality issues |
+| `skill-portability/` | Skill portability review plugin | Reviewing skills for agent-harness coupling |
 | `decisions/` | Research and ADR plugin | Creating or maintaining research documents or Architectural Decision Records (the evidence and policy layers above specs) |
 | `hew/` | GitHub Issues tracking plugin | Filing review findings as issues, or changing the review-key dedup scheme |
 | `work-epic/` | Epic orchestration plugin | Changing how epics fan out to Orca worktrees and supervised agents, the agent-role matrix, or the resolver's spawn policy |

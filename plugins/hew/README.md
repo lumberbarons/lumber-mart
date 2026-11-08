@@ -54,7 +54,7 @@ directly; Claude Code prefixes the plugin name (`/hew:work-issue`).
 
 ```
 raise-issues                       # file them
-raise-issues --findings out/o11y.json --dry-run
+raise-issues --findings out/code.json --dry-run
 raise-issues only P1 and P2
 
 work-issue 42                      # a specific issue, or an epic to descend into
@@ -152,7 +152,7 @@ review-key: <skill>/<pattern>/<scope>
 The key is the identity of a *finding*, not of a line of code, which is what makes it survive
 the two things that change constantly — line numbers and the model's phrasing of a title.
 
-- `skill` — which review produced it (`o11y`, `tests`, `docs`, `code`, `portability`);
+- `skill` — which review produced it (`tests`, `docs`, `code`, `portability`; the retired `o11y` still matches existing keys);
   legacy `skills` reports normalize to `portability` for new plans, and dedup searches both
   prefixes while preserving existing stored keys
 - `pattern` — the root-cause slug the review emitted, from the vocabulary each critique skill

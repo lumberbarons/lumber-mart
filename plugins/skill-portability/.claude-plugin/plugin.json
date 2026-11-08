@@ -1,0 +1,8 @@
+{
+  "name": "skill-portability",
+  "description": "Review skill files for agent-harness coupling that breaks or degrades them when a different coding agent (Claude Code, opencode, codex) runs them.",
+  "version": "1.0.0",
+  "author": {
+    "name": "lumberbarons"
+  }
+}

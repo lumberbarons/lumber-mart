@@ -1,4 +1,4 @@
-Review skills for code, tests, documentation quality, and skill portability.
+Review skills for code, tests, and documentation quality.
 
 | Directory | What | When to read |
 |-----------|------|--------------|
@@ -15,6 +15,6 @@ nothing around it. Edit the source, then run `scripts/sync-skill-files.sh` from 
 
 Run `python3 -m unittest discover -s plugins/critique/scripts` for review-mode Git boundary tests.
 
-Every critique skill must itself be agent-agnostic — these files are the ones
-`review-portability` exists to police, so a harness-coupled construct in a review skill is a
-finding in its own deliverable. When editing a skill here, run `review-portability` against it.
+Every critique skill must itself be agent-agnostic — a harness-coupled construct in a review
+skill is a finding in its own deliverable. When editing a skill here, run the `skill-portability`
+plugin's `review-portability` against it.
