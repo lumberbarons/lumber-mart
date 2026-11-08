@@ -39,10 +39,12 @@ something fails to start.
 - Run from inside an Orca-managed terminal and worktree of the target repository, with the runtime
   ready. Prefer a dedicated worktree for the coordinator: the driver writes a `.work-epic/`
   scratch directory and its status card there. The repository must be registered in Orca.
-- `hew` on PATH and authenticated (`gh auth login`); `uv`; `gh`. The repository needs CI: a PR
-  with no checks reads as "CI has not reported yet" and is never merged.
+- `hew` on PATH and `uv`. On GitHub, `hew` must be authenticated (`gh auth login`) and `gh`
+  installed, and the repository needs CI: a PR with no checks reads as "CI has not reported yet"
+  and is never merged.
 - On a **local hew tracker** (`hew init --local`, no `--repo`) none of GitHub applies: no `gh`, no
-  remote, no CI. The driver detects this itself; see [Local trackers](#local-trackers).
+  authentication, no remote, no CI. The driver detects this itself; see
+  [Local trackers](#local-trackers).
 - The `work-issue` skill (hew plugin) installed for the implementer and `review-code` and `review-tests` (critique
   plugin) for the reviewer. The driver finds the work-issue and raise-issues skill directories in
   the repo layout or the plugin cache; set `WORK_EPIC_WORK_ISSUE_DIR` or
@@ -62,7 +64,7 @@ confirmed before anything runs:
 - Search with `hew search <terms>` and `hew list --label <area>` — never `hew triage`.
 - Show the user the candidate list (number, title, priority, type, blockers) and what the run will
   do with it: implement each, review each with a different agent, fix what the review finds, merge
-  on CI green.
+  on CI green (on a local tracker, once the quality gate passes).
 - Wait for the go-ahead. They may drop or add issues. The confirmed list is the scope for the whole
   run; the driver never widens it. Issue-number and epic scopes are explicit and need no
   confirmation.
@@ -127,6 +129,11 @@ no flag; hew's own backend rule picks the mode, and `--repo` always means GitHub
   and what unblocks dependents.
 - `--resume` rebinds the Run and adopts its state as before, but does not re-offer a bare claim: a
   local tracker names claimants per worktree, so the pump knows its own claims only from its state.
+  A claim the state never recorded (a crash between `hew start` and the pump saving it) is skipped
+  as claimed by someone else; `hew release <n> --force` it (its owner is a worktree, not you), then run again.
+- Branch protection does not exist here, so the *Protected* stop below cannot occur.
+- The implementer is told the tracker is local: the delivery is the committed branch, never
+  `hew pr` or a push, and the issue stays claimed until the merge closes it.
 
 ## What stops the pump
 
@@ -150,9 +157,10 @@ permission dialog or a question only a human can answer is also reported and **n
 ## Hard gates
 
 The driver never closes an issue or an epic (the exceptions: a review finding it filed after the
-reviewer fixed it, and, on a local tracker, the issue a merge delivers), never force-claims, never answers a worker's dialog or question,
-never edits code itself, never merges a PR outside the scope it was given, never passes `--admin`,
-and never force-pushes. Autonomous mode moved the *merge* off the human's list, not the judgement.
+reviewer fixed it, and, on a local tracker, the issue a merge delivers), never force-claims,
+never answers a worker's dialog or question, never edits code itself, never merges a PR (on a
+local tracker, a branch) outside the scope it was given, never passes `--admin`, and never
+force-pushes. Autonomous mode moved the *merge* off the human's list, not the judgement.
 
 ## Anti-patterns
 
@@ -161,6 +169,7 @@ and never force-pushes. Autonomous mode moved the *merge* off the human's list, 
 - Spawning for an issue the resolver skipped; the claim is the authority, never `--force`
 - Widening the scope mid-run, or working a finding issue the run filed: findings are fixed by the
   reviewer in its own session or handed to the human
-- Re-reviewing a PR whose head moved. A PR is reviewed once; the gate and CI check what lands after
+- Re-reviewing a PR (or local branch) whose head moved. A delivery is reviewed once; the gate and
+  CI check what lands after
 - Closing an open finding to lift a hold — only the human lifts a hold
 - Closing the epic because its children are done — report it; a human closes it

@@ -872,6 +872,14 @@ class LocalMode(Scenario):
         self.assertTrue(commit[5].startswith("fix: issue 21 (#21)\n"))
         self.assertIn("Closes #21", commit[5])
 
+    def test_the_implementer_is_told_the_tracker_is_local(self):
+        w = self.build([21], local=True)
+        self.run_pump()
+        specs = [c[c.index("--spec") + 1] for c in w.calls_of("orca", "orchestration", "worker-start")
+                 if "we-21 · opencode" in c]
+        self.assertEqual(len(specs), 1)
+        self.assertIn("never run `hew pr`", specs[0])
+
     def test_workers_branch_from_the_local_default_branch(self):
         w = self.build([21], local=True)
         self.run_pump()
@@ -1028,7 +1036,7 @@ class Prompts(unittest.TestCase):
         values = {"n": 21, "pr": 21, "branch": "fix/21-x", "default": "main",
                   "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch",
                   "tests_lens": "run"}
-        for name in ("reviewer_local", "repairer_local"):
+        for name in ("worker_local", "reviewer_local", "repairer_local"):
             text = pump.render(name, **values)
             self.assertNotIn("${", text)
             for forbidden in ("git push origin", "git fetch", "origin/", "gh pr"):
