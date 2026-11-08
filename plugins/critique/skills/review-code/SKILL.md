@@ -16,16 +16,31 @@ What follows is only the local policy you could not infer. In an earlier design-
 
 ## Arguments
 
-Your input may carry flags alongside a path. Strip the flags first; whatever remains is the path.
+Your input may carry flags alongside a path, branch-review request or PR target. Strip the
+flags before resolving that target.
 
 - **`--json <path>`** — additionally write a findings file at that path, per [FINDINGS.md](FINDINGS.md). Off by default; the markdown report is unchanged either way.
 - **`--lens design|correctness`** — run one lens only. Without it, both run.
 - **`--inline`** — review in this session instead of delegating to subagents.
+- **`--fix`** — explicitly request a review followed by one repair pass.
+- **`--report-only`** — return findings without editing, overriding automatic fixing.
 - **`--non-interactive`** — ask no questions. Where this skill would otherwise prompt, report the outcome and stop.
+
+## Mode and target
+
+Follow [REVIEW-MODE.md](REVIEW-MODE.md) before discovering scope or writing output. Run this
+skill's `scripts/review-mode.py` with the resolved scope and explicit intent. Only a clean,
+clearly identified local development-branch change review fixes automatically; PR targets,
+general audits and uncertain cases report only. Explicit intent overrides those defaults.
+The review subagent stays read-only; the calling agent handles the bounded repair and
+verification phase when the selected mode permits it.
 
 ## Scope
 
 Determine the review scope before discovering files. The discovery script ships in this skill's own `scripts/` directory — resolve it against this skill's directory rather than hardcoding an install path, which only holds for one harness's layout:
+
+For a PR target, use the PR's base/head diff as described in `REVIEW-MODE.md` instead of
+passing the PR to the path-discovery script below.
 
 ```bash
 DISCOVER="<this skill's directory>/scripts/discover-files.sh"
@@ -154,7 +169,9 @@ A review that finds little should read as a verdict, not as a shrug. Reporting o
 
 ## Output
 
-Produce a report following the structure in [REFERENCE.md](REFERENCE.md). Each finding must include:
+Produce a report following the structure in [REFERENCE.md](REFERENCE.md). In fix mode,
+report unresolved findings in that format and summarize verified repairs separately per
+`REVIEW-MODE.md`. Each finding must include:
 
 - **Priority** (P1/P2/P3) and **lens** (`design` or `correctness`) in the H3 header
 - **Location** (file:line)

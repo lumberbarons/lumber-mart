@@ -14,6 +14,19 @@ Five focused review skills, each operating on a path you specify:
 
 Each skill produces a structured findings report with P1/P2/P3 (and P4 for docs) severities, specific file:line locations, explanations, and concrete fixes.
 
+Code and test reviews automatically make one repair pass when reviewing the current branch's
+changes on a clean `feat/`, `fix/` or `chore/` branch with a known default branch and a nonempty
+diff. A shared script checks eligibility; uncertain cases stay report-only. A supplied PR
+target or a general path/repository audit reports findings without edits. `--fix` (or "and
+fix") requests repair explicitly; `--report-only` (or "don't fix") disables it. Existing callers
+that specify their own repair phase retain control of it. The review stays read-only; the
+calling agent repairs confirmed findings within scope and verifies them. No commit or push
+is automatic. See [REVIEW-MODE.md](REVIEW-MODE.md) for the decision and repair boundaries.
+
+In repair mode, the standard report and JSON `findings` list contain unresolved work only;
+verified repairs have their own summary and JSON `repaired` list. This keeps successful fixes
+out of `raise-issues`. Report-only output retains all findings.
+
 Every skill also takes two flags for use outside an interactive session: `--json <path>` writes a machine-readable findings file alongside the report ([FINDINGS.md](FINDINGS.md)), and `--non-interactive` removes every prompt, reporting `no_scope` or `error` instead of asking which path to review. Together they make a review safe to run unattended — including the part that matters most, distinguishing "reviewed and found nothing" from "never ran".
 
 Every skill delegates by default: each review runs in subagent sessions, so its findings are reached without the caller's context. `--inline` reviews in the current session instead. Where the harness cannot run subagents, skills fall back to an inline review rather than skipping the work.
@@ -53,6 +66,8 @@ directly; Claude Code prefixes the plugin name (`/critique:review-code`).
 ```
 review-code src/auth/
 review-tests tests/unit/
+review-code --report-only
+review-tests --fix tests/unit/
 review-docs
 review-docs backend/
 review-o11y internal/payments/
@@ -81,6 +96,7 @@ No tables, no passing rows — only actionable findings.
 
 ## Prerequisites
 
-- `python3` (for `review-docs` structural validation script)
+- `python3` (for code/test review-mode selection and `review-docs` structural validation)
+- Git metadata for automatic branch repair; missing or uncertain metadata means report-only
 
 No other tooling required. The review skills assume you already run linters, formatters, security scanners, and type checkers separately — critique focuses on issues those tools cannot detect.
