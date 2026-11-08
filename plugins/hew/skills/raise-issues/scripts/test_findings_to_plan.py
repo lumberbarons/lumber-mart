@@ -84,6 +84,16 @@ class Cli(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual([json.loads(l)["priority"] for l in p.stdout.splitlines()], ["P1"])
 
+    def test_a_findings_own_skill_wins_over_the_files(self):
+        # the work-epic reviewer merges a tests-lens review into the code-lens file
+        p = cli(findings=[finding(title="a"),
+                          finding(title="b", skill="tests", pattern="tautological-assertion",
+                                  files=["a_test.go"])])
+        self.assertEqual(p.returncode, 0, p.stderr)
+        keys = [json.loads(l)["where"] for l in p.stdout.splitlines()]
+        self.assertIn("review-key: code/god-function/", keys[0])
+        self.assertIn("review-key: tests/tautological-assertion/a_test.go", keys[1])
+
     def test_unreviewed_status_exits_3(self):
         self.assertEqual(cli(status="error").returncode, 3)
 

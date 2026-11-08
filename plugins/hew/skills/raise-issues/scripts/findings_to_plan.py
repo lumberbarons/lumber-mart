@@ -35,7 +35,8 @@ fix, or pattern — the pump files from critique findings files, which always
 carry a pattern; hand-written lists go through the raise-issues agent instead.
 `--at-or-above P2` also skips findings less severe than P2 (P3, P4), for
 callers that relay those elsewhere rather than track them.
-`skill` is required for every finding — the file is rejected without it.
+`skill` is required for every finding — the file is rejected without it. A finding may carry its
+own `skill`, which wins over the file's: that is how one file holds findings from two lenses.
 
 Exit: 0 plan written (may be empty — reviewed, nothing found) · 3 findings
 file status is not `reviewed` (no_scope/error — nothing was reviewed) ·
@@ -197,7 +198,8 @@ def main():
 
     lines, skipped = [], 0
     for finding in data.get("findings") or []:
-        converted = dict(finding, skill=data["skill"])
+        # a finding's own `skill` wins: the work-epic reviewer merges a second lens into one file
+        converted = dict(finding, skill=finding.get("skill") or data["skill"])
         line, reason = convert(
             converted, opts["parent"], opts["reviewed_issue"], opts["reviewed_pr"],
             opts["type"], opts["at_or_above"],

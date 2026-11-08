@@ -230,6 +230,18 @@ def remote_branches(repo=None):
     return [line for line in out.splitlines() if line.strip()]
 
 
+DOC_SUFFIXES = (".md", ".mdx", ".rst", ".txt", ".adoc")
+
+
+def touches_code(paths):
+    """Whether a diff changes anything but prose, which is when its tests are worth a review.
+
+    A diff that cannot be listed counts as code: not knowing is never a reason to skip.
+    """
+    paths = [p for p in paths if p.strip()]
+    return not paths or any(not p.lower().endswith(DOC_SUFFIXES) for p in paths)
+
+
 def behind_by(base, head, repo=None):
     """How many commits on `base` the commit `head` lacks, or None if unknown.
 

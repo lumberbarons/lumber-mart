@@ -20,7 +20,7 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 
 Requires Orca 1.4+ with the `orca-cli` and `orchestration` skills, the target repo registered in
 Orca, `hew` on PATH (authenticated), and the skills this pump drives: `work-issue` (hew plugin)
-for the implementer and `review-code` (critique plugin) for the reviewer. Findings are filed
+for the implementer and `review-code` and `review-tests` (critique plugin) for the reviewer. Findings are filed
 through raise-issues' `findings_to_plan.py` converter. The reviewer's fix step and the repairer read
 the work-issue quality-gate table from the skill directory.
 
@@ -59,7 +59,10 @@ place a worker's question can arrive, never the proof of completion. Mutations d
 request ids is the next hardening step, once their format is confirmed on a live run.
 
 **A PR is reviewed once, and the reviewer fixes in the session that found the problem.** This is
-the load-bearing simplification. Findings used to be filed as children and worked by a later
+the load-bearing simplification. "Once" means one review round, which has two lenses run in turn in
+that one session (`review-code`, then `review-tests` over the branch as the code fixes left it), one
+push, and no re-review. The second lens is a step in the reviewer's prompt, not a role or a flag; the
+pump decides only whether it runs (`tests_lens`: skipped for a prose-only diff). Findings used to be filed as children and worked by a later
 session, which meant a review of the fix, a round counter, a stale-head check, an escalation at two
 rounds, a generation bound to stop a finding about a finding, and rotation of reviewers across
 rounds. Fixing in the same session removes all of it: the reviewer has the whole diff in context, a

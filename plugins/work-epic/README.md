@@ -14,7 +14,7 @@ only a human can make.
   report.
 - **One golden path.** It resolves the ready issues with a deterministic script, creates one Orca
   worktree per issue, starts a supervised implementer in it (`work-issue`), has a *different* agent
-  review the delivered PR (`review-code`) and fix what it finds in that same session, repairs
+  review the delivered PR (`review-code`, then `review-tests`) and fix what it finds in that same session, repairs
   conflicts and red CI, and merges on CI green. Then it re-pumps until nothing else can move.
 - **Review once, fix in the session that found it.** A PR is reviewed a single time. The reviewer
   fixes every P1 and P2 it can, safely and inside the PR's own files, runs the quality gate, and
@@ -37,13 +37,13 @@ The orchestrator never implements, reviews, fixes, or closes the epic itself.
 | Role | Runs | Agent |
 |---|---|---|
 | Implementer | `work-issue` in the issue's worktree | `opencode` |
-| Reviewer | `review-code`, then fixes what it found, in the same worktree | `claude` |
+| Reviewer | `review-code` then `review-tests`, fixing what each found, in the same worktree | `claude` |
 | Repairer | the repair contract (conflict or red CI), in the same worktree | `opencode` |
 | Coordinator | this skill: plans, spawns, reaps, merges | whichever agent you started |
 
 The agents are a single block in `skills/work-epic/scripts/pump.py`; change them there. The reviewer is
 deliberately not the implementer — a second point of view is the point. Install `work-issue` for
-the implementer and `review-code` for the reviewer, and make the work-issue skill directory
+the implementer and `review-code` and `review-tests` for the reviewer, and make the work-issue skill directory
 readable on the host: the reviewer's fixes and the repairer read its quality-gate table.
 
 **Orca does not expose an installed-agent list through its CLI**, so the agents are your
@@ -62,7 +62,7 @@ costs only that issue; the pump reports it and never silently swaps in another a
   the main checkout on the default branch and clean whenever a merge lands.
 - The [`hew`](../hew) plugin — implementers run `work-issue`; findings are filed through
   raise-issues' converter script.
-- The [`critique`](../critique) plugin — reviewers run `review-code`.
+- The [`critique`](../critique) plugin — reviewers run `review-code` and `review-tests`.
 - Run from an Orca-managed worktree of the target repository (`--repo owner/name` overrides
   detection). Prefer a dedicated worktree for the coordinator: the pump writes a `.work-epic/`
   scratch directory and a status comment there.
@@ -123,9 +123,12 @@ inside the worker's own worktree, and `worker-release` archives the terminal out
 it. A worker parked on a permission prompt shows up in `worker-show` as `observation.agentWait`; the
 pump marks the worktree unread and never answers it.
 
-**Review is a fix, not a report.** The reviewer runs `review-code` over the PR's diff, then — in the
-same session — makes the smallest fix for each P1 and P2 inside the PR's own files, gates it, and
-pushes. The coordinator files every finding as an issue, closes the fixed ones, and posts one round
+**Review is a fix, not a report.** The reviewer runs `review-code` over the PR's diff and fixes what
+it can, then runs `review-tests` over the branch as it now stands and fixes what it can — in the
+same session, the smallest fix for each P1 and P2 inside the PR's own files, each gated, then one
+push. The implementer works test-first, so its tests are the part most likely to confirm themselves;
+the test review is the independent check on them. The pump skips it for a diff that changes only
+prose. The coordinator files every finding as an issue, closes the fixed ones, and posts one round
 comment. A finding that needs a design decision, reaches outside the PR, or fails its gate stays
 open; at P1 it holds the PR until the human closes it.
 
