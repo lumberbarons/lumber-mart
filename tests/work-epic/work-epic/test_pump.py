@@ -6,15 +6,21 @@ worktrees, workers that settle on a clock and write outcome files), GitHub (PRs,
 comments, merges), and hew (issues). Scenarios are scripts of what each agent
 reports. Time is simulated: `check` jumps to the next worker settling.
 
-Run with `python3 -m unittest discover plugins/work-epic/skills/work-epic/scripts`.
+Run with `python3 -m unittest discover tests/work-epic/work-epic`.
 """
 
+import sys
 import json
 import os
 import re
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
+sys.path.insert(0, str(SCRIPTS))
 
 import findings
 import local_state

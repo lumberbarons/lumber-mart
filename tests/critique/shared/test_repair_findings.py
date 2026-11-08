@@ -7,10 +7,8 @@ import sys
 import tempfile
 import unittest
 
-
-CONVERTER = (Path(__file__).resolve().parents[2]
-             / "hew/skills/raise-issues/scripts/findings_to_plan.py")
-
+REPO = Path(__file__).resolve().parents[3]
+CONVERTER = REPO / "plugins/hew/skills/raise-issues/scripts/findings_to_plan.py"
 
 def finding(title):
     return {

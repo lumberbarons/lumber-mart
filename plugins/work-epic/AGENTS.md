@@ -14,7 +14,7 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 | `skills/work-epic/scripts/pr_state.py` | The deterministic merge-pass planner | Changing which PRs merge, repair, update, or hold |
 | `skills/work-epic/scripts/local_state.py` | The local-tracker twins of both planners: spawn over the pump's own claims, and the merge/repair/hold table over delivered branches, reusing `pr_state`'s queue | Changing how a local (no GitHub) run spawns, gates, or merges |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh/hew probes both planners share, including scope resolution | Changing how PRs, branches, the default branch, or the scope are read |
-| `skills/work-epic/scripts/test_*.py` | stdlib `unittest`: both decision tables, the scope parser, the Orca shapes, filing, and the whole pump against a simulated world (`test_pump.py`) | Changing any decision, skip reason, parser, or the loop — add the pinning case |
+| `../../tests/work-epic/work-epic/` | stdlib `unittest`: both decision tables, the scope parser, the Orca shapes, filing, and the whole pump against a simulated world (`test_pump.py`) | Changing any decision, skip reason, parser, or the loop — add the pinning case |
 | `../../evals/work-epic/work-epic/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
 | `README.md` | Plugin overview, the agents, and how a run works | Understanding what work-epic does |
 
@@ -43,14 +43,14 @@ produce the same plan, and the scripts are what make that true. Changes to spawn
 belong in the scripts, where they are testable, not in the skill prose.
 
 **The coordinator is code, not prose.** The loop used to be instructions an agent re-interpreted on
-every run; it is now `pump.py`, and `test_pump.py` runs the real loop against a simulated Orca, GitHub,
+every run; it is now `pump.py`, and `tests/work-epic/work-epic/test_pump.py` runs the real loop against a simulated Orca, GitHub,
 and tracker (`World`), so a change to how it spawns, reaps, reviews, repairs, merges, parks, stops, or
 recovers lands with a scenario. Every effect goes through an injected collaborator (`sh`, `orca`, the
 two planners, the filer, the clock), which is what makes that possible; keep new effects behind one.
 The prompts live in `prompts/`, not in the docs, because they are the contract the pump sends; the
 docs describe the contract, the files are it. When Orca's behavior is in question, run the read-only
 commands (`worker-list`, `worktree list`, `agent-context`) and pin the captured shape in
-`test_orca_api.py`; do not guess a field.
+`tests/work-epic/work-epic/test_orca_api.py`; do not guess a field.
 
 The pump waits with `check --wait` and acknowledges each Delivery on its next wait, but it reads what
 settled from `worker-list` and the outcome files, not from the messages: a message is a wake-up and a

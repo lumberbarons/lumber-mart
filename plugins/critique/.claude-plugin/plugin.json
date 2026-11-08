@@ -1,7 +1,7 @@
 {
   "name": "critique",
   "description": "Review skills for code, tests, and documentation. Finds code design and correctness, coverage, and doc-structure issues that linters miss.",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "author": {
     "name": "lumberbarons"
   }

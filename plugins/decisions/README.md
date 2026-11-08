@@ -94,7 +94,6 @@ ADR scaffolding requires `bash` and `jq` on PATH. Policy diff reviews require
 |--------|----------|---------|
 | `init-adr.sh` | Bash | Create an ADR file from the MADR template with auto-numbered ID and today's date |
 | `research.py` | Python (stdlib) | `new` writes a numbered research skeleton; `check` validates a filled document |
-| `test_research.py` | Python (stdlib) | Pins the research skeleton and checker together |
 
 ### Assets
 

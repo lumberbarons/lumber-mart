@@ -8,9 +8,9 @@ import sys
 import tempfile
 import unittest
 
-
-SCRIPT = Path(__file__).with_name("review-mode.py")
-
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/critique/scripts"
+SCRIPT = SCRIPTS / "review-mode.py"
 
 class ReviewModeTests(unittest.TestCase):
     def setUp(self):

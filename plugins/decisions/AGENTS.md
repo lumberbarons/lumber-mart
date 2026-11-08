@@ -8,7 +8,7 @@ Architectural Decision Record (ADR) and research creation and maintenance toolin
 | `README.md` | Plugin overview and skill docs | Understanding what decisions does |
 
 The research format lives in `skills/create-research/scripts/research.py`, defined twice — the
-skeleton generator and the checker. The tests in `scripts/test_research.py` pin them together (a
+skeleton generator and the checker. The tests in `tests/decisions/create-research/test_research.py` pin them together (a
 fresh skeleton must fail the check for its `<FILL: ...>` markers and nothing else, and
 `reference/example-research.md` must pass); run them when changing either.
 

@@ -8,7 +8,7 @@ The lightspec spec pipeline: draft, approve, and file a feature spec as trackabl
 | `README.md` | Pipeline overview | Understanding what lightspec does |
 
 The format lives in `skills/draft-spec/scripts/lightspec.py`, and the format is defined twice —
-the skeleton generator and the checker. The tests in `scripts/test_lightspec.py` pin them
+the skeleton generator and the checker. The tests in `tests/lightspec/draft-spec/test_lightspec.py` pin them
 together; run them when changing either. That file is the source: `approve-spec` and
 `spec-to-epic` run their own copies in their `scripts/` directories, kept identical by
 `scripts/sync-skill-files.sh` at the repo root, so edit the draft-spec copy and re-run the sync.

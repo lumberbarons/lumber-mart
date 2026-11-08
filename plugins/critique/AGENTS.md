@@ -13,7 +13,8 @@ The shared files above are the sources; each skill that uses them
 carries its own copy, because per-skill installers such as APM copy a skill's directory and
 nothing around it. Edit the source, then run `scripts/sync-skill-files.sh` from the repo root.
 
-Run `python3 -m unittest discover -s plugins/critique/scripts` for review-mode Git boundary tests.
+Tests for the shared scripts (review-mode Git boundaries, scope discovery, repair findings) live in
+`tests/critique/shared/`; run `scripts/run-tests.sh tests/critique/shared`.
 
 Every critique skill must itself be agent-agnostic — a harness-coupled construct in a review
 skill is a finding in its own deliverable. When editing a skill here, run the `skill-portability`

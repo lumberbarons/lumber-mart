@@ -6,7 +6,7 @@ filing formats, the Orca shapes it relies on, and the report format for `work-ep
 ## The driver
 
 `scripts/work_epic.py` is the coordinator. It wires real Orca, hew, and gh into `pump.Pump` and runs
-the loop; everything it does is covered by `test_pump.py` against a simulated Orca and GitHub.
+the loop; everything it does is exercised in tests against a simulated Orca and GitHub.
 
 | Module | What it owns |
 |---|---|
@@ -565,7 +565,7 @@ The budgets are constants at the top of `pump.py`.
 
 ## Orca shapes the driver relies on
 
-Captured from a live Orca 1.4.x and pinned in `test_orca_api.py`. Every command answers
+Captured from a live Orca 1.4.x and pinned by the repository's tests. Every command answers
 `{"ok", "result"}` or `{"ok": false, "error": {"code", "message", "data"}}`; `OrcaError` carries the
 code, the data, and the partial receipt.
 
@@ -654,23 +654,6 @@ Run run_abc123 over #21 #22 #24 #26: STOPPED
 waiting; "halted" means an outage stopped the pump. An epic scope whose children are all closed is
 reported as such and left for a human to close. `report.json` beside the state file carries the same
 data.
-
-## Script tests
-
-```bash
-python3 -m unittest discover <this skill's directory>/scripts
-```
-
-- `test_pr_state.py`, `test_resolve_ready.py`, `test_repo_state.py` — the decision tables and the
-  scope parser, pure over hew and gh JSON.
-- `test_orca_api.py` — the envelope and the captured Orca shapes.
-- `test_findings.py` — filing, the dedup rule, closing the fixed, the round comment.
-- `test_pump.py` — the whole pump against a simulated Orca, GitHub, and tracker: the happy path,
-  review and fix, holds, repairs, halts, stalls, resume, and the mailbox.
-
-A change to a decision, a skip reason, a parser, or the loop lands with the test case that pins it.
-The review-once rule is pinned in `test_pr_state.py` (a moved head is not re-reviewed) and in
-`test_pump.py` (a repaired PR merges without a second reviewer).
 
 ## Worktree reliability notes
 

@@ -1,6 +1,6 @@
 """Tests for dedup_candidates.
 
-Run with `python3 -m unittest discover plugins/hew/skills/raise-issues/scripts`
+Run with `python3 -m unittest discover tests/hew/raise-issues`
 — stdlib only; the CLI cases run the script as a subprocess.
 """
 
@@ -11,9 +11,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
+SCRIPTS = REPO / "plugins/hew/skills/raise-issues/scripts"
+sys.path.insert(0, str(SCRIPTS))
+
 from dedup_candidates import candidates_for
 
-SCRIPT = Path(__file__).with_name("dedup_candidates.py")
+SCRIPT = SCRIPTS / "dedup_candidates.py"
 KEY = "code/leaky-abstraction/internal/store"
 
 
