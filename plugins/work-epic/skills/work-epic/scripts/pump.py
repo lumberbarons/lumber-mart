@@ -376,7 +376,7 @@ class Pump:
         name = f"we-{n}"
         try:
             rec, wid = self.start_agent(
-                "we", str(n), n, spec=render("worker", n=n), title=f"{name} · {IMPLEMENTER}",
+                "we", str(n), n, spec=render("worker_local" if self.cfg.local else "worker", n=n), title=f"{name} · {IMPLEMENTER}",
                 agent=IMPLEMENTER, worktree="new-child", wid=None, path=None,
                 repo=f"id:{self.cfg.coord['repoId']}", name=name,
                 display_name=f"#{n} {title[:50]}", base_branch=self.cfg.default if self.cfg.local else f"origin/{self.cfg.default}",

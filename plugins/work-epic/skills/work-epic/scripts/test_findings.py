@@ -142,6 +142,13 @@ class Filing(unittest.TestCase):
         self.assertEqual([c[2] for c in closes], ["41"])
         self.assertEqual(closes[0][closes[0].index("--reason") + 1], "Fixed in 9f2c1ab before merge")
 
+    def test_scratch_files_are_named_for_the_issue_when_there_is_no_pr(self):
+        tools = FakeTools(self.tmp.name, self.outcome, tracker=[])
+        self.filer(tools).file(pr=None, issue=21, outcome_path=self.path)
+        names = os.listdir(self.tmp.name)
+        self.assertIn("wr-21.plan.jsonl", names)
+        self.assertNotIn("wr-None.plan.jsonl", names)
+
     def test_converter_failure_is_a_filing_error(self):
         tools = FakeTools(self.tmp.name, self.outcome, converter_rc=3)
         with self.assertRaises(FilingError):

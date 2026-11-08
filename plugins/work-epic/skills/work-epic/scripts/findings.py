@@ -77,7 +77,8 @@ class Filer:
         marker = f"review-of: #{issue}" + (f" (PR #{pr})" if pr is not None else "")
         # without a PR suffix the marker for #21 is also the start of the one for #210
         marker_re = re.compile(re.escape(marker) + (r"\b" if pr is None else ""))
-        plan = os.path.join(self.outdir, f"wr-{pr}.plan.jsonl")
+        key = pr if pr is not None else issue  # a local delivery is named for its issue
+        plan = os.path.join(self.outdir, f"wr-{key}.plan.jsonl")
 
         converted = self._script(
             "findings_to_plan.py", outcome_path, "--reviewed-issue", str(issue),
@@ -91,10 +92,10 @@ class Filer:
 
         if lines:
             known = self._issues()
-            with open(os.path.join(self.outdir, f"wr-{pr}.issues.ndjson"), "w") as f:
+            with open(os.path.join(self.outdir, f"wr-{key}.issues.ndjson"), "w") as f:
                 f.write("".join(json.dumps(k) + "\n" for k in known))
             dedup = self._script(
-                "dedup_candidates.py", plan, os.path.join(self.outdir, f"wr-{pr}.issues.ndjson"),
+                "dedup_candidates.py", plan, os.path.join(self.outdir, f"wr-{key}.issues.ndjson"),
                 "--reviewed-issue", str(issue))
             if dedup.rc != 0:
                 raise FilingError(f"dedup_candidates exited {dedup.rc}")
