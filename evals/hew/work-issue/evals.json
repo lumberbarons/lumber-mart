@@ -1,7 +1,7 @@
 {
   "skill_name": "work-issue",
   "baseline": "no skill at all \u2014 the model has the hew SessionStart primer and the CLI, but no prescribed workflow",
-  "harness_note": "Every eval needs a repo whose `hew` resolves to the stub in ../../work-issue-workspace/fixtures/hew-stub \u2014 a small mutable JSON store per scenario, plus a command log the assertions read. The store is stateful rather than a table of canned responses: these evals assert on command *order*, and a stateless stub breaks whenever the skill deviates from a pre-recorded sequence. That log is what makes protocol adherence \u2014 start before edit, pr not close, exit 3 handled \u2014 checkable without creating real GitHub issues or PRs. The stub is interim; lumberbarons/hew#74 tracks the durable fix. See evals/README.md.",
+  "harness_note": "Every eval needs a repo whose `hew` resolves to the stub in plugins/hew/skills/work-issue-workspace/fixtures/hew-stub \u2014 a small mutable JSON store per scenario, plus a command log the assertions read. The store is stateful rather than a table of canned responses: these evals assert on command *order*, and a stateless stub breaks whenever the skill deviates from a pre-recorded sequence. That log is what makes protocol adherence \u2014 start before edit, pr not close, exit 3 handled \u2014 checkable without creating real GitHub issues or PRs. The stub is interim; lumberbarons/hew#74 tracks the durable fix. See evals/README.md.",
   "evals": [
     {
       "id": 0,

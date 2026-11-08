@@ -26,7 +26,7 @@
     {
       "name": "critique",
       "description": "Review skills for code, tests, documentation, observability, and skill portability. Finds code design and correctness, coverage, doc-structure, logging/error-message, and agent-harness-coupling issues that linters miss.",
-      "version": "5.13.0",
+      "version": "5.14.0",
       "source": "./plugins/critique",
       "category": "workflow",
       "keywords": [
@@ -44,7 +44,7 @@
     {
       "name": "decisions",
       "description": "Skills for researching, deciding, and enforcing: create-research records a question investigated with per-finding confidence and cited sources, create-adr writes Architectural Decision Records (ADRs) as standalone, append-only policy in MADR format that cite the research they rest on, and review-policy checks code changes against accepted ADRs.",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "source": "./plugins/decisions",
       "category": "workflow",
       "keywords": [
@@ -64,7 +64,7 @@
     {
       "name": "work-epic",
       "description": "Skill for burning down a hew epic or a set of issues across Orca-managed worktrees and supervised agents, driven by a tested script rather than by an agent following prose. The driver resolves the ready issues, creates one Orca worktree per issue, starts an implementer running work-issue, has a different agent review each delivered PR once and fix what it finds in that same session, files every finding as an issue for the paper trail, repairs merge conflicts and red CI, and merges PRs once CI is green. Runs unattended and stops only for a decision a human has to make.",
-      "version": "4.3.0",
+      "version": "4.4.0",
       "source": "./plugins/work-epic",
       "category": "workflow",
       "keywords": [
@@ -102,7 +102,7 @@
     {
       "name": "hew",
       "description": "Skills for tracking work through the hew CLI, with GitHub or local trackers. File deduplicated review findings, implement issues test-first through a draft PR or committed branch, then review, verify, squash merge, and confirm closure with finish-issue.",
-      "version": "2.10.0",
+      "version": "2.11.0",
       "source": "./plugins/hew",
       "category": "workflow",
       "keywords": [

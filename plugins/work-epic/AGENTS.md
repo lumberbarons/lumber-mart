@@ -15,7 +15,7 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 | `skills/work-epic/scripts/local_state.py` | The local-tracker twins of both planners: spawn over the pump's own claims, and the merge/repair/hold table over delivered branches, reusing `pr_state`'s queue | Changing how a local (no GitHub) run spawns, gates, or merges |
 | `skills/work-epic/scripts/repo_state.py` | Read-only git/gh/hew probes both planners share, including scope resolution | Changing how PRs, branches, the default branch, or the scope are read |
 | `skills/work-epic/scripts/test_*.py` | stdlib `unittest`: both decision tables, the scope parser, the Orca shapes, filing, and the whole pump against a simulated world (`test_pump.py`) | Changing any decision, skip reason, parser, or the loop — add the pinning case |
-| `skills/work-epic/evals/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
+| `../../evals/work-epic/work-epic/` | Why there is no behavioral eval set, and the measured cost of skill-creator's trigger loop | Writing or running evals |
 | `README.md` | Plugin overview, the agents, and how a run works | Understanding what work-epic does |
 
 Requires Orca 1.4+ with the `orca-cli` and `orchestration` skills, the target repo registered in
@@ -27,7 +27,7 @@ the work-issue quality-gate table from the skill directory.
 Never run skill-creator's description optimizer against this skill. Its loop boots one full
 `claude -p` agent per prompt-run — 60 per iteration, five iterations by default — and two runs
 on 2026-10-26 spent a five-hour allowance in minutes while scoring a harness that cannot trigger
-the skill. `skills/work-epic/evals/README.md` has the numbers, why the score is meaningless, and
+the skill. `evals/work-epic/work-epic/README.md` (repo root) has the numbers, why the score is meaningless, and
 the one-session bounded check.
 
 This is a lean software factory with one golden path. The skill takes few flags on purpose: the

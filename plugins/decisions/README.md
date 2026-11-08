@@ -103,4 +103,4 @@ ADR scaffolding requires `bash` and `jq` on PATH. Policy diff reviews require
 | `adr-template.md` | MADR-format ADR template with all sections and frontmatter |
 | `example-research.md` | A filled research document, written to be imitated; it must pass the checker |
 
-`create-research` also ships `evals/` with the fixture repo they run against.
+`create-research`'s evals, with the fixture repo they run against, live in the marketplace repo at `evals/decisions/create-research/`; they are not installed with the plugin.
