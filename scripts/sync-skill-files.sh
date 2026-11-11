@@ -28,6 +28,7 @@ pairs=(
   "plugins/critique/REVIEW-MODE.md                plugins/critique/skills/review-code/REVIEW-MODE.md"
   "plugins/critique/REVIEW-MODE.md                plugins/critique/skills/review-tests/REVIEW-MODE.md"
   "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/approve-spec/scripts/lightspec.py"
+  "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/refine-spec/scripts/lightspec.py"
   "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/spec-to-epic/scripts/lightspec.py"
   "plugins/lightspec/skills/draft-spec/reference/example-spec.md  plugins/lightspec/skills/spec-to-epic/reference/example-spec.md"
 )

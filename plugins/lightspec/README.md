@@ -1,7 +1,7 @@
 # lightspec
 
 Skills for the lightspec spec pipeline: turn a feature request into one reviewable spec file,
-approve it on substance, and file it as a hew epic. Usable from any coding agent that loads
+refine it, approve it on substance, and file it as a hew epic. Usable from any coding agent that loads
 skills (Claude Code, opencode, codex).
 
 ## Overview
@@ -12,6 +12,9 @@ The process this serves is **research → ADR → spec → approve → implement
   decisions, the research it relies on, prioritised user stories, tasks, and a done-when checklist. A script
   (`lightspec.py`) owns the format so every spec comes out identical; the skill supplies the
   judgment. Specs leave here at `Draft`.
+- **refine-spec** — interviews the author about a Draft spec's rough edges: vague terms, missing
+  edge cases, load-bearing guesses, sections that disagree. A short round of questions, each with
+  a recommended answer, and the answers are written back into the spec. It stays at `Draft`.
 - **approve-spec** — reviews a Draft spec the way someone who has to live with it would, and
   either moves it to `Accepted` or sends it back with blocking objections. One question per
   section; a finding that would not hold up the work is not a finding.
@@ -33,6 +36,7 @@ The process this serves is **research → ADR → spec → approve → implement
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
 | `draft-spec` | Draft a feature spec into `specs/NNN-slug/spec.md` | Yes |
+| `refine-spec` | Interview the author to clarify a Draft spec; answers update the spec | Yes |
 | `approve-spec` | Review a Draft spec on substance; accept or send back | Yes |
 | `spec-to-epic` | File an Accepted spec as a hew epic with child issues | Yes |
 
@@ -43,6 +47,7 @@ directly; Claude Code prefixes the plugin name (`/lightspec:draft-spec`).
 
 ```
 draft-spec "Price Drop Watchlist"          # produce specs/NNN-slug/spec.md at Draft
+refine-spec 009                            # clarify rough edges; updates the spec, stays Draft
 approve-spec 009                           # substance review; moves to Accepted or sends back
 spec-to-epic 009                           # file it in hew as an epic with children
 
@@ -53,12 +58,12 @@ spec-to-epic specs/001-x/spec.md           # by path instead of number
 ## The pipeline
 
 ```
-research + ADR (decisions plugin) ─→ draft-spec ─→ approve-spec ─→ spec-to-epic ─→ hew epic
+research + ADR (decisions plugin) ─→ draft-spec ─→ refine-spec ─→ approve-spec ─→ spec-to-epic ─→ hew epic
                                                      (human gate)     └→ work-issue per child
 ```
 
 Each skill hands off at a file or tracker boundary and stops: draft-spec never approves, never
-files; approve-spec never edits the spec it reviewed; spec-to-epic never starts the work. The
+files; refine-spec never approves; approve-spec never edits the spec it reviewed; spec-to-epic never starts the work. The
 chain is safe to stop at any link, and each link is invocable on its own.
 
 ## The format
