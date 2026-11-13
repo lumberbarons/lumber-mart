@@ -16,8 +16,10 @@ The process this serves is **research → ADR → spec → approve → implement
   edge cases, load-bearing guesses, sections that disagree. A short round of questions, each with
   a recommended answer, and the answers are written back into the spec. It stays at `Draft`.
 - **approve-spec** — reviews a Draft spec the way someone who has to live with it would, and
-  either moves it to `Accepted` or sends it back with blocking objections. One question per
-  section; a finding that would not hold up the work is not a finding.
+  either moves it to `Accepted` or sends it back with blocking objections. A fresh, read-only
+  subagent reviews without the drafting conversation; the calling agent validates the spec
+  and records the verdict. One question per section; a finding that would not hold up the
+  work is not a finding.
 - **spec-to-epic** — files an Accepted spec as a hew epic: one epic issue carrying the spec's
   framing, one child issue per user story, done-when items derived per story so `work-issue`
   can drive them test-first. Its bundled checker gates on shape and status even when the
@@ -30,6 +32,8 @@ The process this serves is **research → ADR → spec → approve → implement
 - `spec-to-epic` additionally needs [`hew`](https://github.com/lumberbarons/hew) on PATH,
   authenticated via `gh auth login`
 - Run from a checkout of the target repository
+- `approve-spec` needs a harness that can start a subagent without inheriting the calling
+  conversation. If that isolation is unavailable, it stops without approving.
 
 ## Skills
 

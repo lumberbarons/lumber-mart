@@ -19,6 +19,8 @@ skills. Its bundled `reference/example-spec.md` is also synced from draft-spec f
 Statuses are a closed vocabulary (`Draft`, `Accepted`, `Implemented`, `Superseded`) held shut by
 the checker; `approve-spec` is the only thing that moves a spec off `Draft`, and it must never
 run automatically after drafting — an author who approves their own work has not been reviewed.
+Its substance review runs in a fresh, read-only subagent with no inherited conversation;
+the calling agent gates the input and records the verdict for the unchanged spec.
 
 `refine-spec` edits a spec but never moves its status: it works only on `Draft`, keeps `check` green
 after every write, and has no log of questions to keep because the checker holds the section list
