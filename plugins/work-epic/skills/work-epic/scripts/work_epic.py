@@ -71,13 +71,25 @@ def parse_args(args):
     return scope, repo, workers, resume, dry
 
 
-def find_skill_dir(name, env_var):
-    """An installed sibling skill's directory: the env override, the repo layout, or the plugin cache."""
+def find_skill_dir(name, env_var, repo_roots=()):
+    """A sibling skill's directory, in the order it should win.
+
+    The env override; a skill the repository ships itself (`.agents/skills/` or
+    `.claude/skills/` under the worktree the driver runs in, then the main checkout,
+    so a repo that pins its own copy needs no override); the marketplace checkout
+    this script ships in; the installed plugin cache; then the user's own skill
+    directories. The first candidate with a SKILL.md wins.
+    """
     if os.environ.get(env_var):
         return os.environ[env_var]
-    plugins = Path(__file__).resolve().parents[4]
     home = Path.home()
-    candidates = [plugins / "hew" / "skills" / name]
+    candidates = []
+    for root in repo_roots:
+        if root:
+            candidates += [Path(root) / ".agents/skills" / name,
+                           Path(root) / ".claude/skills" / name]
+    plugins = Path(__file__).resolve().parents[4]
+    candidates.append(plugins / "hew" / "skills" / name)
     cache = sorted(glob.glob(str(home / ".claude/plugins/cache/*/hew/*/skills" / name)), reverse=True)
     candidates += [Path(c) for c in cache]
     candidates += [home / ".claude/skills" / name, home / ".agents/skills" / name]
@@ -149,12 +161,14 @@ def main(argv):
     if os.path.exists(state_path) and not resume:
         os.replace(state_path, os.path.join(outdir, f"state.{int(time.time())}.json"))
 
-    work_issue = find_skill_dir("work-issue", "WORK_EPIC_WORK_ISSUE_DIR")
-    raise_issues = find_skill_dir("raise-issues", "WORK_EPIC_RAISE_ISSUES_DIR")
+    main = main_checkout()
+    repo_roots = [coord["path"], main]
+    work_issue = find_skill_dir("work-issue", "WORK_EPIC_WORK_ISSUE_DIR", repo_roots)
+    raise_issues = find_skill_dir("raise-issues", "WORK_EPIC_RAISE_ISSUES_DIR", repo_roots)
     local = local_tracker(repo)
     state = pump.State(state_path)
     cfg = pump.Config(scope=scope, coord=coord, outdir=outdir, work_issue_dir=work_issue,
-                      workers=workers, repo=repo, resume=resume, main=main_checkout(),
+                      workers=workers, repo=repo, resume=resume, main=main,
                       default=(local_default_branch() if local else default_branch(repo)) or "main",
                       local=local)
     filer = findings.Filer(real_sh, cwd=coord["path"], raise_dir=raise_issues, outdir=outdir, repo=repo)
