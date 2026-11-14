@@ -91,6 +91,8 @@ No tables, no passing rows — only actionable findings.
 ## Prerequisites
 
 - `python3` (for code/test review-mode selection and `review-docs` structural validation)
-- Git metadata for automatic branch repair; missing or uncertain metadata means report-only
+- Git metadata for automatic branch repair; missing or uncertain metadata means report-only.
+  The repair commit also needs a usable Git identity and permission; without them the verified
+  repairs stay uncommitted and are reported as such
 
 No other tooling required. The review skills assume you already run linters, formatters, security scanners, and type checkers separately — critique focuses on issues those tools cannot detect.
