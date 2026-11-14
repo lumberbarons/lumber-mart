@@ -8,6 +8,13 @@ filing formats, the Orca shapes it relies on, and the report format for `work-ep
 `scripts/work_epic.py` is the coordinator. It wires real Orca, hew, and gh into `pump.Pump` and runs
 the loop; everything it does is exercised in tests against a simulated Orca and GitHub.
 
+`find_skill_dir` resolves the two sibling skills the pump drives. For each it takes the env override
+(`WORK_EPIC_WORK_ISSUE_DIR`, `WORK_EPIC_RAISE_ISSUES_DIR`) first; otherwise it looks for
+`<name>/SKILL.md` under the coordinator worktree's and the main checkout's `.agents/skills/` and
+`.claude/skills/` (so a repo that ships or pins its own copy needs no override), then the marketplace
+checkout's `plugins/hew/skills/`, the installed Claude plugin cache, and `~/.claude/skills/` and
+`~/.agents/skills/`.
+
 | Module | What it owns |
 |---|---|
 | `work_epic.py` | CLI: arguments, preflight, skill-directory discovery, `--dry-run`, the report and exit code |

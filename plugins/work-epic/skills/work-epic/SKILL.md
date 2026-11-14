@@ -47,8 +47,8 @@ something fails to start.
   [Local trackers](#local-trackers).
 - The `work-issue` skill (hew plugin) installed for the implementer and `review-code` and `review-tests` (critique
   plugin) for the reviewer. The driver finds the work-issue and raise-issues skill directories in
-  the repo layout or the plugin cache; set `WORK_EPIC_WORK_ISSUE_DIR` or
-  `WORK_EPIC_RAISE_ISSUES_DIR` to override.
+  the repo's own `.agents/skills/` or `.claude/skills/`, the plugin checkout, or the installed
+  cache; set `WORK_EPIC_WORK_ISSUE_DIR` or `WORK_EPIC_RAISE_ISSUES_DIR` to override.
 - The Orca CLI: `ORCA_CLI_COMMAND`, else the first of `orca-dev`, `orca-ide`, `orca` on PATH.
 
 ## Steps

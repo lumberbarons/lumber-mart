@@ -44,7 +44,9 @@ The orchestrator never implements, reviews, fixes, or closes the epic itself.
 The agents are a single block in `skills/work-epic/scripts/pump.py`; change them there. The reviewer is
 deliberately not the implementer — a second point of view is the point. Install `work-issue` for
 the implementer and `review-code` and `review-tests` for the reviewer, and make the work-issue skill directory
-readable on the host: the reviewer's fixes and the repairer read its quality-gate table.
+readable on the host: the reviewer's fixes and the repairer read its quality-gate table. The driver
+finds work-issue and raise-issues in the repo's own `.agents/skills/` or `.claude/skills/` before
+the installed copies, so a repo that ships them locally needs no environment override.
 
 **Orca does not expose an installed-agent list through its CLI**, so the agents are your
 declaration of what is installed. A failed `worker-start` names the agent that could not launch and
