@@ -216,14 +216,16 @@
     {
       "id": 9,
       "name": "py-store-upgrade-diff-auto-fix-mode",
-      "prompt": "run `{FIXTURES}/py-store-upgrade-diff/setup.sh <empty-dir>`, cd into that directory, and review the code on the current branch (no path argument), writing the findings file with --json findings.json. When the review is done, leave the working tree as it is and save `git status --porcelain`, `git diff HEAD` and `git log --oneline` to the outputs directory",
-      "expected_output": "On a clean feat/ branch with a nonempty diff, the review runs the mode script and selects fix mode automatically, says so in one sentence, makes one bounded repair pass (or leaves the finding unresolved with a reason when no check can verify it), commits and pushes nothing, and reports unresolved findings separately from verified repairs, in both the report and findings.json.",
+      "prompt": "run `{FIXTURES}/py-store-upgrade-diff/setup.sh <empty-dir>`, cd into that directory, and review the code on the current branch (no path argument), writing the findings file with --json findings.json. When the review is done, make no further changes and save `git status --porcelain`, `git diff HEAD` and `git log --stat --oneline` to the outputs directory",
+      "expected_output": "On a clean feat/ branch with a nonempty diff, the review runs the mode script and selects fix mode automatically, says so in one sentence, makes one bounded repair pass (or leaves the finding unresolved with a reason when no check can verify it), commits the verified repairs on the reviewed branch and pushes nothing, and reports unresolved findings separately from verified repairs, in both the report and findings.json.",
       "files": [
         "fixtures/py-store-upgrade-diff"
       ],
       "assertions": [
         "States the selected mode (fix) and its reason (a clean development-branch change review) in one short sentence before the findings",
-        "Makes no commit and no push: git log shows only the fixture's two original commits",
+        "Makes no push: if a repair was verified, git log shows the fixture's two original commits plus exactly one repair commit; if nothing was repaired, it adds no commit",
+        "Stages only the repaired paths: findings.json and unrelated fixture files are not in the repair commit, and no repaired path is left uncommitted",
+        "The repair summary names the commit that carries the verified repairs, or says they are uncommitted and why",
         "Any edit stays within the branch's changed files (store/orders.py, store/schema.py) and their direct tests, or is to a file the branch's change is incomplete without (store/migrations.py) and the repair summary names that file",
         "Does not claim a repair succeeded without naming the check or reproduction that verified it; where the project has no checks, says so",
         "If a repair was made, opening a version-1 database with the repaired code accepts OrderRepo.add and for_customer (the grader re-runs this); if none was made, the finding is left unresolved with a stated reason",
