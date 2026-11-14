@@ -52,7 +52,8 @@ For automatic fixing, retain the script's `root`, `branch`, `head`, `base` and `
 Immediately before repair, rerun it: it must still allow automatic fixing and those fields
 must still match. Otherwise leave the findings unresolved and explain the changed state.
 Do not make the tree appear clean by stashing, deleting, committing or ignoring user files;
-the only commit this policy authorizes is the one carrying the verified repairs.
+in automatic mode, the only commit this policy authorizes is the one carrying the verified
+repairs.
 
 ## One bounded repair pass
 
