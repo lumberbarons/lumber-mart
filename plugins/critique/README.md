@@ -19,10 +19,10 @@ target or a general path/repository audit reports findings without edits. `--fix
 fix") requests repair explicitly; `--report-only` (or "don't fix") disables it. Existing callers
 that specify their own repair phase retain control of it. The review stays read-only; the
 calling agent repairs confirmed findings within scope and verifies them. In automatic mode it
-then commits the verified repairs on the reviewed branch, unless the caller forbids commits;
-if Git refuses the commit, the repairs stay uncommitted and the report says why. Nothing is
-pushed automatically. See [REVIEW-MODE.md](REVIEW-MODE.md) for the decision and repair
-boundaries.
+then commits the verified repairs on the reviewed branch, unless the caller or the repository's
+instructions forbid commits; if Git refuses the commit, the repairs stay uncommitted and the
+report says why. Nothing is pushed automatically. See [REVIEW-MODE.md](REVIEW-MODE.md) for the
+decision and repair boundaries.
 
 In repair mode, the standard report and JSON `findings` list contain unresolved work only;
 verified repairs have their own summary and JSON `repaired` list. This keeps successful fixes
