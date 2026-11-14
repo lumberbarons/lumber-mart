@@ -18,8 +18,11 @@ diff. A shared script checks eligibility; uncertain cases stay report-only. A su
 target or a general path/repository audit reports findings without edits. `--fix` (or "and
 fix") requests repair explicitly; `--report-only` (or "don't fix") disables it. Existing callers
 that specify their own repair phase retain control of it. The review stays read-only; the
-calling agent repairs confirmed findings within scope and verifies them. No commit or push
-is automatic. See [REVIEW-MODE.md](REVIEW-MODE.md) for the decision and repair boundaries.
+calling agent repairs confirmed findings within scope and verifies them. In automatic mode it
+then commits the verified repairs on the reviewed branch, unless the caller or the repository's
+instructions forbid commits; if Git refuses the commit, the repairs stay uncommitted and the
+report says why. Nothing is pushed automatically. See [REVIEW-MODE.md](REVIEW-MODE.md) for the
+decision and repair boundaries.
 
 In repair mode, the standard report and JSON `findings` list contain unresolved work only;
 verified repairs have their own summary and JSON `repaired` list. This keeps successful fixes
@@ -88,6 +91,8 @@ No tables, no passing rows — only actionable findings.
 ## Prerequisites
 
 - `python3` (for code/test review-mode selection and `review-docs` structural validation)
-- Git metadata for automatic branch repair; missing or uncertain metadata means report-only
+- Git metadata for automatic branch repair; missing or uncertain metadata means report-only.
+  The repair commit also needs a usable Git identity and permission; without them the verified
+  repairs stay uncommitted and are reported as such
 
 No other tooling required. The review skills assume you already run linters, formatters, security scanners, and type checkers separately — critique focuses on issues those tools cannot detect.
