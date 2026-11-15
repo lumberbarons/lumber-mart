@@ -20,7 +20,8 @@ Skills for burning down a [hew](https://github.com/lumberbarons/hew) epic or set
 
 Requires Orca 1.4+ with the `orca-cli` and `orchestration` skills, the target repo registered in
 Orca, `hew` on PATH (authenticated), and the skills this pump drives: `work-issue` (hew plugin)
-for the implementer and `review-code` and `review-tests` (critique plugin) for the reviewer. Findings are filed
+for the implementer and `review-code` and `review-tests` (critique plugin) for the reviewer,
+installed for every agent in that role's chain. Findings are filed
 through raise-issues' `findings_to_plan.py` converter. The reviewer's fix step and the repairer read
 the work-issue quality-gate table from the skill directory.
 

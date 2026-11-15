@@ -48,10 +48,11 @@ something fails to start.
 - On a **local hew tracker** (`hew init --local`, no `--repo`) none of GitHub applies: no `gh`, no
   authentication, no remote, no CI. The driver detects this itself; see
   [Local trackers](#local-trackers).
-- The `work-issue` skill (hew plugin) installed for the implementer and `review-code` and `review-tests` (critique
-  plugin) for the reviewer. The driver finds the work-issue and raise-issues skill directories in
-  the repo's own `.agents/skills/` or `.claude/skills/`, the plugin checkout, or the installed
-  cache; set `WORK_EPIC_WORK_ISSUE_DIR` or `WORK_EPIC_RAISE_ISSUES_DIR` to override.
+- The `work-issue` skill (hew plugin) installed for every agent in the implementer chain and
+  `review-code` and `review-tests` (critique plugin) for every agent in the reviewer chain. The
+  driver finds the work-issue and raise-issues skill directories in the repo's own
+  `.agents/skills/` or `.claude/skills/`, the plugin checkout, or the installed cache; set
+  `WORK_EPIC_WORK_ISSUE_DIR` or `WORK_EPIC_RAISE_ISSUES_DIR` to override.
 - The Orca CLI: `ORCA_CLI_COMMAND`, else the first of `orca-dev`, `orca-ide`, `orca` on PATH.
 
 ## Steps

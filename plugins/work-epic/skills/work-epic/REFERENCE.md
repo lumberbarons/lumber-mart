@@ -93,7 +93,7 @@ grace) also moves to the next agent. Every fallback is logged, appended to the r
 `agent-fallback`, and named in the report and the cards; only an exhausted chain parks the item. A
 review that reached `reviewed` is never repeated. The issue's own implementer is skipped even if it
 leads the reviewer chain, so a fallback keeps the second point of view. The implementer and reviewer
-prompts load their skill by name, so both agents must have it installed; the
+prompts load their skill by name, so every agent in a chain must have it installed; the
 reviewer's fix step and the repairer read the quality-gate table from the work-issue skill
 directory, so it must be readable on the host.
 
