@@ -24,10 +24,10 @@ Then:
      "fixedIn": "<short sha>" on that finding in the file;
    - otherwise undo the change entirely (`git restore --staged --worktree .`) and set
      "fixed": false and "unfixedReason": "<why>" on that finding.
-   Leave a finding unfixed, with the reason, when the fix needs a design decision, reaches outside
-   this PR's files, would be large, or conflicts with another finding. Apply that bar earlier for a
-   P3: leave it unless the fix is clearly smaller than the problem it removes. Never weaken or
-   delete a test to make a gate pass.
+   Leave a finding unfixed, with "fixed": false and its reason in "unfixedReason", when the fix
+   needs a design decision, reaches outside this PR's files, would be large, or conflicts with
+   another finding. Apply that bar earlier for a P3: leave it unless the fix is clearly smaller than
+   the problem it removes. Never weaken or delete a test to make a gate pass.
 5. Test review, after the fixes above so it reads the branch as it now stands. The pump decided
    this PR's lens: **${tests_lens}**. On `skip` the PR changes only documentation, so go to
    step 6. On `run`:
