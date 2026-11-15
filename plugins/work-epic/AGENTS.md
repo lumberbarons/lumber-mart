@@ -31,10 +31,16 @@ the skill. `evals/work-epic/work-epic/README.md` (repo root) has the numbers, wh
 the one-session bounded check.
 
 This is a lean software factory with one golden path. The skill takes few flags on purpose: the
-agents are a single block in `pump.py`, the merge method is squash, conflicts and red CI are
+agents are ordered chains in `pump.py`, the merge method is squash, conflicts and red CI are
 repaired, and a P1 the reviewer could not fix holds its PR. Resist adding a flag for a policy; a
 flag is a mode the next editor has to keep working, and the modes that were removed (human-review,
-agent pools, block-on, finding-depth, no-review) each carried their own prose, tests, and bugs.
+agent pools, block-on, finding-depth, no-review) each carried their own prose, tests, and bugs. An
+agent chain is a declaration, not a mode: it changes who runs a role, not what the pump decides.
+
+The chains are `AGENTS` in `pump.py`; `WORK_EPIC_IMPLEMENTER`, `WORK_EPIC_REVIEWER`, and
+`WORK_EPIC_REPAIRER` override one for a run. The reviewer defaults to `claude` then `codex` so a
+Claude usage limit costs one review attempt, not the run. Keep the override surface there: an
+installed copy is a cache that updates overwrite.
 
 The scripts are the policy layer. Anything that sorts, filters, or sizes hew's output — or
 classifies a PR's mergeability — in the agent's head instead of running `resolve_ready.py` or
@@ -61,7 +67,8 @@ request ids is the next hardening step, once their format is confirmed on a live
 **A PR is reviewed once, and the reviewer fixes in the session that found the problem.** This is
 the load-bearing simplification. "Once" means one review round, which has two lenses run in turn in
 that one session (`review-code`, then `review-tests` over the branch as the code fixes left it), one
-push, and no re-review. The second lens is a step in the reviewer's prompt, not a role or a flag; the
+push, and no re-review. A reviewer that errored before writing a `reviewed` outcome did not review;
+the next agent in the chain takes that same round, not a second one. The second lens is a step in the reviewer's prompt, not a role or a flag; the
 pump decides only whether it runs (`tests_lens`: skipped for a prose-only diff). Findings used to be filed as children and worked by a later
 session, which meant a review of the fix, a round counter, a stale-head check, an escalation at two
 rounds, a generation bound to stop a finding about a finding, and rotation of reviewers across
@@ -85,10 +92,12 @@ the repairer run in the implementer's own checkout once it is released — there
 review worktree or review branch — and they fast-forward it to the PR head first.
 
 The implementer and the reviewer are different agents by construction, and the roles are recorded
-in the Task title, the worktree marker, and the report. Orca's CLI does not expose an
-installed/available agent list (`agent-context` and `account list` are not one), so the agents are
-the operator's declaration; a failed `worker-start` names the agent that could not launch, and the
-pump reports it rather than silently substituting another agent.
+in the Task title, the worktree marker, and the report. The reviewer chain skips the agent that
+actually implemented the issue, so a fallback cannot collapse the two roles. Orca's CLI does not expose an
+installed/available agent list (`agent-context` and `account list` are not one), so the chains are
+the operator's declaration; a failed `worker-start` names the agent that could not launch. The pump
+notes the failure and tries the next declared agent, and parks the item only when the chain is
+exhausted. It never tries an agent the run did not declare.
 
 **Local mode is a second delivery backend, not a second pump.** When hew keeps the issues in a local
 `.hew`, a delivery is a committed branch whose id is its issue number, so every key the pump builds
