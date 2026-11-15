@@ -1,8 +1,8 @@
-"""Discovery tests for work_epic.find_skill_dir.
+"""Discovery and agent-chain tests for work_epic and its pump.
 
 Run with `python3 -m unittest discover tests/work-epic/work-epic`
 — stdlib only, no network: the search order is pure over the filesystem, with
-Path.home redirected into a temporary directory.
+Path.home redirected into a temporary directory, and the chains are pure env.
 """
 
 import io
@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+import pump
 import work_epic
 
 NAME = "demo-skill"
@@ -104,3 +105,27 @@ class FindSkillDir(unittest.TestCase):
             self.find(self.tmp / "empty")
         self.assertEqual(raised.exception.code, 1)
         self.assertIn(ENV, err.getvalue())
+
+
+class AgentChain(unittest.TestCase):
+    def chain(self, role, value):
+        with patch.dict(os.environ, {pump.ROLE_ENV[role]: value}, clear=True):
+            return pump.agent_chain(role)
+
+    def test_the_reviewer_defaults_to_claude_then_codex(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(pump.agent_chain("wr"), ("claude", "codex"))
+
+    def test_an_override_replaces_the_whole_chain(self):
+        self.assertEqual(self.chain("wr", "codex"), ("codex",))
+
+    def test_empty_entries_and_duplicates_are_dropped(self):
+        self.assertEqual(self.chain("wr", " claude, codex,claude,"), ("claude", "codex"))
+
+    def test_an_empty_override_keeps_the_default(self):
+        self.assertEqual(self.chain("wr", " , "), ("claude", "codex"))
+
+    def test_each_role_has_its_own_override(self):
+        with patch.dict(os.environ, {"WORK_EPIC_IMPLEMENTER": "codex"}, clear=True):
+            self.assertEqual(pump.agent_chain("we"), ("codex",))
+            self.assertEqual(pump.agent_chain("wr"), ("claude", "codex"))

@@ -37,20 +37,31 @@ The orchestrator never implements, reviews, fixes, or closes the epic itself.
 | Role | Runs | Agent |
 |---|---|---|
 | Implementer | `work-issue` in the issue's worktree | `opencode` |
-| Reviewer | `review-code` then `review-tests`, fixing what each found, in the same worktree | `claude` |
+| Reviewer | `review-code` then `review-tests`, fixing what each found, in the same worktree | `claude`, then `codex` |
 | Repairer | the repair contract (conflict or red CI), in the same worktree | `opencode` |
 | Coordinator | this skill: plans, spawns, reaps, merges | whichever agent you started |
 
-The agents are a single block in `skills/work-epic/scripts/pump.py`; change them there. The reviewer is
-deliberately not the implementer — a second point of view is the point. Install `work-issue` for
-the implementer and `review-code` and `review-tests` for the reviewer, and make the work-issue skill directory
-readable on the host: the reviewer's fixes and the repairer read its quality-gate table. The driver
-finds work-issue and raise-issues in the repo's own `.agents/skills/` or `.claude/skills/` before
-the installed copies, so a repo that ships them locally needs no environment override.
+The agents are ordered chains in a single block in `skills/work-epic/scripts/pump.py`. The reviewer
+tries `claude`, then `codex`: when an agent cannot start, or a review it ran reports an error (an
+exhausted usage limit, a crash), the pump starts the next agent in the chain. Every fallback is
+logged, added to the run's notes, and named in the final report; only when the whole chain is
+exhausted does the item park. A review that reached `reviewed` is never repeated. Set
+`WORK_EPIC_IMPLEMENTER`, `WORK_EPIC_REVIEWER`, or `WORK_EPIC_REPAIRER` to a comma-separated chain to
+override a role for one run, for example `WORK_EPIC_REVIEWER=codex`. An installed copy of this skill
+is a cache that updates overwrite, so the environment variables are the supported switch.
 
-**Orca does not expose an installed-agent list through its CLI**, so the agents are your
+The reviewer is deliberately not the implementer — a second point of view is the point, and the
+pump skips the implementer's agent even if it appears in the reviewer chain. Install `work-issue`
+for every agent in the implementer chain and `review-code` and `review-tests` for every agent in
+the reviewer chain, and make the work-issue skill directory readable on the host: the reviewer's
+fixes and the repairer read its quality-gate table. The driver finds work-issue and raise-issues in
+the repo's own `.agents/skills/` or `.claude/skills/` before the installed copies, so a repo that
+ships them locally needs no environment override.
+
+**Orca does not expose an installed-agent list through its CLI**, so the chains are your
 declaration of what is installed. A failed `worker-start` names the agent that could not launch and
-costs only that issue; the pump reports it and never silently swaps in another agent.
+costs only the attempt: the pump notes it and tries the next agent, and parks the item only when the
+chain is exhausted.
 
 ## Prerequisites
 

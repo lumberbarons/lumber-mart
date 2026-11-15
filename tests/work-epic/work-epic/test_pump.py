@@ -105,8 +105,8 @@ class World:
             json.dump(data, f)
 
     def finish(self, d, w):
-        role, key = w["role"], w["key"]
-        out = self.script.get((role, key), "default")
+        role, key, agent = w["role"], w["key"], w["agent"]
+        out = self.script.get((role, key, agent), self.script.get((role, key), "default"))
         if role == "we":
             n = int(key)
             if out == "default" and self.local:
@@ -305,8 +305,9 @@ class World:
     def worker_start(self, flags):
         title = flags["--task-title"]
         role, key = title.split(" ")[0].split("-")
+        agent = flags.get("--agent", "")
         self.specs.append((role, key, flags.get("--spec", "")))
-        if key in self.fail_start:
+        if key in self.fail_start or (role, key, agent) in self.fail_start:
             return envelope(error=("start_failed", "agent did not launch"))
         effects = []
         if flags["--worktree"] == "new-child":
@@ -322,7 +323,7 @@ class World:
             wid = flags["--worktree"].removeprefix("id:")
         self.counter += 1
         d = f"ctx_{self.counter}"
-        self.workers[d] = {"role": role, "key": key, "wid": wid, "state": "running",
+        self.workers[d] = {"role": role, "key": key, "agent": agent, "wid": wid, "state": "running",
                            "task": f"task_{self.counter}", "finish": self.t + WORK}
         return envelope({"runId": "run_t", "taskId": f"task_{self.counter}", "dispatchId": d,
                          "state": "ready", "effects": effects, "residualResources": []})
@@ -358,7 +359,7 @@ def finding(title, priority, **kw):
 
 
 class Scenario(unittest.TestCase):
-    def build(self, issues, *, blockers=None, workers=2, resume=False, local=False):
+    def build(self, issues, *, blockers=None, workers=2, resume=False, local=False, agents=None):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         self.world = w = World(tmp, issues, blockers, local=local)
@@ -366,7 +367,8 @@ class Scenario(unittest.TestCase):
         outdir = os.path.join(tmp, "out")
         os.makedirs(outdir)
         cfg = pump.Config(scope=list(issues), coord=coord, outdir=outdir, work_issue_dir="/skills/work-issue",
-                          workers=workers, resume=resume, local=local, main=w.main if local else None)
+                          workers=workers, resume=resume, local=local, main=w.main if local else None,
+                          agents=agents)
         self.filer = FakeFiler(w)
         self.logs = []
         self.pump = self.new_pump(cfg)
@@ -559,6 +561,66 @@ class ReviewAndFix(Scenario):
         s = self.run_pump()
         self.assertEqual(self.started("wr"), [])
         self.assertIn("review-121", s["parked"])
+
+
+class AgentFallback(Scenario):
+    def attempts(self, role, key):
+        prefix = f"{role}-{key} · "
+        return [c[c.index("--agent") + 1]
+                for c in self.world.calls_of("orca", "orchestration", "worker-start")
+                if any(t.startswith(prefix) for t in c)]
+
+    def test_a_reviewer_that_cannot_start_falls_through_to_the_next_agent(self):
+        w = self.build([21])
+        w.fail_start.add(("wr", "121", "claude"))
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(self.attempts("wr", "121"), ["claude", "codex"])
+        self.assertEqual(len(w.calls_of("gh", "pr", "merge")), 1)
+        self.assertTrue(any(n["type"] == "agent-fallback" for n in s["notes"]))
+
+    def test_a_review_that_errors_falls_through_to_the_next_agent(self):
+        w = self.build([21])
+        w.script[("wr", "121", "claude")] = {"status": "error", "reason": "usage limit reached",
+                                             "findings": []}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(self.attempts("wr", "121"), ["claude", "codex"])
+        self.assertEqual(len(self.started("wr")), 2)  # one failed attempt, then the review round
+        self.assertTrue(any("usage limit reached" in n.get("subject", "") for n in s["notes"]))
+
+    def test_a_reviewer_chain_that_is_exhausted_parks_the_pr(self):
+        w = self.build([21])
+        for agent in ("claude", "codex"):
+            w.script[("wr", "121", agent)] = {"status": "error", "reason": "usage limit reached",
+                                              "findings": []}
+        s = self.run_pump()
+        self.assertEqual(s["status"], "stopped")
+        self.assertIn("review-121", s["parked"])
+        self.assertEqual(self.attempts("wr", "121"), ["claude", "codex"])
+        self.assertEqual(w.calls_of("gh", "pr", "merge"), [])
+
+    def test_a_reviewer_chain_can_name_one_agent(self):
+        w = self.build([21], agents={"wr": ("codex",)})
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(self.attempts("wr", "121"), ["codex"])
+
+    def test_the_reviewer_never_repeats_the_implementer_agent(self):
+        w = self.build([21], agents={"we": ("codex",), "wr": ("codex", "claude")})
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(self.attempts("we", "21"), ["codex"])
+        self.assertEqual(self.attempts("wr", "121"), ["claude"])
+
+    def test_an_implementer_that_cannot_start_falls_through_to_the_next_agent(self):
+        w = self.build([21], agents={"we": ("opencode", "codex")})
+        w.fail_start.add(("we", "21", "opencode"))
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual(self.attempts("we", "21"), ["opencode", "codex"])
+        self.assertEqual(s["issues"]["21"]["implementer"], "codex")
+        self.assertTrue(any(n["type"] == "agent-fallback" for n in s["notes"]))
 
 
 class Repairs(Scenario):
@@ -1003,6 +1065,11 @@ class LocalMode(Scenario):
         report = pump.render_report(self.run_pump())
         self.assertIn("merged: #21, #22", report)
         self.assertNotIn("PR #", report)
+
+    def test_the_report_names_the_agent_chains(self):
+        self.build([21], local=True)
+        report = pump.render_report(self.run_pump())
+        self.assertIn("agents: worker opencode; reviewer claude -> codex; repairer opencode", report)
 
 
 class Prompts(unittest.TestCase):
