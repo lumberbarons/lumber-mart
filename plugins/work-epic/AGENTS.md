@@ -77,13 +77,16 @@ rounds. Fixing in the same session removes all of it: the reviewer has the whole
 PR is small enough to fix in one go, and the quality gate and CI are the check on what it pushes.
 The same reasoning covers a repair and a human's edit — nothing that lands after the review round is
 reviewed again. If a fix is too large or needs a decision, it is not a fix: the reviewer leaves it
-unfixed, it is filed open, and at P1 it holds the PR for the human. Do not reintroduce a re-review
-to catch a bad fix; tighten what the reviewer may fix instead.
+unfixed. At P2 or above it is filed open, and at P1 it holds the PR for the human; a P3 left unfixed
+stays in the round comment. Do not reintroduce a re-review to catch a bad fix; tighten what the
+reviewer may fix instead. The reviewer fixes every P1 and P2, and a P3 only when the fix is small and
+local; a larger P3 is not worth a backlog issue, so it stays in the round comment.
 
-Findings are still filed, because the issue is the paper trail: fixed ones are closed with the
-fixing commit (`fixed-in:`), unfixed ones stay open. They are filed with no parent, so they are
-never part of the scope, and the pump never works one — a finding is either fixed by the reviewer or
-handed to the human. That is the whole stopping rule for a review chain.
+Findings at P2 or above are still filed, because the issue is the paper trail: fixed ones are closed
+with the fixing commit (`fixed-in:`), unfixed ones stay open. They are filed with no parent, so they
+are never part of the scope, and the pump never works one — a finding is either fixed by the
+reviewer or handed to the human. That is the whole stopping rule for a review chain. A P3 is
+reported in the round comment whether or not the reviewer fixed it.
 
 Orca is the execution layer, not a second planner. A **Run** scopes the pump; each issue is a
 **Task** and a durable **worktree**; each attempt is a **Dispatch**. Orca Tasks record execution
