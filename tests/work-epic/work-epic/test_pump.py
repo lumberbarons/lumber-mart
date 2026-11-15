@@ -1105,6 +1105,16 @@ class Prompts(unittest.TestCase):
             self.assertIn("**run**", text)
             self.assertLess(text.index("review-code skill"), text.index("review-tests skill"), name)
 
+    def test_reviewers_fix_easy_p3s_and_leave_the_rest(self):
+        values = {"n": 21, "pr": 121, "branch": "fix/21-x", "default": "main",
+                  "work_issue_dir": "/skills/work-issue", "tests_lens": "run"}
+        for name in ("reviewer", "reviewer_local"):
+            text = pump.render(name, **values)
+            self.assertNotIn("Leave P3 findings alone", text, name)
+            self.assertRegex(text, r"each P3 whose fix is small and local", name)
+            self.assertIn("leave it unless the fix is clearly smaller", text, name)
+            self.assertIn("Fix the appended findings by the procedure", text, name)
+
     def test_the_local_prompts_name_no_remote_and_no_pr(self):
         values = {"n": 21, "pr": 21, "branch": "fix/21-x", "default": "main",
                   "work_issue_dir": "/skills/work-issue", "why": "2 commits behind the default branch",

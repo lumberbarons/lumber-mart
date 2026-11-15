@@ -17,12 +17,13 @@ only a human can make.
   review the delivered PR (`review-code`, then `review-tests`) and fix what it finds in that same session, repairs
   conflicts and red CI, and merges on CI green. Then it re-pumps until nothing else can move.
 - **Review once, fix in the session that found it.** A PR is reviewed a single time. The reviewer
-  fixes every P1 and P2 it can, safely and inside the PR's own files, runs the quality gate, and
-  pushes. A finding is never handed to a later session, so nothing is re-reviewed and no finding
-  spawns a finding.
+  fixes every P1 and P2, plus each P3 small enough to fix safely inside the PR's own files, runs
+  the quality gate, and pushes. A finding is never handed to a later session, so nothing is
+  re-reviewed and no finding spawns a finding.
 - **The paper trail is kept.** Every finding at P2 or above is filed as an issue, deduplicated by
   review key. The ones the reviewer fixed are closed with the fixing commit; the ones it could not
-  fix stay open as backlog.
+  fix stay open as backlog. A P3 stays in the round comment, fixed or not, so it never becomes
+  backlog noise.
 - **Works without GitHub.** On a local hew tracker (`hew init --local`) each issue's branch is
   reviewed, gated, and squashed into the local default branch, and the merge closes the issue. The
   driver detects this itself; see the skill's *Local trackers* section for what changes.
@@ -138,12 +139,13 @@ pump marks the worktree unread and never answers it.
 
 **Review is a fix, not a report.** The reviewer runs `review-code` over the PR's diff and fixes what
 it can, then runs `review-tests` over the branch as it now stands and fixes what it can — in the
-same session, the smallest fix for each P1 and P2 inside the PR's own files, each gated, then one
-push. The implementer works test-first, so its tests are the part most likely to confirm themselves;
-the test review is the independent check on them. The pump skips it for a diff that changes only
-prose. The coordinator files every finding as an issue, closes the fixed ones, and posts one round
-comment. A finding that needs a design decision, reaches outside the PR, or fails its gate stays
-open; at P1 it holds the PR until the human closes it.
+same session, the smallest fix for each P1 and P2, and each easy P3, inside the PR's own files, each
+gated, then one push. The implementer works test-first, so its tests are the part most likely to
+confirm themselves; the test review is the independent check on them. The pump skips it for a diff
+that changes only prose. The coordinator files every finding at P2 or above as an issue, closes the
+fixed ones, and posts one round comment. A finding that needs a design decision, reaches outside the
+PR, or fails its gate stays open; at P1 it holds the PR until the human closes it. A P3 the reviewer
+leaves is reported with its reason and prescription in the round comment.
 
 **The merge pass is classified, not judged.** `pr_state.py` decides per PR: merge (green, reviewed,
 no holds, up to date with default), mark a draft ready, update the branch when it falls behind

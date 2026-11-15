@@ -89,6 +89,17 @@ class Filing(unittest.TestCase):
         self.assertIn("--completed", closes[0])
         self.assertIn("9f2c1ab", closes[0][closes[0].index("--reason") + 1])
 
+    def test_a_fixed_p3_is_not_filed_or_closed(self):
+        self.outcome["findings"].append(finding("Naming", "P3", fixed=True, fixedIn="abc1234"))
+        with open(self.path, "w") as f:
+            json.dump(self.outcome, f)
+        tools = FakeTools(self.tmp.name, self.outcome, tracker=self.tracker_after_apply())
+        records = self.filer(tools).file(pr=34, issue=21, outcome_path=self.path)
+        self.assertEqual(records[-1]["title"], "Naming")
+        self.assertIsNone(records[-1]["number"])
+        closes = [c[2] for c in tools.calls if c[:2] == ["hew", "close"]]
+        self.assertEqual(closes, ["41"])  # the fixed P1; the P3 was never filed
+
     def test_applies_after_a_dry_run(self):
         tools = FakeTools(self.tmp.name, self.outcome, tracker=self.tracker_after_apply())
         self.filer(tools).file(pr=34, issue=21, outcome_path=self.path)
@@ -202,13 +213,23 @@ class Comment(unittest.TestCase):
     def test_each_finding_states_what_happened(self):
         records = [dict(finding("Leaky", "P1", fixed=True, fixedIn="9f2c1ab"), number=41),
                    dict(finding("Dead", "P2", fixed=False, unfixedReason="needs a decision"), number=42),
-                   dict(finding("Naming", "P3"), number=None)]
+                   dict(finding("Naming", "P3", fixed=False,
+                                unfixedReason="needs a wider rename"), number=None)]
         text = round_comment(records, gate="go test ./... — passed")
         self.assertIn("### P1 — Leaky", text)
         self.assertIn("Fixed in 9f2c1ab. Filed as #41 and closed.", text)
         self.assertIn("Not fixed: needs a decision. Filed as #42.", text)
-        self.assertIn("Fix: Fix it. Not filed.", text)
+        self.assertIn("Not fixed: needs a wider rename. Not filed.", text)
         self.assertTrue(text.rstrip().endswith("gate: go test ./... — passed"))
+
+    def test_a_fixed_p3_is_reported_and_not_filed(self):
+        text = round_comment([dict(finding("Naming", "P3", fixed=True, fixedIn="abc1234"),
+                                   number=None)])
+        self.assertIn("Fixed in abc1234. Not filed.", text)
+
+    def test_a_p3_left_without_a_reason_keeps_its_prescription(self):
+        text = round_comment([dict(finding("Naming", "P3"), number=None)])
+        self.assertIn("Fix: Fix it. Not filed.", text)
 
 
 if __name__ == "__main__":
