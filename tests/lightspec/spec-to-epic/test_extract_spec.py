@@ -119,9 +119,10 @@ class ParseTests(unittest.TestCase):
         example = SKILL / "reference" / "example-spec.md"
         data = parse(example.read_text(encoding="utf-8"), example)
         self.assertEqual(len(data["stories"]), 2)
-        self.assertEqual(sum(len(s["tasks"]) for s in data["stories"]), 6)
-        self.assertEqual(len(data["cross_cutting_tasks"]), 2)
-        self.assertEqual(len(data["done_when"]), 6)
+        self.assertEqual([item["id"] for item in data["work_items"]], ["WI1", "WI2", "WI3"])
+        self.assertEqual(data["work_items"][0]["supports"], ["US1", "US2"])
+        self.assertEqual(data["cross_cutting_tasks"], [])
+        self.assertEqual(len(data["done_when"]), 2)
 
 
 class IsolatedInstallTests(unittest.TestCase):
@@ -170,6 +171,34 @@ class IsolatedInstallTests(unittest.TestCase):
         check = self.run_script("lightspec.py", "check", str(self.spec))
         self.assertEqual(check.returncode, 1, check.stdout + check.stderr)
         self.assertIn("expected `T002`", check.stdout)
+
+    def test_plan_blocks_legacy_cross_cutting_work(self) -> None:
+        result = self.run_script("extract_spec.py", "--plan", str(self.spec))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("legacy cross-cutting tasks need owning work items before filing: T003", result.stderr)
+
+    def test_plan_from_isolated_skill_preserves_work_items(self) -> None:
+        example = self.skill / "reference" / "example-spec.md"
+        draft = example.read_text(encoding="utf-8")
+        result = self.run_script("extract_spec.py", "--plan", str(example))
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("only Accepted specs", result.stderr)
+
+        example.write_text(draft.replace("**Status**: Draft", "**Status**: Accepted"), encoding="utf-8")
+        result = self.run_script("extract_spec.py", "--plan", str(example))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        epic, storage, controls, page = map(json.loads, result.stdout.splitlines())
+        self.assertEqual([entry["id"] for entry in (epic, storage, controls, page)], ["epic", "WI1", "WI2", "WI3"])
+        self.assertEqual(storage["parent"], "epic")
+        self.assertNotIn("blocked-by", storage)
+        self.assertIn("Supports `US1`, `US2`.", storage["approach"])
+        self.assertEqual(controls["blocked-by"], ["WI1"])
+        self.assertEqual(page["blocked-by"], ["WI1"])
+        self.assertIn("`webui/src/App.tsx`", page["where"])
+        self.assertIn("The signed-in navigation links to the watchlist.", page["done-when"])
+        self.assertEqual(len(epic["done-when"]), 2)
 
     def test_citations_resolve_in_target_checkout_and_worktree(self) -> None:
         self.spec.write_text(MINIMAL.replace(
