@@ -5,7 +5,7 @@ The lightspec spec pipeline: draft, approve, and file a feature spec as trackabl
 | `skills/draft-spec/` | Drafts a spec into `specs/NNN-slug/spec.md`, checker-enforced | Changing the spec format, the checker, or the drafting workflow |
 | `skills/refine-spec/` | Interviews the author about a Draft spec's rough edges and writes the answers back, staying at Draft | Changing the question limit, the ambiguity lenses, or how answers are folded into the spec |
 | `skills/approve-spec/` | Reviews a Draft spec on substance, moves it to Accepted | Changing the review questions or the verdict vocabulary |
-| `skills/spec-to-epic/` | Files an Accepted spec as a hew epic with one child per story | Changing the mapping to hew's body conventions or the plan schema |
+| `skills/spec-to-epic/` | Files an Accepted spec as a hew epic with one child per work item | Changing the mapping to hew's body conventions or the plan schema |
 | `README.md` | Pipeline overview | Understanding what lightspec does |
 
 The format lives in `skills/draft-spec/scripts/lightspec.py`, and the format is defined twice —
@@ -28,6 +28,6 @@ shut — answers are folded into the body and history lives in version control. 
 that edits a spec on the user's answers; `approve-spec` still never edits what it reviews.
 
 `spec-to-epic` gates on `Accepted` before filing: a Draft spec's issues are a quiet way of
-building from something nobody signed off on. It also owns the deliberate non-feature of not
-inventing dependency chains between stories — hew's priority-then-oldest ordering is the build
-sequence, and a guessed `--blocked-by` graph blocks work that was never blocked.
+building from something nobody signed off on. It copies explicit work item
+prerequisites into native hew dependencies. Work item order breaks ties among ready issues
+of the same priority.

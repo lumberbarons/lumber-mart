@@ -9,7 +9,7 @@ skills (Claude Code, opencode, codex).
 The process this serves is **research → ADR → spec → approve → implement**:
 
 - **draft-spec** — turns a feature request into `specs/NNN-slug/spec.md`: description, prior
-  decisions, the research it relies on, prioritised user stories, tasks, and a done-when checklist. A script
+  decisions, the research it relies on, user stories, prioritised work items, and feature acceptance criteria. A script
   (`lightspec.py`) owns the format so every spec comes out identical; the skill supplies the
   judgment. Specs leave here at `Draft`.
 - **refine-spec** — interviews the author about a Draft spec's rough edges: vague terms, missing
@@ -21,7 +21,7 @@ The process this serves is **research → ADR → spec → approve → implement
   and records the verdict. One question per section; a finding that would not hold up the
   work is not a finding.
 - **spec-to-epic** — files an Accepted spec as a hew epic: one epic issue carrying the spec's
-  framing, one child issue per user story, done-when items derived per story so `work-issue`
+  framing, one child issue per work item, with its own acceptance criteria so `work-issue`
   can drive them test-first. Its bundled checker gates on shape and status even when the
   other skills are not installed.
 
@@ -77,8 +77,9 @@ than described. Closed vocabularies the checker holds shut:
 
 - **Status** — `Draft | Accepted | Implemented | Superseded`. Nothing else passes; only
   `Superseded` may carry text after the word, and only a link.
-- **Priorities** — P1 is what makes the feature worth shipping at all; P2/P3 what makes it good.
-- **Done When** — observable claims a stranger could falsify without reading the diff.
+- **Work Items** — one per child issue, with its own goal, paths, approach, and acceptance criteria. Link to supported stories and name any hard prerequisites.
+- **Priorities** — on work items, P1 is what makes the feature worth shipping at all; P2/P3 what makes it good.
+- **Done When** — plain bullets describing observable checks on the assembled feature. Issue closure tracks completion.
 
 Citation links in Prior Decisions and Research are resolved against the repository by `check`, so
 a plausible-looking path to an ADR or research document that does not exist is caught rather than

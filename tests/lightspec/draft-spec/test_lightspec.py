@@ -94,6 +94,39 @@ class ReferenceExample(unittest.TestCase):
         self.assertEqual([], problems.items)
 
 
+class WorkItems(unittest.TestCase):
+    example = (SKILL / "reference" / "example-spec.md").read_text(encoding="utf-8").replace(
+        "009-price-drop-watchlist", "001-thing"
+    )
+
+    def test_checkboxes_are_rejected_at_both_acceptance_levels(self):
+        text = self.example.replace("- The database", "- [ ] The database").replace(
+            "- A shopper can watch a product from search", "- [x] A shopper can watch a product from search"
+        )
+        self.assertEqual(problems_for(text), ["use a plain bullet instead of a checkbox"] * 2)
+
+    def test_unknown_story_and_work_item_are_rejected(self):
+        text = self.example.replace("**Supports** US1, US2", "**Supports** US1, US3")
+        text = text.replace("**Blocked by** WI1", "**Blocked by** WI9", 1)
+        messages = problems_for(text)
+        self.assertIn("WI1 supports unknown story `US3`", messages)
+        self.assertIn("WI2 is blocked by unknown work item `WI9`", messages)
+
+    def test_forward_dependencies_are_valid_but_cycles_are_rejected(self):
+        preamble, storage_and_controls = self.example.split("### WI1", 1)
+        storage, controls = storage_and_controls.split("### WI2", 1)
+        text = preamble + "### WI2" + controls.replace(
+            "### WI3", "### WI1" + storage + "### WI3", 1
+        )
+        self.assertEqual([], problems_for(text))
+        cycle = text.replace("**Supports** US1, US2", "**Supports** US1, US2\n\n**Blocked by** WI3")
+        self.assertTrue(any("dependency cycle" in message for message in problems_for(cycle)))
+
+    def test_duplicate_work_item_is_rejected(self):
+        text = self.example.replace("### WI3", "### WI2")
+        self.assertIn("duplicate work item `WI2`", problems_for(text))
+
+
 class ValidBaseline(unittest.TestCase):
     def test_minimal_spec_passes(self):
         self.assertEqual([], problems_for(VALID))
