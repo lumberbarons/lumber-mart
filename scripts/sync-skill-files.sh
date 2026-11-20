@@ -31,6 +31,8 @@ pairs=(
   "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/refine-spec/scripts/lightspec.py"
   "plugins/lightspec/skills/draft-spec/scripts/lightspec.py  plugins/lightspec/skills/spec-to-epic/scripts/lightspec.py"
   "plugins/lightspec/skills/draft-spec/reference/example-spec.md  plugins/lightspec/skills/spec-to-epic/reference/example-spec.md"
+  "plugins/decisions/skills/create-adr/scripts/adr.py  plugins/decisions/skills/refine-adr/scripts/adr.py"
+  "plugins/decisions/skills/create-adr/scripts/adr.py  plugins/decisions/skills/approve-adr/scripts/adr.py"
 )
 
 check=false

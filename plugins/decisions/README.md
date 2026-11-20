@@ -15,7 +15,9 @@ The output is MADR-style (Markdown Architecture Decision Records) with rich fron
 
 | Skill | Description | Model-Invocable |
 |-------|-------------|-----------------|
-| `create-adr` | Create a new ADR from a standard MADR template, researching context from the codebase and registering it in the repository's active agent instructions | Yes |
+| `create-adr` | Create a new `proposed` ADR from a standard MADR template, researching context from the codebase; edits nothing else | Yes |
+| `refine-adr` | Interview the decider about a proposed ADR's weak points (drivers that are platitudes, strawman options, consequences with no downside, invariants nobody could check) and write the answers back, leaving it `proposed` | Yes |
+| `approve-adr` | Review a proposed ADR on substance in a fresh subagent, then accept it: move it to `accepted`, mark the ADRs it supersedes, link the research it cites back, update the index and register it in the repository's active agent instructions | Yes |
 | `create-research` | Investigate a question and record it in `docs/research/NNNN-slug.md` with per-finding confidence and cited sources, in a script-enforced format, ahead of an ADR or a spec | Yes |
 | `review-policy` | Review a code change (working diff, PR, or path) against the accepted ADRs and report violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit | Yes |
 
@@ -29,6 +31,9 @@ create-adr use Postgres for the event store instead of DynamoDB
 create-adr adopt trunk-based development with short-lived feature flags
 create-adr replace the custom retry wrapper with Temporal workflows
 
+refine-adr 7                    # interview the decider about ADR-0007, then write the answers back
+approve-adr 7                   # review ADR-0007 in a fresh subagent and, if it passes, accept it
+
 create-research does the nightly export lose rows when the database fails over
 create-research compare SQS and Redis lists against our job-loss requirement
 
@@ -38,13 +43,13 @@ review-policy PR#42             # review a pull request
 review-policy --adr ADR-0007    # review the diff against a single ADR
 ```
 
-If `create-adr` is called without an argument, it asks what decision to record. `create-research` turns a "which should we pick?" request into research on what is true and leaves the choice to `create-adr`; a bare topic ("research caching") gets a short round of questions before anything is written. If `review-policy` is called without an argument, it defaults to the working diff against the repo's base branch.
+If `create-adr` is called without an argument, it asks what decision to record. `refine-adr` and `approve-adr` take a path or number, and list the ADRs with their status and ask when given neither; neither runs automatically after `create-adr`. `create-research` turns a "which should we pick?" request into research on what is true and leaves the choice to `create-adr`; a bare topic ("research caching") gets a short round of questions before anything is written. If `review-policy` is called without an argument, it defaults to the working diff against the repo's base branch.
 
 ## Template Structure
 
 Every ADR follows MADR conventions:
 
-- **Frontmatter** — `id`, `title`, `status`, `date`, `deciders`, `supersedes`, `superseded-by`, `related`, `research`, `tags`
+- **Frontmatter** — `id`, `title`, `status` (`proposed`, `accepted` or `superseded`), `date`, `deciders`, `supersedes`, `superseded-by`, `related`, `research`, `tags`
 - **Context and Problem Statement** — forces in play, constraints, the problem
 - **Decision Drivers** — the criteria that matter
 - **Considered Options** — options under evaluation, with one-line summaries
@@ -69,7 +74,7 @@ ADRs do not track the specs that inherit their constraints. Specs cite ADRs; ADR
 
 ## Research ↔ ADR relationship
 
-Research is upstream: an ADR cites the research it rests on by `RES-NNNN` id in its `research` frontmatter, and `create-adr` adds the ADR's id to each cited document's `related` so the link can be followed from either end. Both are append-only records with stable ids, so a link in each direction does not rot. Specs are the exception: they cite research from a `## Research` section, and research never links to a spec.
+Research is upstream: an ADR cites the research it rests on by `RES-NNNN` id in its `research` frontmatter, and `approve-adr` adds the ADR's id to each cited document's `related` once the ADR is accepted so the link can be followed from either end. Both are append-only records with stable ids, so a link in each direction does not rot. Specs are the exception: they cite research from a `## Research` section, and research never links to a spec.
 
 Research is cited only when its status is `complete`; `superseded` research is followed to its replacement, and a `Revisit When` condition that has been met makes the research stale.
 
@@ -79,8 +84,11 @@ Research is cited only when its status is `complete`; `superseded` research is f
 
 ## Registration in agent instructions
 
-The skill appends (or updates) an `## Architectural Decisions` section in the repository's active agent instructions, listing each ADR with a one-line "when this applies" description. It checks `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, and configured repository instruction paths/globs, preserving existing shared imports or links. Registration follows the files each agent actually loads; an inactive default alone is insufficient. If the repository has no instruction convention, it creates `AGENTS.md`.
+`approve-adr` appends (or updates) an `## Architectural Decisions` section in the repository's active agent instructions when it accepts an ADR, listing each accepted ADR with a one-line "when this applies" description. It checks `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`, and configured repository instruction paths/globs, preserving existing shared imports or links. Registration follows the files each agent actually loads; an inactive default alone is insufficient. If the repository has no instruction convention, it creates `AGENTS.md`. A `proposed` ADR is never registered, and an ADR that is superseded loses its row: only what binds is listed.
 
+## Lifecycle
+
+`create-adr` writes the ADR as `proposed`, which is not policy: `review-policy` ignores it and nothing else is edited. `refine-adr` is an optional interview that sharpens it. `approve-adr` is the gate: a fresh, read-only subagent reviews it without the conversation that wrote it, and only on an approving verdict does the calling agent accept it. Acceptance moves `status` and `date`, marks any ADR it `supersedes` as `superseded` (naming this one in `superseded-by`), adds this ADR's id to each cited research document's `related`, updates the index and registers it. Both steps run only because a person asked; an author who approves their own work has not been reviewed. Once accepted an ADR is append-only: a changed mind is a new ADR that supersedes it.
 Policy reviews use parallel reviewers when delegation is available and review the same ADRs sequentially when it is not.
 
 ## Bundled Resources
@@ -93,6 +101,7 @@ ADR scaffolding requires `bash` and `jq` on PATH. Policy diff reviews require
 | Script | Language | Purpose |
 |--------|----------|---------|
 | `init-adr.sh` | Bash | Create an ADR file from the MADR template with auto-numbered ID and today's date |
+| `adr.py` | Python (stdlib) | `check` validates an ADR against the template (`--ready` adds what acceptance needs); `status` accepts a proposed ADR; `backlinks` marks superseded ADRs and links cited research back |
 | `research.py` | Python (stdlib) | `new` writes a numbered research skeleton; `check` validates a filled document |
 
 ### Assets
