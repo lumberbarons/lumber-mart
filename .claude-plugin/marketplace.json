@@ -56,7 +56,7 @@
     {
       "name": "decisions",
       "description": "Skills for researching, deciding, and enforcing: create-research records a question investigated with per-finding confidence and cited sources, create-adr writes a proposed Architectural Decision Record (ADR) in MADR format that cites the research it rests on, refine-adr sharpens it with a short interview, approve-adr reviews it on substance and accepts it as standalone, append-only policy, and review-policy checks code changes against accepted ADRs.",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "source": "./plugins/decisions",
       "category": "workflow",
       "keywords": [
@@ -96,7 +96,7 @@
     {
       "name": "lightspec",
       "description": "Skills for the lightspec spec pipeline: draft a feature spec into specs/NNN-slug/spec.md in a script-enforced format, refine its rough edges with a short interview, approve it on substance, and convert an accepted spec into a hew epic with one child issue per work item. research \u2192 ADR \u2192 spec \u2192 refine \u2192 approve \u2192 tracker.",
-      "version": "2.0.1",
+      "version": "2.1.0",
       "source": "./plugins/lightspec",
       "category": "workflow",
       "keywords": [

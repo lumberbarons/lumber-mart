@@ -161,11 +161,6 @@ each ADR this one supersedes as `superseded` and names this one in its `supersed
 and adds this ADR's id to the `related` of each research document it cites. It is safe
 to run again if it is interrupted.
 
-Do not edit the ADR's text as part of approving. Fixing the objections you just raised
-makes you the author again, and then nobody has reviewed the result. If the user wants
-those changes made, that is a separate ask (`refine-adr`), and re-approving is a fresh
-invocation of this skill.
-
 ## 7. Make it discoverable — calling agent
 
 Acceptance without registration binds nothing: an agent that never learns the ADR exists
@@ -220,6 +215,21 @@ checked it against — which ADRs and research it read, what code it looked at �
 user can judge whether its grounding was thin. If you recorded approval, say that the
 status moved and list the files `backlinks`, the index and the registration touched.
 
+## Follow-up after a rejection — calling agent
+
+Revise the proposed ADR in a separate authoring step only if the user asks for
+fixes. If they explicitly ask to fix and retry, run at most one follow-up
+approval from step 1 on the revised ADR, even if they ask you to keep going
+until it passes. Use a fresh reviewer and keep the earlier findings in the
+calling context.
+
+Stop for the user's decision before revising if a blocker requires changing
+the decision, narrowing or superseding binding policy, or gathering new research.
+If the follow-up still blocks, stop and report which objections were resolved,
+which recur, and which are new. State what remains necessary for approval.
+Leave the ADR at `proposed` and wait for further direction before making
+more edits or dispatching another review.
+
 ## Anti-patterns
 
 - Re-reporting what `check` already said; that is the script's job, not yours
@@ -231,8 +241,8 @@ status moved and list the files `backlinks`, the index and the registration touc
   back, since it cannot be revised once accepted
 - Sending back over something the ADR's own Consequences already disclose — the author
   flagged it, which is the system working
-- Editing the ADR's text, cutting a branch, filing issues, or starting the work the
-  decision implies
+- Editing the ADR's text during a review, cutting a branch, filing issues, or
+  starting the work the decision implies
 - Registering or indexing an ADR that was not accepted
 - Running as a step after create-adr rather than because a person asked
 - Reviewing in the writing conversation, or forwarding that conversation to the reviewer
