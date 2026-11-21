@@ -46,11 +46,13 @@ Review skill files for coupling to one coding agent -- constructs that break, de
 
 ### [decisions](plugins/decisions/)
 
-Research and Architectural Decision Record (ADR) authoring, maintenance, and enforcement. Research documents record what was found out, with a confidence on each finding and the sources it rests on, in a checker-enforced format. ADRs are MADR-format, standalone, append-only policy with ADR-to-ADR relationship tracking (`supersedes`, `superseded-by`, `related`) and a `research` field citing the research they rest on. Specs cite the ADRs and research that constrained them; ADRs do not track their downstream consumers. Includes a review skill that audits a code change against the accepted ADRs and flags violations, erosions, drift, and driver-shift candidates.
+Research and Architectural Decision Record (ADR) authoring, maintenance, and enforcement. Research documents record what was found out, with a confidence on each finding and the sources it rests on, in a checker-enforced format. ADRs are MADR-format, standalone, append-only policy, written as `proposed` and made binding only when accepted, with ADR-to-ADR relationship tracking (`supersedes`, `superseded-by`, `related`) and a `research` field citing the research they rest on. Specs cite the ADRs and research that constrained them; ADRs do not track their downstream consumers. Includes a review skill that audits a code change against the accepted ADRs and flags violations, erosions, drift, and driver-shift candidates.
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `decisions:create-adr` | Skill | Create a new ADR from a MADR template, research context from the codebase, and register it in the project's active agent instructions |
+| `decisions:create-adr` | Skill | Create a new `proposed` ADR from a MADR template, researching context from the codebase, checker-enforced |
+| `decisions:refine-adr` | Skill | Interview the decider about a proposed ADR's weak points (at most five questions, each with a recommended answer) and write the answers back, leaving it proposed |
+| `decisions:approve-adr` | Skill | Review a proposed ADR on substance in a fresh subagent, then accept it, apply its supersede and research back-links, and register it in the project's active agent instructions |
 | `decisions:create-research` | Skill | Investigate a question and record it in `docs/research/NNNN-slug.md` with per-finding confidence and cited sources, checker-enforced, ahead of an ADR or a spec |
 | `decisions:review-policy` | Skill | Review a code change (working diff, PR, or path) against the accepted ADRs, flagging violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit |
 
