@@ -259,6 +259,19 @@ class Lifecycle(unittest.TestCase):
             text = text.replace("superseded-by: []", "superseded-by: [ADR-0004]")
         return write(self.adrs, "0002-use-dynamo.md", text)
 
+    def test_duplicate_adr_number_is_reported(self) -> None:
+        first = self.new_adr()
+        twin = write(self.adrs, "0004-use-mysql.md", FILLED.replace("Use Postgres for the event store", "Use MySQL"))
+        for path in (first, twin):
+            code, out, _ = run("check", str(path))
+            self.assertEqual(code, 1)
+            self.assertIn("ADR number 0004 is also used by", out)
+
+    def test_distinct_numbers_are_not_duplicates(self) -> None:
+        self.old_adr()
+        code, out, _ = run("check", str(self.new_adr()))
+        self.assertEqual((code, out.strip()), (0, "ok"))
+
     def test_status_prints(self) -> None:
         path = self.new_adr()
         self.assertEqual(run("status", str(path)), (0, "proposed\n", ""))

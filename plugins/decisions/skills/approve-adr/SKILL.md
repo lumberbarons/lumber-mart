@@ -1,6 +1,6 @@
 ---
 name: approve-adr
-description: Review a proposed ADR in a fresh subagent on its substance — is there a real decision, are the drivers specific, are the rejected options real, are the consequences honest, could a diff be checked against its invariants, does it contradict an accepted ADR — then either accept it, which makes it binding policy and registers it where agents will read it, or send it back with blocking objections. Use whenever an ADR needs approving, accepting, reviewing or sanity-checking before it becomes policy — "approve this ADR", "accept ADR 7", "review this decision record", "is this ADR any good", "make this binding". Reviews ADRs, not code.
+description: Review a proposed ADR in a fresh subagent on its substance — is there a real decision, are the drivers specific, are the rejected options real, are the consequences honest, could a diff be checked against its invariants, does it contradict an accepted ADR — then either accept it, which makes it binding policy and registers it where agents will read it, or send it back with blocking objections. Use only when the user explicitly asks to approve or accept an ADR, or to make it binding — "approve ADR 7", "accept this ADR", "make this decision policy". Accepting changes the ADR's status and edits the index and agent instructions, so do not use it to answer "is this ADR any good", to critique a draft, or to sharpen one (that is refine-adr). Reviews ADRs, not code.
 argument-hint: The ADR to approve — path or number
 ---
 
@@ -20,6 +20,11 @@ as an automatic step after writing. An author who approves their own work has no
 been reviewed. The calling agent handles validation, status changes and registration;
 a fresh subagent does the substance review without the conversation that wrote or
 refined the ADR.
+
+Run this only when the user has asked for the ADR to be approved or accepted. A request
+for an opinion — "is this any good", "what do you think of ADR 7" — is not that: a
+verdict here moves the status and edits other files. Answer it without running this
+skill, or offer `refine-adr`, and ask whether they want the ADR accepted.
 
 ## The script
 
@@ -54,8 +59,8 @@ attention on problems a script already found.
 
 After the gate passes, start one read-only reviewer in a fresh context with no
 inherited conversation. Give it only the absolute ADR path, repository root, and this
-skill's path with instructions to perform steps 3–5 and return the report described in
-step 8. It is the reviewer, not another invocation of the calling workflow: it must
+skill's path with instructions to perform steps 3–5 and return the verdict and
+findings described at the end of step 5. It is the reviewer, not another invocation of the calling workflow: it must
 not delegate again or run steps 1–2 or 6–7.
 
 Do not pass the writing/refinement conversation, a parent-written summary, suggested
@@ -112,16 +117,14 @@ choice it records.
 
 ## 5. Reach a verdict — reviewer
 
-Exactly one of four. The set is closed for the same reason the status vocabulary is: an
+Exactly one of three. The set is closed for the same reason the status vocabulary is: an
 approver allowed to hedge will.
 
 - **Approve** — make it policy. Nothing found that changes how a future reader would
   judge a change.
-- **Approve, assumptions on record** — sound, but name the assumptions the decider is
-  taking on. Only for risk that lives outside the ADR's text; an assumption a future
-  reader needs *in* the ADR makes this **Send back**, because an accepted ADR cannot be
-  revised.
-- **Send back** — one or more specific objections that change what the ADR says. Say
+- **Send back** — one or more specific objections that change what the ADR says,
+  including an assumption a future reader needs *in* the ADR: an accepted ADR cannot be
+  revised, so a caveat that belongs in it must be written before acceptance. Say
   what must change, not how to word it. A conflict with an accepted ADR is this verdict:
   name the ADR and say whether the fix is to narrow this decision or to supersede that
   one.
@@ -130,9 +133,9 @@ approver allowed to hedge will.
 
 The last two leave the ADR at `proposed`.
 
-Return the verdict, findings quoting the lines objected to, any assumptions on record,
-and what you checked it against: the ADRs, research and code read. If you could not
-complete the review, report that explicitly instead of choosing an approving verdict.
+Return the verdict, findings quoting the lines objected to, and what you checked it
+against: the ADRs, research and code read. If you could not complete the review, report
+that explicitly instead of choosing Approve.
 
 ## 6. Record it — calling agent
 
@@ -144,7 +147,7 @@ Before recording an approval, compare the ADR's current contents with what you
 dispatched and check that its status is still `proposed`. If either changed, stop
 without recording approval: the returned verdict does not approve a different revision.
 
-Only for the two approving verdicts:
+Only for **Approve**:
 
 ```bash
 uv run --no-project "$ADR" status docs/adr/NNNN-slug.md accepted

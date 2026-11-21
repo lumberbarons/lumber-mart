@@ -60,7 +60,7 @@ If the status is anything other than `Draft`, report it and stop.
 After the gates pass, start one read-only reviewer in a fresh context with no
 inherited conversation. Give it only the absolute spec path, repository root,
 and this skill's path with instructions to perform steps 3–5 and return the
-report described in step 7. It is the reviewer, not another invocation of the
+verdict and findings described at the end of step 5. It is the reviewer, not another invocation of the
 calling workflow: it must not delegate again or run steps 1–2 or 6.
 
 Do not pass the drafting/refinement conversation, a parent-written summary,

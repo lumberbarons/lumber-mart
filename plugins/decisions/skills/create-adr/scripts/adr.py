@@ -240,6 +240,20 @@ def check_frontmatter(
                 )
     if not FILENAME_RE.match(path.name):
         problems.add(1, f"file name {path.name!r} must look like `0001-some-slug.md`")
+    else:
+        # Links resolve an id to the first file carrying that number, so a second one
+        # would make supersedes, backlinks and the --ready gate act on the wrong ADR.
+        number = FILENAME_RE.match(path.name).group(1)  # type: ignore[union-attr]
+        twins = [
+            sibling.name
+            for sibling in (sorted(path.parent.iterdir()) if path.parent.is_dir() else [])
+            if sibling.name != path.name
+            and sibling.is_file()
+            and (m := FILENAME_RE.match(sibling.name))
+            and m.group(1) == number
+        ]
+        if twins:
+            problems.add(1, f"ADR number {number} is also used by {', '.join(twins)}; numbers must be unique")
 
     if "title" in meta:
         lineno, raw = meta["title"]

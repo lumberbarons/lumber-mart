@@ -51,7 +51,7 @@ Research and Architectural Decision Record (ADR) authoring, maintenance, and enf
 | Component | Type | Description |
 |-----------|------|-------------|
 | `decisions:create-adr` | Skill | Create a new `proposed` ADR from a MADR template, researching context from the codebase, checker-enforced |
-| `decisions:refine-adr` | Skill | Interview the decider about a proposed ADR's weak points (at most five questions, each with a recommended answer) and write the answers back, leaving it proposed |
+| `decisions:refine-adr` | Skill | Interview the decider about a proposed ADR's weak points (at most four questions, each with a recommended answer) and write the answers back, leaving it proposed |
 | `decisions:approve-adr` | Skill | Review a proposed ADR on substance in a fresh subagent, then accept it, apply its supersede and research back-links, and register it in the project's active agent instructions |
 | `decisions:create-research` | Skill | Investigate a question and record it in `docs/research/NNNN-slug.md` with per-finding confidence and cited sources, checker-enforced, ahead of an ADR or a spec |
 | `decisions:review-policy` | Skill | Review a code change (working diff, PR, or path) against the accepted ADRs, flagging violations, invariant erosions, drift toward rejected options, and driver-shift candidates for ADR revisit |
