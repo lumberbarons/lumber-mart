@@ -134,8 +134,8 @@ Dispatch, then launches the agent. The pump waits on the Run mailbox with
 `orchestration check --wait --types worker_done,escalation,question`, processes the whole FIFO
 batch, acknowledges it, and only then spawns into the freed capacity. Outcome files are written
 inside the worker's own worktree, and `worker-release` archives the terminal output before closing
-it. A worker parked on a permission prompt shows up in `worker-show` as `observation.agentWait`; the
-pump marks the worktree unread and never answers it.
+it. A worker parked on a permission prompt shows up in `worker-show` as `waitingOnHuman` (or
+`observation.agentWait` on older hosts); the pump marks the worktree unread and never answers it.
 
 **Review is a fix, not a report.** The reviewer runs `review-code` over the PR's diff and fixes what
 it can, then runs `review-tests` over the branch as it now stands and fixes what it can — in the
