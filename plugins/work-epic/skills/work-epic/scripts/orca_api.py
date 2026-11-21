@@ -126,7 +126,9 @@ def normalise_worker(row):
     if row.get("dispatchStatus") is None:
         if state in ("succeeded", "completed"):
             row["dispatchStatus"] = "completed"
-        elif state == "failed":
+        elif state in ("failed", "stopped", "abandoned"):
+            # 1.4.267 treats stopped and abandoned as settled too; the nested rows the
+            # pump was written against reported those as a failed Dispatch.
             row["dispatchStatus"] = "failed"
 
     projection = dict(row.get("projection") or {})

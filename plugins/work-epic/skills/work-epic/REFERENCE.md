@@ -596,8 +596,8 @@ code, the data, and the partial receipt.
 - `run-create`, `run-current`, and `run-use` → `result.{runId, objective}` on 1.4.267; older hosts
   answer `{run: {id, objective}}`. `orca_api.run_id` accepts either, and `run-current` with no
   binding is `{runId: null}`.
-- `worker-start` → `result.{taskId, dispatchId, state: "ready", workspace, effects, residualResources}`.
-  1.4.267 reports the worktree it created as the top-level `workspace`; older hosts only report the
+- `worker-start` → `result.{taskId, dispatchId, state: "ready"}`. On 1.4.267 the created worktree is
+  the top-level `workspace` id and there is no `effects` array; older hosts report it as the
   `worktree` effect's `id`. The driver reads either, and a host that omits both is found by the
   unique comment marker. Exit 0 only for `ready`.
 - `worker-list --run` → `result.{workers[], nextCursor?}` on 1.4.267; older hosts nest the cursor in
@@ -605,7 +605,9 @@ code, the data, and the partial receipt.
   `workspace`, and optional `attention` (category strings) and `outcome`; older rows carry
   `workerState`, `dispatchStatus`, and `projection.{workspace.id, liveness.verdict, attention}`.
   `orca_api.normalise_worker` presents the nested shape to the pump, so a Dispatch is over when
-  `workerState` is `succeeded` or `failed` whichever host answered.
+  `workerState` is `succeeded` or `failed` whichever host answered. The flat `stopped` and
+  `abandoned` states are settled in 1.4.267 and normalise to a failed Dispatch, which is how the
+  nested rows expressed them.
 - `worker-show` → 1.4.267's `waitingOnHuman`: a string names a worker parked on a dialog only a human
   can answer, `"unknown"` means Orca could not look (an older host, an unverifiable worker, or a
   probe that timed out), and absence means the worker is free. Older hosts answer

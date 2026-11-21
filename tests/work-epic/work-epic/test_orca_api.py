@@ -197,6 +197,13 @@ class Workers(unittest.TestCase):
                          {"requiresAction": True, "categories": ["approval"]})
         self.assertFalse(settled(row))
 
+    def test_a_settled_stopped_or_abandoned_row_reads_as_a_failed_dispatch(self):
+        for state in ("stopped", "abandoned"):
+            with self.subTest(state=state):
+                row = normalise_worker({"state": state, "outcome": "failed", "liveness": "exited"})
+                self.assertEqual(row["dispatchStatus"], "failed")
+                self.assertTrue(settled(row))
+
     def test_an_old_nested_row_is_left_alone(self):
         old = {"dispatchId": "d", "workerState": "running", "dispatchStatus": "dispatched",
                "projection": {"workspace": {"id": "w"}, "liveness": {"verdict": "live"},

@@ -504,6 +504,19 @@ class FlatSurface(Scenario):
         self.assertIn("ctx_1:dialog", s["parked"])
         self.assertTrue(any("permission prompt (via hook)" in line for line in self.logs))
 
+    def test_a_flat_surface_adopts_a_worker_started_but_never_recorded(self):
+        w = self.build([21], resume=True)
+        w.runs.append({"id": "run_old", "objective": "work-epic #21"})
+        w.flat = True
+        # The previous process started we-21 and died before writing state.json.
+        w.orca(["orchestration", "worker-start", "--task-title", "we-21 · opencode", "--worktree",
+                "new-child", "--comment", "work-epic · run_old · we-21 · opencode · worker started"])
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        starts = [c[c.index("--task-title") + 1] for c in w.calls_of("orca", "orchestration", "worker-start")]
+        self.assertEqual([t for t in starts if t.startswith("we-")], ["we-21 · opencode"])  # once, not twice
+        self.assertEqual([m["pr"] for m in s["merged"]], [121])
+
 
 def lens(world, role_key):
     """The tests lens the pump put in the reviewer's prompt for one delivery."""
