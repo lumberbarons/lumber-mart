@@ -67,6 +67,7 @@ class World:
         self.script, self.fail_start, self.dirty = {}, set(), set()
         self.calls, self.acked, self.counter, self.sha = [], [], 0, 0
         self.agent_wait = set()
+        self.flat = False  # answer with Orca 1.4.267's flat response shapes
         self.changed, self.specs = {}, []  # files per delivery id; the prompt each agent got
 
     # --- helpers -------------------------------------------------------------
@@ -273,13 +274,27 @@ class World:
             return envelope({"runs": self.runs})
         if cmd == "orchestration run-create":
             self.runs.append({"id": "run_t", "objective": flags["--objective"]})
-            return envelope({"run": self.runs[-1]})
+            run = self.runs[-1]
+            if self.flat:
+                return envelope({"runId": run["id"], "objective": run["objective"]})
+            return envelope({"run": run})
         if cmd == "orchestration run-use":
+            if self.flat:
+                return envelope({"runId": flags["--id"], "objective": "run_t"})
             return envelope({"run": {"id": flags["--id"]}})
         if cmd == "orchestration worker-start":
             return self.worker_start(flags)
         if cmd == "orchestration worker-list":
             self.settle_due()
+            if self.flat:
+                rows = [
+                    {"dispatchId": d, "taskId": w["task"], "runId": "run_t", "state": w["state"],
+                     "liveness": "live" if w["state"] == "running" else "exited",
+                     "terminalState": "active" if w["state"] == "running" else "released",
+                     "workspace": w["wid"], "host": "local",
+                     **({"attention": ["approval"]} if d in self.agent_wait else {})}
+                    for d, w in self.workers.items()]
+                return envelope({"workers": rows, "scope": {"run": "run_t", "source": "flag"}})
             rows = [{"dispatchId": d, "taskId": w["task"], "runId": "run_t", "workerState": w["state"],
                      "dispatchStatus": "completed" if w["state"] != "running" else "dispatched",
                      "projection": {"workspace": {"id": w["wid"]},
@@ -287,7 +302,12 @@ class World:
                     for d, w in self.workers.items()]
             return envelope({"workers": rows, "page": {"hasMore": False, "nextCursor": None}})
         if cmd == "orchestration worker-show":
-            wait = "permission prompt" if flags["--dispatch"] in self.agent_wait else None
+            wait = "permission prompt (via hook)" if flags["--dispatch"] in self.agent_wait else None
+            if self.flat:
+                show = {"dispatchId": flags["--dispatch"], "state": "ready", "liveness": "live"}
+                if wait:
+                    show["waitingOnHuman"] = wait
+                return envelope(show)
             return envelope({"observation": {"status": "working", "agentWait": wait}})
         if cmd == "orchestration worker-release":
             return envelope({"release": "released"})
@@ -325,8 +345,14 @@ class World:
         d = f"ctx_{self.counter}"
         self.workers[d] = {"role": role, "key": key, "agent": agent, "wid": wid, "state": "running",
                            "task": f"task_{self.counter}", "finish": self.t + WORK}
-        return envelope({"runId": "run_t", "taskId": f"task_{self.counter}", "dispatchId": d,
-                         "state": "ready", "effects": effects, "residualResources": []})
+        receipt = {"runId": "run_t", "taskId": f"task_{self.counter}", "dispatchId": d,
+                   "state": "ready", "residualResources": []}
+        if self.flat:
+            if wid:
+                receipt["workspace"] = wid
+        else:
+            receipt["effects"] = effects
+        return envelope(receipt)
 
 
 class FakeFiler:
@@ -457,6 +483,39 @@ class HappyPath(Scenario):
         for phrase in ("worker started", "PR #121 delivered; review pending", "reviewing by claude", "merged"):
             self.assertIn(phrase, text)
         self.assertTrue(all(c.startswith("work-epic · run_t · we-21 · opencode · ") for c in self.comments))
+
+
+class FlatSurface(Scenario):
+    """Orca 1.4.267's flat responses must reach the pump as the shapes it reads."""
+
+    def test_a_flat_surface_still_settles_the_worker_and_starts_the_reviewer(self):
+        w = self.build([21])
+        w.flat = True
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        self.assertEqual([m["pr"] for m in s["merged"]], [121])
+        self.assertEqual(len(self.started("wr")), 1)
+
+    def test_a_flat_attention_row_names_the_interactive_wait(self):
+        w = self.build([21])
+        w.flat = True
+        w.agent_wait.add("ctx_1")
+        s = self.run_pump()
+        self.assertIn("ctx_1:dialog", s["parked"])
+        self.assertTrue(any("permission prompt (via hook)" in line for line in self.logs))
+
+    def test_a_flat_surface_adopts_a_worker_started_but_never_recorded(self):
+        w = self.build([21], resume=True)
+        w.runs.append({"id": "run_old", "objective": "work-epic #21"})
+        w.flat = True
+        # The previous process started we-21 and died before writing state.json.
+        w.orca(["orchestration", "worker-start", "--task-title", "we-21 · opencode", "--worktree",
+                "new-child", "--comment", "work-epic · run_old · we-21 · opencode · worker started"])
+        s = self.run_pump()
+        self.assertEqual(s["status"], "drained")
+        starts = [c[c.index("--task-title") + 1] for c in w.calls_of("orca", "orchestration", "worker-start")]
+        self.assertEqual([t for t in starts if t.startswith("we-")], ["we-21 · opencode"])  # once, not twice
+        self.assertEqual([m["pr"] for m in s["merged"]], [121])
 
 
 def lens(world, role_key):
