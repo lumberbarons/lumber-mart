@@ -1,6 +1,6 @@
 ---
 name: refine-adr
-description: Refine a Proposed ADR by interviewing its decider about its rough edges — drivers that are platitudes, rejected options that are strawmen, consequences with no real downside, invariants nobody could check a diff against, claims resting on Low-confidence research — and writing the answers back into the ADR. Asks at most five targeted questions, each with a recommended answer, and leaves the ADR at proposed. Use whenever a drafted ADR should be sharpened before it is accepted — "refine this ADR", "grill me on ADR 7", "what's weak in this decision record", "tighten this up before approval". Not for writing an ADR (create-adr), accepting one (approve-adr), or one already accepted.
+description: Refine a Proposed ADR by interviewing its decider about its rough edges — drivers that are platitudes, rejected options that are strawmen, consequences with no real downside, invariants nobody could check a diff against, claims resting on Low-confidence research — and writing the answers back into the ADR. Asks at most four targeted questions, each with a recommended answer, and leaves the ADR at proposed. Use whenever a drafted ADR should be sharpened before it is accepted — "refine this ADR", "grill me on ADR 7", "what's weak in this decision record", "tighten this up before approval". Not for writing an ADR (create-adr), accepting one (approve-adr), or one already accepted.
 argument-hint: The ADR to refine — path or number
 ---
 
@@ -92,14 +92,14 @@ worth the user's attention. Drop questions about wording, section order and
 formatting; those belong to the editor.
 
 Rank what is left by impact times uncertainty: how badly a reader goes wrong if the
-gap stays, multiplied by how little the ADR says. Keep the top five.
+gap stays, multiplied by how little the ADR says. Keep the top four.
 
 If nothing survives, say the ADR has no weakness worth an interview and stop. Do not
 invent questions to look useful.
 
 ## 4. Ask
 
-At most **five questions in total** across the whole session. Work them in rounds: a
+At most **four questions in total** across the whole session. Work them in rounds: a
 round is every question whose answer does not depend on another still-open question.
 A question that only makes sense once another is answered waits for a later round.
 Where a round holds several questions, put them to the user together, in one
@@ -206,7 +206,7 @@ start any work the decision implies.
 
 - Asking what another ADR, the research or the code already answers
 - Asking about wording, section order or formatting
-- More than five questions, or inventing the last ones to use the allowance
+- More than four questions, or inventing the last ones to use the allowance
 - Questions that are labels ("Consequences?") rather than something answerable
 - Questions with no recommended answer, or an open essay prompt
 - Judging whether the decision is right, or reversing it as a side effect of a smaller
