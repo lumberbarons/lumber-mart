@@ -15,8 +15,21 @@ REPO = Path(__file__).resolve().parents[3]
 SCRIPTS = REPO / "plugins/work-epic/skills/work-epic/scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from orca_api import (Orca, OrcaError, Proc, find_key, orca_command, parse_envelope,
-                      payload, settled)
+from orca_api import (Orca, OrcaError, Proc, find_key, normalise_show, normalise_worker,
+                      orca_command, parse_envelope, payload, run_id, settled)
+
+LIVE_RUN_CREATE = {"runId": "run_d449e4281c3a", "objective": "shape probe"}
+LIVE_WORKER_ROW = {
+    "dispatchId": "ctx_7bc191e00d99",
+    "taskId": "task_5b7661f0fbb3",
+    "state": "succeeded",
+    "liveness": "exited",
+    "agent": "opencode",
+    "terminal": "term_96847382-6a02-4ec7-bb9e-c99a7fbbbc0e",
+    "terminalState": "released",
+    "workspace": "01e8a165-4724-4cac-a53b-09b4b16bf530::/Users/jim/orca/workspaces/hew/we-371",
+    "host": "local",
+}
 
 
 def ok(result):
@@ -95,6 +108,27 @@ class Executable(unittest.TestCase):
                 orca_command()
 
 
+class Runs(unittest.TestCase):
+    def test_run_create_reads_the_flat_run_id(self):
+        o, _ = orca(ok(LIVE_RUN_CREATE))
+        self.assertEqual(o.run_create("shape probe"), "run_d449e4281c3a")
+
+    def test_run_create_still_reads_the_nested_run(self):
+        o, _ = orca(ok({"run": {"id": "run_old", "objective": "shape probe"}}))
+        self.assertEqual(o.run_create("shape probe"), "run_old")
+
+    def test_run_current_reads_either_shape_and_null(self):
+        o, _ = orca(ok({"runId": "run_new"}), ok({"run": {"id": "run_old"}}), ok({"runId": None}))
+        self.assertEqual(o.run_current(), "run_new")
+        self.assertEqual(o.run_current(), "run_old")
+        self.assertIsNone(o.run_current())
+
+    def test_run_id_helper_tolerates_a_missing_run(self):
+        self.assertEqual(run_id({"runId": "run_new"}), "run_new")
+        self.assertEqual(run_id({"run": {"id": "run_old"}}), "run_old")
+        self.assertIsNone(run_id({}))
+
+
 class Workers(unittest.TestCase):
     def test_start_receipt_takes_the_worktree_from_effects(self):
         receipt = {"runId": "run_1", "taskId": "task_1", "dispatchId": "ctx_1", "state": "ready",
@@ -111,6 +145,13 @@ class Workers(unittest.TestCase):
                             ("--task-title", "we-21 · opencode"), ("--setup", "inherit")):
             self.assertEqual(argv[argv.index(flag) + 1], value)
         self.assertNotIn("--display-name", argv)
+
+    def test_start_receipt_takes_the_flat_workspace(self):
+        receipt = {"runId": "run_1", "taskId": "task_1", "dispatchId": "ctx_1", "state": "ready",
+                   "agent": "opencode", "terminal": "term_1", "workspace": "repo::/wt/we-21"}
+        o, _ = orca(ok(receipt))
+        got = o.worker_start(spec="s", title="t", agent="opencode", worktree="new-child")
+        self.assertEqual(got.worktree, "repo::/wt/we-21")
 
     def test_existing_worktree_receipt_has_no_worktree_effect(self):
         o, _ = orca(ok({"taskId": "t", "dispatchId": "d", "effects": []}))
@@ -130,6 +171,39 @@ class Workers(unittest.TestCase):
         self.assertEqual([w["dispatchId"] for w in o.workers("run_1")], ["a", "b"])
         self.assertIn("--cursor", sh.calls[1])
 
+    def test_workers_follow_the_top_level_next_cursor(self):
+        first = {"workers": [{"dispatchId": "a", "state": "ready"}], "nextCursor": "c1",
+                 "scope": {"run": "run_1", "source": "flag"}}
+        second = {"workers": [{"dispatchId": "b", "state": "succeeded"}],
+                  "scope": {"run": "run_1", "source": "flag"}}
+        o, sh = orca(ok(first), ok(second))
+        got = o.workers("run_1")
+        self.assertEqual([w["dispatchId"] for w in got], ["a", "b"])
+        self.assertEqual(sh.calls[1][sh.calls[1].index("--cursor") + 1], "c1")
+
+    def test_a_settled_flat_row_is_normalised(self):
+        o, _ = orca(ok({"workers": [LIVE_WORKER_ROW], "scope": {"run": "run_1"}}))
+        (row,) = o.workers("run_1")
+        self.assertTrue(settled(row))
+        self.assertEqual(row["workerState"], "succeeded")
+        self.assertEqual(row["dispatchStatus"], "completed")
+        self.assertEqual(row["projection"]["workspace"]["id"], LIVE_WORKER_ROW["workspace"])
+        self.assertEqual(row["projection"]["liveness"]["verdict"], "exited")
+        self.assertNotIn("attention", row["projection"])
+
+    def test_a_flat_attention_list_becomes_requires_action(self):
+        row = normalise_worker({"state": "ready", "liveness": "live", "attention": ["approval"]})
+        self.assertEqual(row["projection"]["attention"],
+                         {"requiresAction": True, "categories": ["approval"]})
+        self.assertFalse(settled(row))
+
+    def test_an_old_nested_row_is_left_alone(self):
+        old = {"dispatchId": "d", "workerState": "running", "dispatchStatus": "dispatched",
+               "projection": {"workspace": {"id": "w"}, "liveness": {"verdict": "live"},
+                              "attention": {"requiresAction": False, "categories": []}}}
+        self.assertEqual(normalise_worker(old), old)
+        self.assertFalse(settled(old))
+
     def test_settled_rows_from_a_live_run(self):
         done = {"workerState": "succeeded", "dispatchStatus": "completed", "terminalState": "released"}
         failed = {"workerState": "failed", "dispatchStatus": "failed"}
@@ -138,6 +212,30 @@ class Workers(unittest.TestCase):
                     "projection": {"liveness": {"verdict": "unverifiable"}}}
         self.assertEqual([settled(r) for r in (done, failed, running, retained)],
                          [True, True, False, True])
+        self.assertTrue(settled(LIVE_WORKER_ROW))
+
+    def test_worker_show_maps_waiting_on_human(self):
+        absent = {"dispatchId": "ctx_a31f0c072478", "taskId": "task_631befbabece",
+                  "runId": "run_d8709d4fdaa6", "state": "ready", "stage": "input_accepted",
+                  "liveness": "live", "activity": "working", "lastActivity": "just now",
+                  "terminal": "term_201469e9-9d3d-447e-ae2d-56597ac571d3",
+                  "terminalState": "active", "workspace": LIVE_WORKER_ROW["workspace"]}
+        unknown = {"dispatchId": "ctx_7bc191e00d99", "taskId": "task_5b7661f0fbb3",
+                   "runId": "run_d8709d4fdaa6", "state": "succeeded", "stage": "settled",
+                   "liveness": "exited", "terminal": LIVE_WORKER_ROW["terminal"],
+                   "terminalState": "released", "workspace": LIVE_WORKER_ROW["workspace"],
+                   "waitingOnHuman": "unknown"}
+        parked = {"dispatchId": "ctx_parked", "state": "ready",
+                  "waitingOnHuman": "permission prompt (via hook)"}
+        o, _ = orca(ok(absent), ok(unknown), ok(parked))
+        self.assertIsNone(o.worker_show("ctx_a31f0c072478").get("observation", {}).get("agentWait"))
+        self.assertIsNone(o.worker_show("ctx_7bc191e00d99").get("observation", {}).get("agentWait"))
+        self.assertEqual(o.worker_show("ctx_parked")["observation"]["agentWait"],
+                         "permission prompt (via hook)")
+
+    def test_worker_show_keeps_the_old_observation(self):
+        old = {"observation": {"agentWait": "permission prompt"}}
+        self.assertEqual(normalise_show(old)["observation"]["agentWait"], "permission prompt")
 
 
 class Mailbox(unittest.TestCase):
