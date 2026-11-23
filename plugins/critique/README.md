@@ -85,6 +85,7 @@ Each skill produces a report with:
 
 - Header: `N files reviewed, M issues found (severity breakdown)`
 - One finding per issue with H3 header, priority tag, location, explanation, and concrete fix
+- For `review-tests`, a `Method:` line under the header saying how the tests were read and what was left out. Its P1 and P2 claims ("this test would still pass if...") are checked by briefly applying the named change to production code, running that one test, and undoing the change; findings whose claim does not hold are dropped
 
 No tables, no passing rows — only actionable findings.
 

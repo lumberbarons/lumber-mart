@@ -11,6 +11,7 @@ This reference shows the expected format and level of detail for a tests review 
 Tests Review for tests/order
 
 3 files reviewed, 4 issues found (1 P1, 2 P2, 1 P3).
+Method: static read, no coverage tool run; mutation check confirmed 3 findings and dropped 1; tests/order/testdata/ skipped as fixtures.
 
 ### 1. [P1] Shared mutable state between test cases
 **Location:** tests/order/service_test.go:34
@@ -50,6 +51,20 @@ Explanation of the test quality problem and rationale for the fix.
 ### Only show issues found — no passing rows
 
 Do not include items that passed review. Start with "N files reviewed, M issues found (severity breakdown)."
+
+### One `Method:` line under the header
+
+Directly under the header, one line stating how the review was done and what it left out. It is
+not a table and not a list of passes. It says, in order and only where applicable:
+
+- how the tests were read: static, or with a named coverage tool's output
+- the mutation check's outcome: findings confirmed, dropped, and unchecked (with the reason, e.g.
+  "2 unchecked: need a database")
+- in-scope paths not reviewed as tests, summarised by directory (fixtures, generated files)
+
+It is present on every report, including one with no findings, where it is what lets "reviewed
+and clean" be told from "reviewed lightly". A dropped finding appears here only as a count; it
+is not a finding and is not in the header count.
 
 ### No tables
 
