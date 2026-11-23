@@ -1,7 +1,7 @@
 {
   "name": "decisions",
   "description": "Skills for researching, deciding, and enforcing: create-research records a question investigated with per-finding confidence and cited sources, create-adr writes a proposed Architectural Decision Record (ADR) in MADR format that cites the research it rests on, refine-adr sharpens it with a short interview, approve-adr reviews it on substance and accepts it as standalone, append-only policy, and review-policy checks code changes against accepted ADRs.",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "author": {
     "name": "lumberbarons"
   }

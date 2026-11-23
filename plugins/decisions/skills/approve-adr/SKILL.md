@@ -38,8 +38,16 @@ ADR="<this skill's directory>/scripts/adr.py"
 ## 1. Find the ADR
 
 Take the path or number you were given. If you were given neither, find the ADR
-directory (`docs/adr/`, then `docs/decisions/`, then `docs/adrs/`), list each ADR with
-its status and ask which — do not guess, and do not reach for the newest.
+directory (`docs/adr/`, then `docs/decisions/`, then `docs/adrs/`) and read each ADR's
+status. Only a `proposed` ADR is a candidate; leave the rest out of the list and out
+of the question:
+
+- **One `proposed` ADR** — that is the target. Name it in a line and carry on; do
+  not ask which, since there is nothing to choose between.
+- **Several** — list just those, with their status, and ask which. Do not guess, and
+  do not reach for the newest.
+- **None** — say there is no proposed ADR to approve and stop. Do not offer an
+  accepted one as an alternative.
 
 Resolve the ADR to an absolute path. The reviewer will read the whole file.
 

@@ -43,7 +43,7 @@ review-policy PR#42             # review a pull request
 review-policy --adr ADR-0007    # review the diff against a single ADR
 ```
 
-If `create-adr` is called without an argument, it asks what decision to record. `refine-adr` and `approve-adr` take a path or number, and list the ADRs with their status and ask when given neither; neither runs automatically after `create-adr`. `create-research` turns a "which should we pick?" request into research on what is true and leaves the choice to `create-adr`; a bare topic ("research caching") gets a short round of questions before anything is written. If `review-policy` is called without an argument, it defaults to the working diff against the repo's base branch.
+If `create-adr` is called without an argument, it asks what decision to record. `refine-adr` and `approve-adr` take a path or number. Given neither, both consider only `proposed` ADRs: they take the only one without asking, ask among several, and stop if there is none; neither runs automatically after `create-adr`. `create-research` turns a "which should we pick?" request into research on what is true and leaves the choice to `create-adr`; a bare topic ("research caching") gets a short round of questions before anything is written. If `review-policy` is called without an argument, it defaults to the working diff against the repo's base branch.
 
 ## Template Structure
 
