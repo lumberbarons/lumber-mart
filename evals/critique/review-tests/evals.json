@@ -18,6 +18,7 @@
         "Does NOT claim ApplyDiscount is uncovered — it is exercised transitively by TestPlaceOrder_AppliesVolumeDiscount",
         "Reports no more than one P1 finding",
         "Report follows REFERENCE.md: an 'N files reviewed, M issues found' header line and H3 findings tagged [P1]/[P2]/[P3] with a Location line",
+        "A single 'Method:' line under the header states how the tests were read and any mutation-check outcome or skipped paths",
         "Every finding carries a concrete, file-readable 'done when' criterion",
         "Total findings do not exceed 10"
       ]
@@ -36,6 +37,7 @@
         "Raises no finding against format.test.ts, which is parametrized and covers its boundaries",
         "Reports no more than one P1 finding",
         "Report follows REFERENCE.md: an 'N files reviewed, M issues found' header line and H3 findings tagged [P1]/[P2]/[P3] with a Location line",
+        "A single 'Method:' line under the header states how the tests were read and any mutation-check outcome or skipped paths",
         "Every finding carries a concrete, file-readable 'done when' criterion",
         "Total findings do not exceed 10"
       ]
@@ -70,6 +72,7 @@
         "If the time.sleep(1) test is flagged at all, it is rated no higher than P3",
         "Reports no more than one P1 finding",
         "Report follows REFERENCE.md: an 'N files reviewed, M issues found' header line and H3 findings tagged [P1]/[P2]/[P3] with a Location line",
+        "A single 'Method:' line under the header states how the tests were read and any mutation-check outcome or skipped paths",
         "Total findings do not exceed 10, with a truncation footer if any were cut"
       ]
     }

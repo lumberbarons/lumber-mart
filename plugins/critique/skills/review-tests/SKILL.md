@@ -113,9 +113,22 @@ Then cap the report at ten. It is a ceiling, not a target: four real findings me
 
 Large reports rarely land as a single PR; they age out or get half-applied. Batches of ten are what people actually do, and re-running after fixes surfaces what only became visible once the pressing things were gone. The cap also works against the "asked to find things, so finds things" reflex — a finding that wouldn't make the top ten probably isn't worth the reader's attention.
 
+## Confirm the claim, where you can
+
+The reviewers read statically, so every P1 and P2 is still a hypothesis: *"this test would still pass if `<change>`."* A check that was never seen to fail proves nothing, and that includes the reviewer's own claim. Once reviewers return and findings are collapsed, the calling agent (or the session itself under `--inline`) tests each P1 or P2 claim before the cap is applied, so a finding that falls away frees its slot. Run it once per finding, on one representative instance of a collapsed pattern.
+
+1. **Preconditions.** The checkout holds the code that was reviewed, the production file to be edited has no uncommitted changes, and the test can run alone (one test or file, not the suite). If any fails, skip the check: keep the finding and count it unchecked.
+2. **Mutate.** Make the edit the claim names. For a P1 with no named edit, remove the body or invert the main condition of the code the test targets. Run only that test, then restore the file with `git checkout -- <path>` and confirm `git diff --quiet -- <path>`. Restore before anything else, including after a failure. A scratch edit never survives this step, and no test is edited to make it work.
+3. **Read the result.**
+   - Still green — the claim holds. Add `Confirmed by mutation: <edit>` to the finding's explanation.
+   - Red — the claim is false. Drop the finding, or re-grade it to what survives (the central change is caught and only a peripheral one slips past: P3).
+   - Red or unrunnable for an unrelated reason (build error, missing service) — unchecked.
+
+This is the one place a test review edits production code, and only as an edit it undoes. It does not make this a repair: a production defect it exposes is still reported for a code review, per REVIEW-MODE.md.
+
 ## Output
 
-Produce a report following the structure in [REFERENCE.md](REFERENCE.md). In fix mode,
+Produce a report following the structure in [REFERENCE.md](REFERENCE.md), including its one-line `Method:` statement of how the tests were read and what was left out. In fix mode,
 report unresolved findings in that format and summarize verified repairs separately per
 `REVIEW-MODE.md`. Each finding must include:
 
