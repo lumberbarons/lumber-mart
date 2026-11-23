@@ -30,9 +30,16 @@ LIGHTSPEC="<this skill's directory>/scripts/lightspec.py"
 
 ## 1. Find the spec
 
-Take the path or number you were given. If you were given neither, list what is
-under `specs/` with each one's current status and ask which — do not guess, and
-do not reach for the newest.
+Take the path or number you were given. If you were given neither, read the
+status of each spec under `specs/`. Only a `Draft` spec is a candidate; leave the
+rest out of the list and out of the question:
+
+- **One `Draft` spec** — that is the target. Name it in a line and carry on; do
+  not ask which, since there is nothing to choose between.
+- **Several** — list just those, with their status, and ask which. Do not guess,
+  and do not reach for the newest.
+- **None** — say there is no Draft spec to approve and stop. Do not offer an
+  `Accepted` one as an alternative.
 
 Resolve the spec to an absolute path. The reviewer will read the whole file.
 
