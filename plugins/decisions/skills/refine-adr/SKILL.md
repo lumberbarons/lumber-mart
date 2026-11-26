@@ -1,6 +1,6 @@
 ---
 name: refine-adr
-description: Refine a Proposed ADR by interviewing its decider about its rough edges — drivers that are platitudes, rejected options that are strawmen, consequences with no real downside, invariants nobody could check a diff against, claims resting on Low-confidence research — and writing the answers back into the ADR. Asks at most four targeted questions, each with a recommended answer, and leaves the ADR at proposed. Use whenever a drafted ADR should be sharpened before it is accepted — "refine this ADR", "grill me on ADR 7", "what's weak in this decision record", "tighten this up before approval". Not for writing an ADR (create-adr), accepting one (approve-adr), or one already accepted.
+description: Refine a Proposed ADR by interviewing its decider about its rough edges — drivers that are platitudes, rejected options that are strawmen, consequences with no real downside, invariants nobody could check a diff against, claims resting on Low-confidence research, several decisions or a design bundled into one record — and writing the answers back into the ADR. Asks at most four targeted questions, each with a recommended answer, and leaves the ADR at proposed. Use whenever a drafted ADR should be sharpened before it is accepted — "refine this ADR", "grill me on ADR 7", "what's weak in this decision record", "tighten this up before approval". Not for writing an ADR (create-adr), accepting one (approve-adr), or one already accepted.
 argument-hint: The ADR to refine — path or number
 ---
 
@@ -90,7 +90,8 @@ or missing. Do not print the map.
 | Consequences | Are the negatives real costs, and does each risk say how it would be noticed? An ADR with no downside has not been thought through. |
 | Invariants | What must future code do, or never do? Could `review-policy` cite a line here to flag a violation? |
 | Scope | Which part of the system does it govern, and what would a reader wrongly assume it covers? |
-| Conflicts | Does it contradict, duplicate or quietly narrow an accepted ADR — and should it name that one in `supersedes` or `related`? |
+| Size | Is it one decision? Could a part of the outcome be reversed while the rest stands — then it is a second decision. Does it state design detail as policy — interfaces, file layouts, exit codes, sequences, test plans — that belongs in the spec? |
+| Conflicts | Does it contradict, duplicate or quietly narrow an accepted ADR — and should it name that one in `supersedes`, `amends` or `related`? Does it supersede a whole ADR to change one part, or adopt another ADR "by reference with exceptions", where `amends` would say what it replaces? |
 | Evidence | Does a driver or consequence rest on a `Low`-confidence finding, a `draft` or `superseded` research document, or a claim nobody checked? |
 | Revisit | What would make it stale, and would anyone notice? |
 
@@ -101,6 +102,13 @@ formatting; those belong to the editor.
 
 Rank what is left by impact times uncertainty: how badly a reader goes wrong if the
 gap stays, multiplied by how little the ADR says. Keep the top four.
+
+A Size weakness ranks first when there is one. Every other lens has more to find in
+an ADR that holds two decisions or a design, and settling those gaps one by one adds
+text that then needs its own review; taking the extra material out removes them
+together. Ask it as a choice the user can accept in one word: "Should the transport
+choice move to its own ADR, and the file layout to the spec?" Then do not spend
+questions on gaps inside the material that answer would remove.
 
 If nothing survives, say the ADR has no weakness worth an interview and stop. Do not
 invent questions to look useful.
@@ -159,24 +167,34 @@ After each round, edit the ADR so the answer lives where a reader will look for 
 |---|---|
 | What the decision does or does not cover | Context and Problem Statement, or Decision Outcome, in a sentence a reader cannot miss |
 | A driver that was vague | Replace it with the number, constraint or path; reword any option or outcome that leaned on the old wording |
-| Why an option lost | Considered Options, and that option's Pros and Cons, tied to the driver it failed |
-| An option that was missing | Considered Options and Pros and Cons, with a reason it lost — adding it is not re-deciding unless it wins |
+| Why an option lost | Decision Outcome, tied to the driver it failed (and that option's Pros and Cons, if the ADR keeps that section) |
+| An option that was missing | Considered Options, with the reason it lost in Decision Outcome — adding it is not re-deciding unless it wins |
+| A second decision bundled in | Remove it from this ADR — outcome, consequences, invariants and all — and list it in your report as an ADR for `create-adr` to write. Do not write that ADR yourself |
+| Design detail stated as policy | Remove it, keeping only an invariant the decision needs, and list what you removed in your report as belonging in the spec |
+| A part of an older ADR this one replaces | `amends`, with the replaced lines quoted in Decision Outcome; `supersedes` only if the whole of the older decision is replaced |
 | A cost or risk | Consequences, with how it would be noticed |
 | A rule future code must follow | Implementation Notes, phrased so a diff can be checked against it |
 | A guess that was listed | Remove the hedge and state the fact where it applies; keep it only if still unconfirmed |
-| A relationship to another ADR | `related`, or `supersedes` (the old ADR is only marked superseded when this one is accepted) |
+| A relationship to another ADR | `related`, `amends` or `supersedes` (the old ADR is only marked when this one is accepted) |
 | A term | One name, everywhere, replacing the other |
 
-Four rules keep the edit honest:
+These rules keep the edit honest:
 
+- **Settle by removing where you can.** When a gap can be closed by narrowing or
+  deleting the claim that opened it, do that instead of adding a sentence, a carve-out
+  or an invariant that qualifies it. Every added rule is one more thing a reviewer can
+  find wrong and one more place for two statements to disagree. Add text only when the
+  decision needs it to be checked.
 - **Replace, never accumulate.** If the answer contradicts an earlier line, change
   that line. An ADR that says both the old and the new rule is worse than either.
 - **Touch only what an answer settled.** Do not reword for taste, reorder sections or
   tidy things nobody asked about. The user is reviewing a diff caused by their
   answers.
 - **If the chosen option changes, change everything that rested on it.** Decision
-  Outcome, Consequences, Pros and Cons and Implementation Notes must agree before
-  you run `check`; a half-reversed ADR is the worst result of this skill.
+  Outcome, Consequences, Implementation Notes (and Pros and Cons, if the ADR keeps
+  it) must agree before you run `check`; a half-reversed ADR is the worst result of
+  this skill. The same holds for any rule an answer changed: find every place the ADR
+  states it, and make them agree or keep only one.
 - **No forward references.** Do not write spec, plan or task paths into an ADR; specs
   cite ADRs, never the reverse, because specs are renamed and archived.
 
@@ -200,6 +218,8 @@ Give the path and what changed:
 - Each question with the answer that was settled on, one line apiece
 - The sections touched
 - Anything recorded as an assumption because the user delegated it
+- **Moved out**: each decision you removed as one for its own ADR, and the design
+  detail you removed as belonging in the spec, so none of it is lost
 - **Deferred**: weaknesses you ranked but did not ask because the limit was reached,
   or because the user stopped early, each with a line on why it matters. The user
   can run the skill again to take them on
@@ -221,5 +241,10 @@ start any work the decision implies.
   answer; that is the decider's call, and `approve-adr`'s question
 - Adding a section, or a spec or task path, to an ADR
 - Leaving the old text beside the new answer
+- Answering a gap with a caveat, a carve-out or a new invariant when narrowing or
+  removing the claim would settle it
+- Spending questions on gaps inside a second decision or design detail that a Size
+  answer would take out of the ADR
+- Writing the split-off ADR or the spec yourself; list them for the user instead
 - Rewording, reordering or tightening prose that no answer touched
 - Moving the status or date, or running approve-adr as a follow-on step

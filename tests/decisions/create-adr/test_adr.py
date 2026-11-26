@@ -131,7 +131,7 @@ class TemplateMatchesChecker(unittest.TestCase):
         body = next(i for i, line in enumerate(lines) if line == "---" and i > 0) + 1
         # The template's body holds no link and no code span: every `[` in it is a blank.
         blanks = {n for n, line in enumerate(lines, 1) if n > body and "[" in line}
-        self.assertGreater(len(blanks), 15)
+        self.assertGreater(len(blanks), 10)
         reported = {
             int(line.split(":")[1])
             for line in problems(scaffold(), "0001-use-x.md")
@@ -181,12 +181,41 @@ class FrontmatterRules(unittest.TestCase):
     def test_superseded_by_on_live_adr(self) -> None:
         self.assertTrue(any("should be superseded" in p for p in self.swap("superseded-by: []", "superseded-by: [ADR-0003]")))
 
+    def test_amendment_keys_are_optional(self) -> None:
+        # ADRs written before amendments existed carry neither key.
+        self.assertNotIn("amends:", FILLED)
+        self.assertEqual(problems(FILLED), [])
+
+    def test_amends_must_name_adr_ids(self) -> None:
+        found = self.swap("superseded-by: []", "superseded-by: []\namends: [rubbish]")
+        self.assertTrue(any("`amends` entries must look like ADR-0001" in p for p in found))
+
+    def test_amends_must_not_name_itself(self) -> None:
+        found = self.swap("superseded-by: []", "superseded-by: []\namends: [ADR-0004]")
+        self.assertTrue(any("`amends` lists the document itself" in p for p in found))
+
+    def test_amended_by_on_a_proposed_adr(self) -> None:
+        found = self.swap("superseded-by: []", "superseded-by: []\namended-by: [ADR-0003]")
+        self.assertTrue(any("only an accepted ADR can be amended" in p for p in found))
+
 
 class BodyRules(unittest.TestCase):
     def test_missing_section(self) -> None:
         text = FILLED.replace("## Implementation Notes", "## Notes")
         found = problems(text)
         self.assertTrue(any("missing section `## Implementation Notes`" in p for p in found))
+
+    def test_pros_and_cons_is_optional(self) -> None:
+        start = FILLED.index("## Pros and Cons of the Options")
+        end = FILLED.index("## Implementation Notes")
+        self.assertEqual(problems(FILLED[:start] + FILLED[end:]), [])
+
+    def test_pros_and_cons_is_still_held_in_order(self) -> None:
+        start = FILLED.index("## Pros and Cons of the Options")
+        end = FILLED.index("## Implementation Notes")
+        block = FILLED[start:end]
+        moved = (FILLED[:start] + FILLED[end:]).replace("## References", block + "## References")
+        self.assertTrue(any("out of order" in p for p in problems(moved)))
 
     def test_project_section_is_allowed(self) -> None:
         text = FILLED.replace("## References", "## Rollout\n\nBehind a flag.\n\n## References")
@@ -219,6 +248,40 @@ class BodyRules(unittest.TestCase):
     def test_headings_inside_a_fence_are_not_sections(self) -> None:
         text = FILLED.replace("- Good: already operated", "```\n## Not A Section\n```")
         self.assertEqual(problems(text), [])
+
+
+class SizeWarning(unittest.TestCase):
+    def long(self, words: int) -> str:
+        filler = " ".join(["word"] * words)
+        return FILLED.replace(
+            "The ledger needs ordered, replayable events and the team already runs Postgres.",
+            filler,
+        )
+
+    def test_body_words_leaves_out_frontmatter_code_and_references(self) -> None:
+        base = adr.body_words(FILLED)
+        padded = FILLED.replace(
+            "- [Load test](https://example.com/load-test) — shows 22 ms p99",
+            "- [Load test](https://example.com/load-test) — shows 22 ms p99 " + " ".join(["ref"] * 50),
+        ).replace("## Implementation Notes\n", "## Implementation Notes\n\n```\n" + " ".join(["code"] * 50) + "\n```\n")
+        self.assertEqual(adr.body_words(padded), base)
+
+    def test_a_long_adr_warns_on_stderr_and_still_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(Path(tmp), "0004-use-postgres.md", self.long(adr.WORD_WARNING + 50))
+            code, out, err = run("check", str(path))
+        self.assertEqual((code, out.strip()), (0, "ok"))
+        self.assertIn("warning:", err)
+        self.assertIn("more than one decision", err)
+
+    def test_a_short_adr_does_not_warn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(Path(tmp), "0004-use-postgres.md", FILLED)
+            code, _, err = run("check", str(path))
+        self.assertEqual((code, err), (0, ""))
+
+    def test_the_template_is_well_under_the_limit(self) -> None:
+        self.assertLess(adr.body_words(scaffold()), adr.WORD_WARNING // 2)
 
 
 def write(directory: Path, name: str, text: str) -> Path:
@@ -366,6 +429,57 @@ class Lifecycle(unittest.TestCase):
         code, out, _ = run("backlinks", str(path))
         self.assertEqual((code, out.strip()), (0, "nothing to do"))
         self.assertEqual(snapshot, {p: p.read_text(encoding="utf-8") for p in self.root.rglob("*.md")})
+
+    def amending_adr(self, amends: str = "[ADR-0002]") -> Path:
+        text = FILLED.replace("superseded-by: []", f"superseded-by: []\namends: {amends}\namended-by: []", 1)
+        return write(self.adrs, "0004-use-postgres.md", text)
+
+    def test_supersedes_and_amends_cannot_share_an_adr(self) -> None:
+        self.old_adr()
+        text = FILLED.replace("supersedes: []", "supersedes: [ADR-0002]").replace(
+            "superseded-by: []", "superseded-by: []\namends: [ADR-0002]", 1
+        )
+        path = write(self.adrs, "0004-use-postgres.md", text)
+        code, out, _ = run("check", str(path))
+        self.assertEqual(code, 1)
+        self.assertIn("in both `supersedes` and `amends`", out)
+
+    def test_accept_refuses_to_amend_a_proposed_adr(self) -> None:
+        self.old_adr(status="proposed")
+        path = self.amending_adr()
+        code, out, _ = run("status", str(path), "accepted")
+        self.assertEqual(code, 1)
+        self.assertIn("only an accepted ADR can be amended", out)
+
+    def test_backlinks_amend_adds_amended_by_and_keeps_the_old_adr_binding(self) -> None:
+        old = self.old_adr()
+        before = old.read_text(encoding="utf-8")
+        path = self.amending_adr()
+        self.assertEqual(run("status", str(path), "accepted")[0], 0)
+        code, out, _ = run("backlinks", str(path))
+        self.assertEqual(code, 0, out)
+        self.assertIn("amended-by + ADR-0004", out)
+        # The old ADR predates the optional keys: the line is inserted after
+        # superseded-by and nothing else changes.
+        self.assertEqual(
+            old.read_text(encoding="utf-8"),
+            before.replace("superseded-by: []\n", "superseded-by: []\namended-by: [ADR-0004]\n", 1),
+        )
+        self.assertEqual(run("check", str(old))[0], 0)
+
+    def test_backlinks_amend_appends_to_an_existing_list(self) -> None:
+        text = FILLED.replace("ADR-0004", "ADR-0002").replace("status: proposed", "status: accepted").replace(
+            "superseded-by: []", "superseded-by: []\namends: []\namended-by: [ADR-0003]", 1
+        )
+        old = write(self.adrs, "0002-use-dynamo.md", text)
+        write(self.adrs, "0003-x.md", FILLED.replace("ADR-0004", "ADR-0003").replace("status: proposed", "status: accepted"))
+        path = self.amending_adr()
+        run("status", str(path), "accepted")
+        run("backlinks", str(path))
+        self.assertIn("amended-by: [ADR-0003, ADR-0004]", old.read_text(encoding="utf-8"))
+        snapshot = old.read_text(encoding="utf-8")
+        self.assertEqual(run("backlinks", str(path))[1].strip(), "nothing to do")
+        self.assertEqual(old.read_text(encoding="utf-8"), snapshot)
 
     def test_backlinks_need_an_accepted_adr(self) -> None:
         path = self.new_adr()

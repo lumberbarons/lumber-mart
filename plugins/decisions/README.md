@@ -49,15 +49,24 @@ If `create-adr` is called without an argument, it asks what decision to record. 
 
 Every ADR follows MADR conventions:
 
-- **Frontmatter** — `id`, `title`, `status` (`proposed`, `accepted` or `superseded`), `date`, `deciders`, `supersedes`, `superseded-by`, `related`, `research`, `tags`
+- **Frontmatter** — `id`, `title`, `status` (`proposed`, `accepted` or `superseded`), `date`, `deciders`, `supersedes`, `superseded-by`, `amends`, `amended-by`, `related`, `research`, `tags`
 - **Context and Problem Statement** — forces in play, constraints, the problem
 - **Decision Drivers** — the criteria that matter
 - **Considered Options** — options under evaluation, with one-line summaries
-- **Decision Outcome** — which option won, and why against the drivers
+- **Decision Outcome** — the one decision, in a sentence a change can be checked against; which option won, and the driver each rejected option failed
 - **Consequences** — positive, negative, and risks accepted
-- **Pros and Cons of the Options** — per-option analysis
-- **Implementation Notes** — how the decision cascades into code and operational policy
+- **Implementation Notes** — the invariants future code must keep, each checkable against a diff, and what would prompt a revisit
 - **References** — links to discussions, PRs, prior ADRs, and the research the decision rests on
+
+A per-option **Pros and Cons of the Options** section is optional, as in MADR: the checker accepts it between Consequences and Implementation Notes for projects that keep it, but the template leaves it out so that the reasons an option lost are stated once, in the Decision Outcome.
+
+## One decision per ADR
+
+An ADR records one decision: what was chosen over what, for which reasons, at what cost, and the invariants future code must keep. If part of the outcome could be reversed while the rest stands, it is a second decision and gets its own ADR. How the decision is built (interfaces, file layouts, sequences, test plans) belongs in the spec that cites it, because everything in an accepted ADR is binding policy that only a new ADR can change. `create-adr` scopes each ADR this way before writing, `refine-adr` asks first about anything bundled in, and `approve-adr` sends back an ADR that holds more, with the fix being to cut. `adr.py check` warns, without failing, when a body runs past a page or two.
+
+## Superseding and amending
+
+When a new decision replaces an earlier one whole, it `supersedes` it: on acceptance the old ADR becomes `superseded` and stops binding. When it replaces only part of an earlier ADR, typically one that bundled several decisions, it `amends` it and quotes the lines it replaces: on acceptance the old ADR stays `accepted`, gains `amended-by`, and keeps binding apart from those lines. An ADR never supersedes a whole record and then adopts the rest of it back by reference, which would leave binding policy inside a document marked superseded.
 
 ## ADR Directory Convention
 
@@ -88,7 +97,7 @@ Research is cited only when its status is `complete`; `superseded` research is f
 
 ## Lifecycle
 
-`create-adr` writes the ADR as `proposed`, which is not policy: `review-policy` ignores it and nothing else is edited. `refine-adr` is an optional interview that sharpens it. `approve-adr` is the gate: a fresh, read-only subagent reviews it without the conversation that wrote it, and only on an approving verdict does the calling agent accept it. Acceptance moves `status` and `date`, marks any ADR it `supersedes` as `superseded` (naming this one in `superseded-by`), adds this ADR's id to each cited research document's `related`, updates the index and registers it. Both steps run only because a person asked; an author who approves their own work has not been reviewed. Once accepted an ADR is append-only: a changed mind is a new ADR that supersedes it.
+`create-adr` writes the ADR as `proposed`, which is not policy: `review-policy` ignores it and nothing else is edited. `refine-adr` is an optional interview that sharpens it. `approve-adr` is the gate: a fresh, read-only subagent reviews it without the conversation that wrote it, and only on an approving verdict does the calling agent accept it. Acceptance moves `status` and `date`, marks any ADR it `supersedes` as `superseded` (naming this one in `superseded-by`), names this one in the `amended-by` of any ADR it `amends`, adds this ADR's id to each cited research document's `related`, updates the index and registers it. Both steps run only because a person asked; an author who approves their own work has not been reviewed. Once accepted an ADR is append-only: a changed mind is a new ADR that supersedes it, or amends the part that changed.
 Policy reviews use parallel reviewers when delegation is available and review the same ADRs sequentially when it is not.
 
 ## Bundled Resources
@@ -101,7 +110,7 @@ ADR scaffolding requires `bash` and `jq` on PATH. Policy diff reviews require
 | Script | Language | Purpose |
 |--------|----------|---------|
 | `init-adr.sh` | Bash | Create an ADR file from the MADR template with auto-numbered ID and today's date |
-| `adr.py` | Python (stdlib) | `check` validates an ADR against the template (`--ready` adds what acceptance needs); `status` accepts a proposed ADR; `backlinks` marks superseded ADRs and links cited research back |
+| `adr.py` | Python (stdlib) | `check` validates an ADR against the template (`--ready` adds what acceptance needs) and warns when one runs long; `status` accepts a proposed ADR; `backlinks` marks superseded and amended ADRs and links cited research back |
 | `research.py` | Python (stdlib) | `new` writes a numbered research skeleton; `check` validates a filled document |
 
 ### Assets

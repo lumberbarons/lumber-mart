@@ -30,10 +30,16 @@ at the repo root, so edit the create-adr copy and re-run the sync. The tests in
 `tests/decisions/create-adr/test_adr.py` pin the template to the checker (a fresh scaffold must
 fail the check for its placeholders and the empty `deciders` list and nothing else); run them when
 changing either. Statuses (`proposed`, `accepted`, `superseded`) are a closed vocabulary.
+Replacing part of an ADR is `amends`/`amended-by`, not a status: the amended ADR stays
+`accepted`. Those two keys are optional in the checker, because ADRs written before they
+existed lack them, and `backlinks` inserts `amended-by` into such an ADR when it is amended.
+`Pros and Cons of the Options` is likewise optional and held in order only when present.
+The size warning in `check` goes to stderr and never fails the check, so gates that look for
+`ok` are unaffected.
 
 `create-adr` writes a `proposed` ADR and edits nothing else. Acceptance is what makes an ADR
 bind, so everything that makes it bind happens in `approve-adr`, and only there: moving the status,
-marking the ADRs it supersedes, linking cited research back, the index entry and the registration in
+marking the ADRs it supersedes or amends, linking cited research back, the index entry and the registration in
 the agent instructions. `approve-adr` must never run automatically after `create-adr`, and its
 substance review runs in a fresh, read-only subagent with no inherited conversation. `refine-adr`
 edits a proposed ADR on the user's answers but never moves its status.
