@@ -6,6 +6,8 @@ date: YYYY-MM-DD
 deciders: []
 supersedes: []
 superseded-by: []
+amends: []
+amended-by: []
 related: []
 research: []
 tags: []
@@ -15,11 +17,11 @@ tags: []
 
 ## Context and Problem Statement
 
-[What forces are at play? What constraints exist? What problem does this decision solve? Two to five sentences — enough for a future reader (human or agent) to understand the situation without needing to reconstruct it.]
+[What forces are at play, what constraints exist, and what single question this record answers. Two to five sentences — enough for a future reader (human or agent) to understand the situation without needing to reconstruct it.]
 
 ## Decision Drivers
 
-- [Driver — e.g., "must support offline-first clients"]
+- [Driver specific to this project — e.g., "p99 read latency under 30 ms on the checkout path"]
 - [Driver — e.g., "operational cost ceiling of $X/month"]
 - [Driver — e.g., "team has no Kafka experience"]
 
@@ -33,7 +35,7 @@ tags: []
 
 Chosen option: **[Option X]**
 
-[Rationale — which drivers tipped the balance, and why the rejected options fell short. Be specific; a reader should be able to tell whether a change in drivers would invalidate this decision.]
+[The one decision, in a sentence a change can be checked against. Then which drivers tipped the balance, and, for each rejected option, the driver it failed. Say each thing once; Consequences and Implementation Notes do not restate it.]
 
 ## Consequences
 
@@ -49,29 +51,9 @@ Chosen option: **[Option X]**
 
 - [What could go wrong; how we'd notice; what we'd do]
 
-## Pros and Cons of the Options
-
-### [Option A]
-
-- Good: [...]
-- Bad: [...]
-- Neutral: [...]
-
-### [Option B]
-
-- Good: [...]
-- Bad: [...]
-- Neutral: [...]
-
-### [Option C]
-
-- Good: [...]
-- Bad: [...]
-- Neutral: [...]
-
 ## Implementation Notes
 
-[How this decision cascades into code and operational policy. Describe the modules or services affected, the invariants future changes must respect, the migration path if this ADR supersedes an earlier one, and any leading indicators that would prompt revisiting. Do not list spec paths here — specs that inherit this decision cite it from their own frontmatter.]
+[The invariants future changes must respect, each one a reviewer could cite against a diff, and the conditions that would prompt revisiting this decision. How to build it — interfaces, file layouts, sequences, error handling, test plans — belongs in the spec that cites this ADR, not here.]
 
 ## References
 

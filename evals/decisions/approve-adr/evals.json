@@ -1,0 +1,41 @@
+{
+  "skill_name": "approve-adr",
+  "evals": [
+    {
+      "id": 0,
+      "name": "bloated-proposal",
+      "prompt": "Repo at {REPO}. Approve ADR 2.",
+      "setup": "Overlay fixtures/bloated-proposal on the jobqueue fixture: a proposed ADR-0002 that decides move-then-acknowledge but also bundles moving dead letters to Postgres, a requeue CLI with exit codes, and heartbeat and reaper timings that contradict each other (a 45 s heartbeat with a 30 s TTL). It states the attempt limit as 5 in the Decision Outcome and keeps MAX_RETRIES at 3 in the Implementation Notes.",
+      "expected_output": "Verdict: Send back. The lead finding is about scope: the Postgres dead-letter move is a second decision for its own ADR, and the reaper, heartbeat, attempt and CLI detail belong in the spec. The heartbeat/TTL contradiction is routed to the spec rather than asked to be fixed inside the ADR. The objections ask for material to be removed, not for caveats to be added.",
+      "files": [
+        "../create-research/fixtures/jobqueue",
+        "fixtures/bloated-proposal"
+      ],
+      "assertions": [
+        "The verdict is Send back",
+        "The first finding is about scope: the ADR bundles a second decision or design detail that should leave it",
+        "The findings name moving dead letters to Postgres as a separate decision",
+        "The findings say the heartbeat/reaper/attempt/CLI detail belongs in the spec",
+        "If the 45 s heartbeat versus 30 s TTL conflict is mentioned, it is routed to the spec or folded into the scope finding, not raised as its own blocking finding to be corrected in the ADR",
+        "No blocking finding asks for a caveat, carve-out or new invariant to be added to the ADR",
+        "There are at most three blocking findings"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "tight-proposal",
+      "prompt": "Repo at {REPO}. Approve ADR 2.",
+      "setup": "Overlay fixtures/tight-proposal on the jobqueue fixture: a proposed ADR-0002 of about 600 words recording only move-then-acknowledge, with its drivers, real rejected options, disclosed costs, two checkable invariants, and the current BLPOP violation disclosed.",
+      "expected_output": "Verdict: Approve. The reviewer does not send back for scope or ask for design detail to be added.",
+      "files": [
+        "../create-research/fixtures/jobqueue",
+        "fixtures/tight-proposal"
+      ],
+      "assertions": [
+        "The verdict is Approve",
+        "No finding asks for design detail (orphan recovery mechanism, timings, commands) to be added to the ADR",
+        "The reviewer says what it checked the ADR against (ADR-0001, the queue code)"
+      ]
+    }
+  ]
+}

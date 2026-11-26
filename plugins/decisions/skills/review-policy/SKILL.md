@@ -40,7 +40,7 @@ There are four categories of finding, and they are **not** interchangeable:
 3. **Drift** — the change moves the codebase toward a rejected option without crossing the line. Often a P3 — the author may not realize the path they're on. Example: ADR chose Postgres for the event store and rejected DynamoDB; the change introduces a new DynamoDB-backed store "just for this feature".
 4. **Driver shift** — the change reveals that one of the ADR's decision drivers no longer holds. Not a complaint about the change; a signal that the *ADR* is a candidate for revisit. Example: ADR-0003 cited "team has no Kafka experience" as a driver; the change is by a team member who just shipped a Kafka integration. The ADR's premise has eroded.
 
-Only **accepted** ADRs bind. `proposed` ADRs are not yet policy; `superseded` ones are history. Ignore both unless the user explicitly asks.
+Only **accepted** ADRs bind. `proposed` ADRs are not yet policy; `superseded` ones are history. Ignore both unless the user explicitly asks. An *amended* ADR is still accepted and still binds, apart from what its amendment replaced (see Step 2).
 
 Be honest about ambiguity. If the ADR is vague on the point the change touches, say so — "ADR-0007 does not speak to this case; flagging as a judgement call, not a violation." Hallucinated ADR intent is worse than no finding.
 
@@ -69,12 +69,12 @@ Read every ADR file in the ADR directory. For each, extract:
 
 - `id`, `title`, `status`
 - `tags`
-- `supersedes`, `superseded-by`
+- `supersedes`, `superseded-by`, `amends`, `amended-by`
 - The Decision Outcome (chosen option) and Considered Options (rejected ones)
 - The Decision Drivers
 - The Consequences (especially "Negative" — these are the invariants the ADR accepted and expects code to respect)
 
-Filter to ADRs with `status: accepted`. Do not bind against `proposed` or `superseded`. If the user passed an ADR filter (specific id or tag), apply it now.
+Filter to ADRs with `status: accepted`. Do not bind against `proposed` or `superseded`. An accepted ADR with `amended-by` still binds, except for the lines each accepted amending ADR quotes as replaced: read the amendment alongside it, and where the two disagree the amendment governs. Cite the amendment for anything it replaced. If the user passed an ADR filter (specific id or tag), apply it now, and bring in the amendments of any ADR it selects.
 
 ### Step 3 — Score ADR relevance to the change
 

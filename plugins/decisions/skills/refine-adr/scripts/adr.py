@@ -8,15 +8,18 @@
 `check` re-reads an ADR and reports every way it departs from the template that
 `init-adr.sh` scaffolds, one problem per line, exiting 1 if any. With `--ready` it
 also holds the document to what accepting it requires: still `proposed`, every ADR
-it supersedes accepted, every research document it cites `complete`.
+it supersedes or amends accepted, every research document it cites `complete`. A
+body long enough to suggest more than one decision is a warning on stderr, never a
+failure: length is a prompt to look, and the judgment belongs to the reviewer.
 
 `status` prints an ADR's status. Given `accepted` it moves a `proposed` ADR there,
 and only if it passes `check --ready`, so approving an ADR that does not hold
 together cannot happen because the approver forgot to look.
 
 `backlinks` applies the edges acceptance creates on other documents: each ADR this
-one supersedes becomes `superseded` and names it in `superseded-by`, and each
-research document it cites gains its id in `related`. It is safe to run twice.
+one supersedes becomes `superseded` and names it in `superseded-by`, each ADR it
+amends stays `accepted` and names it in `amended-by`, and each research document it
+cites gains its id in `related`. It is safe to run twice.
 
 The template in assets/adr-template.md is the only definition of the format; check
 is the only thing that enforces it. The test suite scaffolds a fresh ADR and asserts
@@ -33,7 +36,20 @@ import re
 import sys
 from pathlib import Path
 
+# The template's sections, in order. Each says something once; the reasons an option
+# lost live in Decision Outcome, so a per-option Pros and Cons section is optional (as
+# in MADR) and checked for position only when an ADR keeps one.
 SECTIONS = (
+    "Context and Problem Statement",
+    "Decision Drivers",
+    "Considered Options",
+    "Decision Outcome",
+    "Consequences",
+    "Implementation Notes",
+    "References",
+)
+OPTIONAL_SECTIONS = ("Pros and Cons of the Options",)
+SECTION_ORDER = (
     "Context and Problem Statement",
     "Decision Drivers",
     "Considered Options",
@@ -56,8 +72,15 @@ FRONTMATTER_KEYS = (
     "research",
     "tags",
 )
-LIST_KEYS = ("deciders", "supersedes", "superseded-by", "related", "research", "tags")
-ADR_ID_LIST_KEYS = ("supersedes", "superseded-by", "related")
+# Written by the template since amendments existed; ADRs from before then lack them,
+# and an absent key means an empty list.
+OPTIONAL_KEYS = ("amends", "amended-by")
+LIST_KEYS = ("deciders", "supersedes", "superseded-by", "amends", "amended-by", "related", "research", "tags")
+ADR_ID_LIST_KEYS = ("supersedes", "superseded-by", "amends", "amended-by", "related")
+
+# Nygard's one or two pages. Past this an ADR usually carries a second decision, or
+# design detail that belongs in the spec that cites it.
+WORD_WARNING = 1200
 
 # proposed: written, not yet policy. accepted: policy, which review-policy holds
 # code to. superseded: history, replaced by a later ADR. A closed vocabulary,
@@ -219,7 +242,7 @@ def check_frontmatter(
         if key not in meta:
             problems.add(1, f"frontmatter is missing `{key}`")
     for key in meta:
-        if key not in FRONTMATTER_KEYS:
+        if key not in FRONTMATTER_KEYS and key not in OPTIONAL_KEYS:
             problems.add(meta[key][0], f"unknown frontmatter key `{key}`")
 
     ident: str | None = None
@@ -324,6 +347,18 @@ def check_frontmatter(
             meta["superseded-by"][0],
             f"`superseded-by` is set but the status is {status}; it should be superseded",
         )
+    if status == "proposed" and lists.get("amended-by"):
+        problems.add(
+            meta["amended-by"][0],
+            "`amended-by` is set on a proposed ADR; only an accepted ADR can be amended",
+        )
+    both = sorted(set(lists.get("supersedes", [])) & set(lists.get("amends", [])))
+    if both:
+        problems.add(
+            meta["amends"][0],
+            f"{', '.join(both)} is in both `supersedes` and `amends`; supersede a decision"
+            " this one replaces whole, amend one it replaces only part of",
+        )
     return ident, title
 
 
@@ -370,21 +405,56 @@ def check_text(text: str, path: Path, root: Path | None) -> list[str]:
 
     sections = split_sections(numbered, fenced)
     names = [name for name, _, _ in sections]
-    for name in SECTIONS:
+    for name in SECTION_ORDER:
         if name not in names:
-            problems.add(1, f"missing section `## {name}`")
+            if name not in OPTIONAL_SECTIONS:
+                problems.add(1, f"missing section `## {name}`")
         elif names.count(name) > 1:
             problems.add(1, f"section `## {name}` appears more than once")
     # Projects add their own sections (create-adr reads the house style from earlier
     # ADRs), so only the template's own sections are held in order.
-    known = [name for name in names if name in SECTIONS and names.count(name) == 1]
-    if known != [name for name in SECTIONS if name in known]:
-        problems.add(1, "sections are out of order; expected " + ", ".join(SECTIONS))
+    known = [name for name in names if name in SECTION_ORDER and names.count(name) == 1]
+    if known != [name for name in SECTION_ORDER if name in known]:
+        problems.add(1, "sections are out of order; expected " + ", ".join(SECTION_ORDER))
     for name, lineno, body in sections:
-        if name in SECTIONS and names.count(name) == 1 and not any(line.strip() for _, line in body):
+        if name in SECTION_ORDER and names.count(name) == 1 and not any(line.strip() for _, line in body):
             problems.add(lineno, f"`## {name}` is empty")
 
     return problems.lines()
+
+
+def body_words(text: str) -> int:
+    """Words in the body, leaving out frontmatter, code blocks and References.
+
+    References is a list of links that grows with the evidence, not with the decision,
+    so it does not count toward an ADR's size.
+    """
+    lines = text.splitlines()
+    fenced = fenced_linenos(lines)
+    _, body_start = parse_frontmatter(lines, Problems(Path("-")))
+    words = 0
+    in_references = False
+    for lineno, line in enumerate(lines, start=1):
+        if lineno <= body_start or lineno in fenced:
+            continue
+        heading = H2_RE.match(line)
+        if heading:
+            in_references = heading.group(1) == "References"
+            continue
+        if not in_references:
+            words += len(line.split())
+    return words
+
+
+def size_warnings(text: str, path: Path) -> list[str]:
+    words = body_words(text)
+    if words <= WORD_WARNING:
+        return []
+    return [
+        f"{path}: warning: the body is {words} words (over {WORD_WARNING}); an ADR this"
+        " long usually holds more than one decision, or design detail that belongs in"
+        " the spec that cites it"
+    ]
 
 
 def check_ready(path: Path, root: Path | None) -> list[str]:
@@ -394,11 +464,12 @@ def check_ready(path: Path, root: Path | None) -> list[str]:
     status = meta.get("status")
     if status != "proposed":
         problems.add(1, f"only a `proposed` ADR can be accepted; this one is {status!r}")
-    for ident in parse_list(meta.get("supersedes", "[]")) or []:
-        old = find_doc(path.parent, ident)
-        old_status = read_meta(old).get("status") if old else None
-        if old_status != "accepted":
-            problems.add(1, f"supersedes {ident}, which is {old_status!r}; only an accepted ADR can be superseded")
+    for key, verb in (("supersedes", "superseded"), ("amends", "amended")):
+        for ident in parse_list(meta.get(key, "[]")) or []:
+            old = find_doc(path.parent, ident)
+            old_status = read_meta(old).get("status") if old else None
+            if old_status != "accepted":
+                problems.add(1, f"{key} {ident}, which is {old_status!r}; only an accepted ADR can be {verb}")
     directory = research_dir(root)
     for ident in parse_list(meta.get("research", "[]")) or []:
         doc = find_doc(directory, ident) if directory else None
@@ -425,9 +496,16 @@ def check_file(path: Path, ready: bool = False) -> list[str]:
 def cmd_check(args: argparse.Namespace) -> int:
     failed = False
     for raw in args.paths:
-        for line in check_file(Path(raw), args.ready):
+        path = Path(raw)
+        for line in check_file(path, args.ready):
             print(line)
             failed = True
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue  # already reported by check_file
+        for line in size_warnings(text, path):
+            print(line, file=sys.stderr)
     if not failed:
         print("ok")
     return 1 if failed else 0
@@ -447,17 +525,36 @@ def set_field(text: str, key: str, value: str) -> str:
     raise KeyError(key)
 
 
+def insert_field(text: str, key: str, value: str, after: str) -> str:
+    """Add a frontmatter line after `after` (or before the closing `---`)."""
+    lines = text.split("\n")
+    end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    at = next((i + 1 for i in range(1, end) if re.match(rf"^{re.escape(after)}:", lines[i])), end)
+    lines.insert(at, f"{key}: {value}")
+    return "\n".join(lines)
+
+
 def format_list(items: list[str]) -> str:
     return "[" + ", ".join(items) + "]"
 
 
-def add_to_list(path: Path, key: str, ident: str) -> bool:
-    """Append `ident` to a frontmatter list; False if it was already there."""
+def add_to_list(path: Path, key: str, ident: str, after: str | None = None) -> bool:
+    """Append `ident` to a frontmatter list; False if it was already there.
+
+    With `after`, a key the document lacks is added after that one, for the optional
+    keys that ADRs written before them do not carry.
+    """
     text = path.read_text(encoding="utf-8")
-    current = parse_list(read_meta(path).get(key, "[]")) or []
+    meta = read_meta(path)
+    current = parse_list(meta.get(key, "[]")) or []
     if ident in current:
         return False
-    path.write_text(set_field(text, key, format_list([*current, ident])), encoding="utf-8")
+    value = format_list([*current, ident])
+    if key in meta or after is None:
+        text = set_field(text, key, value)
+    else:
+        text = insert_field(text, key, value, after)
+    path.write_text(text, encoding="utf-8")
     return True
 
 
@@ -528,6 +625,13 @@ def cmd_backlinks(args: argparse.Namespace) -> int:
         if before != "superseded" or listed:
             changed.append(f"{old}: status {before} -> superseded, superseded-by + {ident}")
 
+    # An amended ADR still binds, apart from the part this one replaces, so its status
+    # stays as it is; the link is what sends a reader of it on to the amendment.
+    for old_id in parse_list(meta.get("amends", "[]")) or []:
+        old = find_doc(path.parent, old_id)
+        if old is not None and add_to_list(old, "amended-by", ident, after="superseded-by"):
+            changed.append(f"{old}: amended-by + {ident}")
+
     directory = research_dir(repo_root_or_none(path.resolve().parent))
     for res_id in parse_list(meta.get("research", "[]")) or []:
         doc = find_doc(directory, res_id) if directory else None
@@ -547,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument(
         "--ready",
         action="store_true",
-        help="also require what accepting needs: proposed, supersedes accepted, research complete",
+        help="also require what accepting needs: proposed, superseded and amended ADRs accepted, research complete",
     )
     check.set_defaults(func=cmd_check)
 
@@ -558,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
     status.set_defaults(func=cmd_status)
 
     backlinks = commands.add_parser(
-        "backlinks", help="mark superseded ADRs and link cited research back to this ADR"
+        "backlinks", help="mark superseded and amended ADRs and link cited research back to this ADR"
     )
     backlinks.add_argument("path", help="the accepted ADR")
     backlinks.set_defaults(func=cmd_backlinks)

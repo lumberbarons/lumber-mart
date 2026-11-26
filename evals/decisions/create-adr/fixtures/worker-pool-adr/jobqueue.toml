@@ -1,0 +1,3 @@
+# Worker pool configuration, read once when the pool starts (ADR-0002).
+workers = 4
+drain_seconds = 30

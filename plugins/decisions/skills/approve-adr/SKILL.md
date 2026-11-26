@@ -1,6 +1,6 @@
 ---
 name: approve-adr
-description: Review a proposed ADR in a fresh subagent on its substance — is there a real decision, are the drivers specific, are the rejected options real, are the consequences honest, could a diff be checked against its invariants, does it contradict an accepted ADR — then either accept it, which makes it binding policy and registers it where agents will read it, or send it back with blocking objections. Use only when the user explicitly asks to approve or accept an ADR, or to make it binding — "approve ADR 7", "accept this ADR", "make this decision policy". Accepting changes the ADR's status and edits the index and agent instructions, so do not use it to answer "is this ADR any good", to critique a draft, or to sharpen one (that is refine-adr). Reviews ADRs, not code.
+description: Review a proposed ADR in a fresh subagent on its substance — is there one real decision with the design left to the spec, are the drivers specific, are the rejected options real, are the consequences honest, could a diff be checked against its invariants, does it contradict an accepted ADR — then either accept it, which makes it binding policy and registers it where agents will read it, or send it back with blocking objections. Use only when the user explicitly asks to approve or accept an ADR, or to make it binding — "approve ADR 7", "accept this ADR", "make this decision policy". Accepting changes the ADR's status and edits the index and agent instructions, so do not use it to answer "is this ADR any good", to critique a draft, or to sharpen one (that is refine-adr). Reviews ADRs, not code.
 argument-hint: The ADR to approve — path or number
 ---
 
@@ -59,7 +59,9 @@ uv run --no-project "$ADR" check --ready docs/adr/NNNN-slug.md
 
 If it does not print `ok`, stop and report the failures. `--ready` holds the ADR to
 what acceptance needs on top of a well-formed file: it is still `proposed`, every ADR
-it supersedes is accepted, and every research document it cites is `complete`. An ADR
+it supersedes or amends is accepted, and every research document it cites is `complete`.
+A `warning:` on stderr that the body is long does not fail the gate; the reviewer judges
+size under "The whole record". An ADR
 that fails these is not ready for a judgment call, and reviewing one spends your
 attention on problems a script already found.
 
@@ -105,19 +107,26 @@ its job — not whether it could be worded better.
 
 | Section | The question | A real finding looks like |
 |---|---|---|
+| The whole record | Is this one decision, with how to build it left to the spec? | A part of the outcome that could be reversed while the rest stands; interfaces, file names, exit codes, sequences or test plans stated as policy; the same rule stated in several sections, in words that disagree. |
 | Context and Problem Statement | Is there a real decision to make, with forces specific to this project? | A problem asserted rather than evidenced; a choice the code already made, with no forces recorded. |
 | Decision Drivers | Could a reader tell when a driver has shifted? | "Must be scalable"; a number nobody can source; a driver that only the chosen option satisfies. |
 | Considered Options | Would a reasonable engineer propose each rejected option? | A strawman; the alternative the team is actually weighing missing; "do nothing" absent where it is real. |
 | Decision Outcome | Do the drivers tip toward the chosen option, and would a changed driver flip it? | An outcome that restates the choice without saying why; a reason that is not among the drivers. |
 | Consequences | Are the negatives real costs, and does each risk say how it would be noticed? | No negatives at all; a risk with no signal; a cost the Context contradicts. |
 | Implementation Notes | Could a diff be checked against each invariant? | "Follow best practice"; an invariant no reviewer could cite a line against; existing code that already violates it, undisclosed. |
-| Relationships | Does it contradict, duplicate or quietly narrow an accepted ADR? Is `supersedes` right? Does it lean on research that is `Low` confidence, or state a `Low` finding as fact? | An uncited ADR it conflicts with; a `supersedes` that retires more than the new ADR replaces; a driver resting on a `Low` finding written as settled. |
+| Relationships | Does it contradict, duplicate or quietly narrow an accepted ADR? Are `supersedes` and `amends` right? Does it lean on research that is `Low` confidence, or state a `Low` finding as fact? | An uncited ADR it conflicts with; a `supersedes` that retires more than the new ADR replaces, where `amends` would replace only that part; another ADR adopted "by reference, with exceptions"; an `amends` that does not quote the lines it replaces; a driver resting on a `Low` finding written as settled. |
 
-Two rules keep this honest. **A finding you would not hold up the decision for is not a
-finding** — you are deciding whether this becomes policy, not polishing prose, and a
-review that always finds something is a review nothing can ever pass. And **quote the
-line you are objecting to**, so the author can disagree with something specific rather
-than with your impression.
+These rules keep this honest. **A finding you would not hold up the decision for is not
+a finding** — you are deciding whether this becomes policy, not polishing prose, and a
+review that always finds something is a review nothing can ever pass. **Quote the line
+you are objecting to**, so the author can disagree with something specific rather than
+with your impression. And **hold the decision, not the design.** When the ADR carries a
+second decision or design detail, that is the finding, and its fix is to take the
+material out: the second decision to an ADR of its own, the detail to the spec. Lead
+with it, and do not list further defects inside the material it moves out. They are real,
+but they are for that ADR's review or the spec's, and asking for each to be corrected
+here grows the ADR and gives the next review more to find. Object to a defect in design
+detail on its own only when the decision itself depends on it.
 
 You are not asked whether you would have chosen differently. A decision between sound
 options is the decider's to make; object only when the record does not support the
@@ -133,9 +142,11 @@ approver allowed to hedge will.
 - **Send back** — one or more specific objections that change what the ADR says,
   including an assumption a future reader needs *in* the ADR: an accepted ADR cannot be
   revised, so a caveat that belongs in it must be written before acceptance. Say
-  what must change, not how to word it. A conflict with an accepted ADR is this verdict:
-  name the ADR and say whether the fix is to narrow this decision or to supersede that
-  one.
+  what must change, not how to word it, and prefer a change that removes or narrows a
+  claim over one that adds a caveat, carve-out or invariant. A gap in how the decision
+  will be built is not a caveat that belongs in the ADR: say it belongs in the spec. A
+  conflict with an accepted ADR is this verdict: name the ADR and say whether the fix is
+  to narrow this decision, to amend that one, or to supersede it.
 - **Needs research first** — the choice hinges on facts nobody has established. Name the
   question and suggest `create-research`.
 
@@ -166,8 +177,9 @@ uv run --no-project "$ADR" backlinks docs/adr/NNNN-slug.md
 an approval; if it refuses, believe it. It moves `status` to `accepted` and `date` to
 today, the day the ADR became policy, and changes nothing else. `backlinks` then marks
 each ADR this one supersedes as `superseded` and names this one in its `superseded-by`,
-and adds this ADR's id to the `related` of each research document it cites. It is safe
-to run again if it is interrupted.
+names this one in the `amended-by` of each ADR it amends (which stays `accepted`), and
+adds this ADR's id to the `related` of each research document it cites. It is safe to
+run again if it is interrupted.
 
 ## 7. Make it discoverable — calling agent
 
@@ -197,7 +209,10 @@ you updated.
 In each selected file, look for an existing `## Architectural Decisions` section.
 
 **If the section exists**, add a row to its table for this ADR in the existing format.
-Remove the row of any ADR `backlinks` marked superseded — it no longer binds.
+Remove the row of any ADR `backlinks` marked superseded — it no longer binds. Keep the
+row of any ADR this one amends, since it still binds, and end its description with
+"Amended by ADR-NNNN" and a few words on what changed, so a reader of the old ADR goes
+on to the new one.
 
 **If it does not exist**, append it to the end (substituting the real ADR directory):
 
@@ -226,7 +241,12 @@ status moved and list the files `backlinks`, the index and the registration touc
 ## Follow-up after a rejection — calling agent
 
 Revise the proposed ADR in a separate authoring step only if the user asks for
-fixes. If they explicitly ask to fix and retry, run at most one follow-up
+fixes. Revise by cutting first: settle each objection by removing or narrowing the
+claim it quotes, or by moving the material to its own ADR or to the spec, before
+reaching for an added sentence. A fix that adds text is new material the next reviewer
+has not seen, and a reviewer who did not write the first review will look at it fresh.
+After editing, find every other place the ADR states a rule you changed and make them
+agree. If they explicitly ask to fix and retry, run at most one follow-up
 approval from step 1 on the revised ADR, even if they ask you to keep going
 until it passes. Use a fresh reviewer and keep the earlier findings in the
 calling context.
@@ -234,7 +254,11 @@ calling context.
 Stop for the user's decision before revising if a blocker requires changing
 the decision, narrowing or superseding binding policy, or gathering new research.
 If the follow-up still blocks, stop and report which objections were resolved,
-which recur, and which are new. State what remains necessary for approval.
+which recur, and which are new. State what remains necessary for approval. When most
+of the blocking objections are new rather than recurring, say plainly that the ADR is
+probably too large to converge — each review is sampling a different part of it — and
+recommend splitting it or cutting it to the decision before any further review, rather
+than another round of fixes.
 Leave the ADR at `proposed` and wait for further direction before making
 more edits or dispatching another review.
 
@@ -247,6 +271,10 @@ more edits or dispatching another review.
   does not support the choice it records
 - Approving with a list of caveats attached; if the caveats belong in the ADR, send it
   back, since it cannot be revised once accepted
+- Asking for a caveat, carve-out or extra invariant where removing or narrowing the claim
+  would settle the objection
+- Holding the ADR on defects inside design detail or a bundled decision one by one,
+  instead of one finding that says the material should leave the ADR
 - Sending back over something the ADR's own Consequences already disclose — the author
   flagged it, which is the system working
 - Editing the ADR's text during a review, cutting a branch, filing issues, or
