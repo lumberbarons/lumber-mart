@@ -1,0 +1,43 @@
+{
+  "skill_name": "create-adr",
+  "evals": [
+    {
+      "id": 0,
+      "name": "bundled-request",
+      "prompt": "Repo at {REPO}. Write an ADR for how we're fixing job loss: dequeue moves to BLMOVE onto a per-worker jobs:processing:<worker> list so a job stays in Redis until its handler finishes; workers write a heartbeat key every 10s with a 30s TTL and a reaper re-queues processing lists whose heartbeat has expired; jobs get an attempts counter and go to the dead-letter list after 5 tries; and we'll add a `jobqueue requeue --dead` command that exits 3 when the dead-letter list is empty. Oh, and while we're in there we're moving the dead-letter list out of Redis into a Postgres table so finance can query it. Dana and I (sam) are the deciders.",
+      "expected_output": "One proposed ADR, docs/adr/0002-*.md, recording a single decision: keep a job in Redis until its handler finishes (move, then acknowledge). Moving the dead-letter list to Postgres is named as a separate decision for its own ADR and is not decided here. Heartbeat intervals, the reaper's timing, the attempt limit and the CLI's exit codes are left to the spec, kept at most as invariants. The ADR passes the checker without a size warning and nothing else in the repo is edited.",
+      "files": [
+        "../create-research/fixtures/jobqueue"
+      ],
+      "assertions": [
+        "Exactly one new ADR exists, docs/adr/0002-<slug>.md, at status proposed; ADR-0001 and every other file are unchanged",
+        "`adr.py check` exits 0 on the new ADR",
+        "The new ADR's body is at most 1,200 words, excluding References and code blocks",
+        "The ADR does not decide to move dead letters to Postgres: Postgres is not part of the chosen option or the invariants",
+        "The final report names moving dead letters to Postgres as a separate decision for its own ADR",
+        "The ADR does not state the CLI's exit codes (`exits 3`) or the `requeue --dead` command as policy",
+        "The ADR does not fix the heartbeat interval or TTL (10s/30s) or the attempt limit (5) as policy; if any appears it is outside Decision Outcome and Implementation Notes or explicitly left to the spec",
+        "The final report says the design detail it left out belongs in the spec"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "partial-change",
+      "prompt": "Repo at {REPO}. We're moving the worker config off jobqueue.toml - it'll come from environment variables now (JOBQUEUE_WORKERS etc.) so it works on our container platform. Everything else about how the pool runs stays the same. Record the decision. Deciders: dana.",
+      "setup": "Overlay fixtures/worker-pool-adr on the jobqueue fixture: it adds an accepted ADR-0002 that bundles the pool, its jobqueue.toml configuration, JSON logging and SIGTERM draining, plus jobqueue/pool.py and jobqueue.toml.",
+      "expected_output": "A proposed ADR-0003 that amends ADR-0002 (amends: [ADR-0002], supersedes empty), quotes the jobqueue.toml lines it replaces, and records only the configuration source. It does not supersede ADR-0002 or restate or adopt the rest of ADR-0002 by reference. ADR-0002 is left untouched until acceptance. The ADR passes the checker.",
+      "files": [
+        "../create-research/fixtures/jobqueue",
+        "fixtures/worker-pool-adr"
+      ],
+      "assertions": [
+        "Exactly one new ADR exists, docs/adr/0003-<slug>.md, at status proposed; ADR-0002 is byte-identical to the fixture",
+        "`adr.py check` exits 0 on the new ADR",
+        "The new ADR's frontmatter has `amends: [ADR-0002]` and an empty `supersedes`",
+        "The new ADR quotes or names the ADR-0002 lines it replaces (the jobqueue.toml configuration rule)",
+        "The new ADR does not adopt ADR-0002 'by reference' or restate its logging, drain or pool-size rules as its own policy",
+        "The new ADR's body is at most 1,200 words, excluding References and code blocks"
+      ]
+    }
+  ]
+}
